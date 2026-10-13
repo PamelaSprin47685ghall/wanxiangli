@@ -1,0 +1,24 @@
+{
+  "name": "wanxiangli",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Host-independent work lifecycle and durable journal, written in F#.",
+  "type": "module",
+  "engines": { "node": ">=22.13.0" },
+  "exports": {
+    "./work": { "types": "./src/lifecycle/index.d.ts", "import": "./dist/lifecycle/Work.js" },
+    "./eventstore": { "types": "./src/eventstore/index.d.ts", "import": "./dist/eventstore/SqliteJournal.js" }
+  },
+  "files": ["dist/", "src/lifecycle/index.d.ts", "src/eventstore/index.d.ts", "README.md", "MIGRATION.md", "THIRD_PARTY_NOTICES"],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "npm run build && node --test src/lifecycle/tests/*.test.mjs src/eventstore/tests/*.test.mjs scripts/tests/*.test.mjs",
+    "prepack": "npm run build"
+  },
+  "devDependencies": {
+    "@fable-org/fable-compiler-js": "3.8.1",
+    "@fable-org/fable-library-js": "2.8.1",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2"
+  }
+}
