@@ -1,13 +1,16 @@
-namespace Wanxiangli.Lifecycle
+module Wanxiangli.Lifecycle.Work
 
 open Fable.Core
 open Fable.Core.JsInterop
+open Wanxiangli.Lifecycle
 open Wire
 
-[<AllowNullLiteral>]
-type Journal =
-    abstract read: stream: string -> string array
-    abstract append: stream: string * expectedRevision: float * requestId: string * body: string -> obj
+type IWork =
+    abstract inspect: unit -> obj
+    abstract history: unit -> obj array
+    abstract records: unit -> string array
+    abstract recover: unit -> obj
+    abstract execute: requestId: string * command: obj -> obj
 
 type private Decision = Write of Fact list | Observe of obj
 
@@ -134,16 +137,14 @@ module private Commands =
                     | _ -> fail "Execution observation is incomplete"
         | _ -> fail "Unknown work command"
 
-[<AttachMembers>]
-type Work(workId: string, journal: Journal) =
+let Work (workId: string) (records: string array option): IWork =
     do identifier (box workId) |> ignore
-    let mutable unknownRequest: string option = None
 
-    let load () =
+    let rebuild (bodies: string array) =
         let state = WorkState(workId)
-        let bodies = journal.read workId
-        require (isArray (box bodies)) "Journal.read must return an array of committed bodies"
+        require (isArray (box bodies)) "History must be an array of records, not a service"
         for body in bodies do
+            require (isString (box body)) "History records must be text"
             let frame = parse body
             fields [ "requestId"; "requestHash"; "events" ] [] frame
             require (canonical frame = body) "History body is not canonical JSON"
@@ -156,73 +157,67 @@ type Work(workId: string, journal: Journal) =
             let result = state.Apply(requestId, facts)
             let operation = facts |> List.tryPick (function Fact.DeliveryRequested delivery -> Some delivery.Id | _ -> None)
             state.Remember(requestId, hash, result, operation)
-        state, bodies
+        state
 
-    let response (status: string) (revision: int) (result: obj) (reason: obj): obj =
-        objectOf [ "status", box status; "revision", box revision; "result", result; "reason", reason ]
+    let mutable saved = defaultArg records [||]
+    let mutable state = rebuild saved
+    do saved <- Array.copy saved
+    let mutable busy = false
+
+    let guard action =
+        require (not busy) "Work does not allow reentrant messages"
+        busy <- true
+        try action () finally busy <- false
+
+    let detached value = value |> canonical |> parse
+
+    let response status revision result record =
+        objectOf [ "status", box status; "revision", box revision; "result", result; "record", record ]
 
     let addFindings (command: obj) (result: obj) =
+        let result = detached result
         if (unbox<string> (get command "type")) = "Review" && not (isNull result) then
-            result?findings <- get command "findings"
+            result?findings <- detached (get command "findings")
         result
 
-    member _.inspect(): obj =
-        let state, _ = load ()
-        state.Snapshot()
+    let inspect () = guard (fun () -> detached (state.Snapshot()))
 
-    member _.history(): obj array =
-        let _, bodies = load ()
-        bodies |> Array.map parse
+    let history () = guard (fun () -> saved |> Array.map parse)
 
-    member _.recover(): obj =
-        match unknownRequest with
-        | Some requestId -> objectOf [ "next", box "ObserveCommit"; "requestId", box requestId; "state", null ]
-        | None ->
-            let state, _ = load ()
-            state.Recovery()
+    let records () = guard (fun () -> Array.copy saved)
 
-    member _.execute(requestId: string, input: obj): obj =
-        identifier (box requestId) |> ignore
-        require unknownRequest.IsNone "Previous commit is unknown; reopen the journal and work before reconciliation"
-        let encoded = canonical input
-        let command = parse encoded
-        let hash = sha256 encoded
-        let state, _ = load ()
-        match state.TryReceipt requestId with
-        | Some receipt ->
-            require (receipt.Hash = hash) "RequestIdConflict"
-            response "Replayed" state.Revision (addFindings command (state.Replay receipt)) (null: obj)
-        | None ->
-            match Commands.decide workId requestId state command with
-            | Observe result -> response "Observed" state.Revision result (null: obj)
-            | Write facts ->
-                let facts = facts |> List.map (FactCodec.encode >> FactCodec.decode)
-                let revision = state.Revision
-                let result = state.Apply(requestId, facts)
-                let body = canonical (objectOf [ "requestId", box requestId; "requestHash", box hash; "events", box (facts |> List.map FactCodec.encode |> List.toArray) ])
-                let acknowledgement =
-                    try journal.append(workId, float revision, requestId, body)
-                    with error -> objectOf [ "status", box "Unknown"; "revision", box revision; "reason", box error.Message ]
-                let unknown (reason: obj): obj =
-                    unknownRequest <- Some requestId
-                    response "Unknown" revision (null: obj) reason
-                try
-                    fields [ "status"; "revision"; "reason" ] [] acknowledgement
-                    let status = get acknowledgement "status" |> text
-                    let committedRevision = get acknowledgement "revision" |> cursor
-                    let reason = get acknowledgement "reason"
-                    require (isNull reason || isString reason) "Invalid journal reason"
-                    match status with
-                    | "Committed" ->
-                        if committedRevision <> float (revision + 1) then
-                            unknown (box "Journal returned an unexpected commit revision")
-                        else response "Committed" (revision + 1) (addFindings command result) (null: obj)
-                    | "Replayed" ->
-                        let current, _ = load ()
-                        let receipt = current.TryReceipt requestId |> Option.defaultWith (fun () -> fail "Journal replay receipt is absent")
-                        require (receipt.Hash = hash) "RequestIdConflict"
-                        response "Replayed" current.Revision (addFindings command (current.Replay receipt)) (null: obj)
-                    | "Conflict" | "NotWritten" -> response status revision (null: obj) reason
-                    | "Unknown" -> unknown reason
-                    | _ -> unknown (box "Unknown journal acknowledgement")
-                with error -> unknown (box error.Message)
+    let recover () = guard (fun () -> detached (state.Recovery()))
+
+    let execute (requestId: string, input: obj): obj =
+        guard (fun () ->
+            identifier (box requestId) |> ignore
+            let encoded = canonical input
+            let command = parse encoded
+            let hash = sha256 encoded
+            match state.TryReceipt requestId with
+            | Some receipt ->
+                require (receipt.Hash = hash) "RequestIdConflict"
+                response "Replayed" state.Revision (addFindings command (state.Replay receipt)) (null: obj)
+            | None ->
+                match Commands.decide workId requestId state command with
+                | Observe result -> response "Observed" state.Revision (addFindings command result) (null: obj)
+                | Write facts ->
+                    // 事务在私有候选上完成；任何验证失败都不改变当前个体。
+                    let candidate = rebuild saved
+                    let facts = facts |> List.map (FactCodec.encode >> FactCodec.decode)
+                    let result = candidate.Apply(requestId, facts)
+                    let body = canonical (objectOf [ "requestId", box requestId; "requestHash", box hash; "events", box (facts |> List.map FactCodec.encode |> List.toArray) ])
+                    let operation = facts |> List.tryPick (function Fact.DeliveryRequested delivery -> Some delivery.Id | _ -> None)
+                    candidate.Remember(requestId, hash, result, operation)
+                    let reply = response "Applied" candidate.Revision (addFindings command result) (box body)
+                    let next = Array.append saved [| body |]
+                    saved <- next
+                    state <- candidate
+                    reply)
+
+    { new IWork with
+        member _.inspect() = inspect ()
+        member _.history() = history ()
+        member _.records() = records ()
+        member _.recover() = recover ()
+        member _.execute(requestId, input) = execute (requestId, input) }

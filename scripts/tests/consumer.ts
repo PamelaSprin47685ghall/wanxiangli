@@ -1,10 +1,17 @@
-import { Work, type Command, type Journal } from 'wanxiangli/work'
+import { Work, type Command } from 'wanxiangli/work'
 import { SqliteJournal, type SqliteConnection } from 'wanxiangli/eventstore'
+import { DurableWork, type Journal } from 'wanxiangli/durable-work'
 
 declare const connection: SqliteConnection
 const journal: Journal = new SqliteJournal(connection)
-const work = new Work('typed-work', journal)
+const local = new Work('typed-work')
 const command: Command = { type: 'Open', root: 'root', sequence: ['S4'], ownerId: 'manager', openingCursor: 0 }
+const localResult = local.execute('request', command)
+if (localResult.status === 'Applied') {
+  const body: string = localResult.record
+  journal.append('typed-work', 0, 'request', body)
+}
+const work = new DurableWork('typed-work', journal)
 const response = work.execute('request', command)
 if (response.status === 'Committed' && response.result.kind === 'Opened') {
   const tenure: string = response.result.incumbencyId
@@ -15,12 +22,17 @@ if (recovery.next !== 'ObserveCommit') {
   const writable: boolean = recovery.state.canWriteSource
   void writable
 }
+new Work('typed-work', work.records())
 
+// @ts-expect-error A local application is not a durable commit.
+if (localResult.status === 'Committed') throw new Error('unreachable')
+// @ts-expect-error Work accepts records, never a journal service.
+new Work('invalid', journal)
 // @ts-expect-error Unknown lifecycle verbs are not public commands.
 work.execute('invalid', { type: 'suicide' })
 // @ts-expect-error A plan cannot contain an arbitrary sequence.
-work.execute('invalid', { type: 'Open', root: 'root', sequence: ['S1'], ownerId: 'manager', openingCursor: 0 })
+local.execute('invalid', { type: 'Open', root: 'root', sequence: ['S1'], ownerId: 'manager', openingCursor: 0 })
 // @ts-expect-error Findings must be text, not unchecked objects.
 work.execute('invalid', { type: 'Review', incumbencyId: 'tenure', reviewerId: 'reviewer', findings: [{}] })
-// @ts-expect-error The structural journal must implement atomic append.
-new Work('invalid', { read: () => [] })
+// @ts-expect-error The composition needs atomic append, not read alone.
+new DurableWork('invalid', { read: () => [] })

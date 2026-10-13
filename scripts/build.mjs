@@ -61,6 +61,7 @@ for (const name of selected) {
       stdin: { contents: `export { ${publicClass} } from ${JSON.stringify(entry)}`, resolveDir: root },
       outfile: path.join(bundle, `${publicClass}.js`),
       bundle: true,
+      external: ['wanxiangli/*'],
       platform: 'node',
       format: 'esm',
       target: 'node22',

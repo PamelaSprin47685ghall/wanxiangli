@@ -24,6 +24,7 @@ test('SPEC[build-002] an installed tarball survives a real effect and process de
   const packed = JSON.parse(succeed(spawnSync(npm, ['pack', '--ignore-scripts', '--json', '--pack-destination', temporary], { cwd: root, env: cleanEnvironment, encoding: 'utf8', timeout: 30000 })))[0]
   assert.ok(packed.files.some(file => file.path === 'dist/lifecycle/Work.js'))
   assert.ok(packed.files.some(file => file.path === 'dist/eventstore/SqliteJournal.js'))
+  assert.ok(packed.files.some(file => file.path === 'dist/assembly/DurableWork.js'))
   for (const file of packed.files) assert.doesNotMatch(file.path, /\.fs(?:proj|i)?$|^scripts\/|^node_modules\//)
   const consumer = path.join(temporary, 'consumer')
   mkdirSync(consumer)

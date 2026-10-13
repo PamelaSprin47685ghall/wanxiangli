@@ -2,11 +2,13 @@ import assert from 'node:assert/strict'
 import { readFileSync, existsSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { Work } from 'wanxiangli/work'
+import { DurableWork } from 'wanxiangli/durable-work'
 import { SqliteJournal } from 'wanxiangli/eventstore'
 
 const [runtime, mode, database, effectFile] = process.argv.slice(2)
 assert.deepEqual(Object.keys(await import('wanxiangli/work')), ['Work'])
 assert.deepEqual(Object.keys(await import('wanxiangli/eventstore')), ['SqliteJournal'])
+assert.deepEqual(Object.keys(await import('wanxiangli/durable-work')), ['DurableWork'])
 await assert.rejects(import('wanxiangli/dist/lifecycle/Work.js'), {
   code: runtime === 'node' ? 'ERR_PACKAGE_PATH_NOT_EXPORTED' : 'ERR_MODULE_NOT_FOUND',
 })
@@ -15,7 +17,10 @@ const connection = runtime === 'node'
   ? new (await import('node:sqlite')).DatabaseSync(database)
   : new (await import('bun:sqlite')).Database(database)
 const journal = new SqliteJournal(connection)
-const work = new Work('consumer-work', journal)
+const work = new DurableWork('consumer-work', journal)
+assert.deepEqual(Object.keys(new Work('standalone')).sort(), ['execute', 'history', 'inspect', 'records', 'recover'])
+assert.equal(work.journal, undefined)
+assert.equal(journal.database, undefined)
 
 function commit(requestId, command) {
   const reply = work.execute(requestId, command)
@@ -24,7 +29,7 @@ function commit(requestId, command) {
 }
 
 function dispatch(reply) {
-  if (reply.status !== 'Committed' || reply.result.kind !== 'DispatchExecution') return
+  if (reply.status !== 'Committed' || reply.result.kind !== 'DeliveryRequested') return
   const effect = spawnSync(process.execPath, ['--input-type=module', '-e', `
     import { appendFileSync } from 'node:fs'
     const [file, operationId, digest, path] = process.argv.slice(1)
@@ -62,7 +67,8 @@ if (mode === 'start') {
   assert.equal(work.recover().next, 'Done')
   assert.equal(work.inspect().active, null)
   const before = journal.read('consumer-work')
-  assert.deepEqual(new Work('consumer-work', journal).inspect(), work.inspect())
+  assert.deepEqual(new Work('consumer-work', before).inspect(), work.inspect())
+  assert.deepEqual(new DurableWork('consumer-work', journal).inspect(), work.inspect())
   assert.deepEqual(journal.read('consumer-work'), before)
   assert.equal(existsSync(new URL('./node_modules/wanxiangli/src/lifecycle/Work.fs', import.meta.url)), false)
   assert.equal(existsSync(new URL('./node_modules/@fable-org', import.meta.url)), false)

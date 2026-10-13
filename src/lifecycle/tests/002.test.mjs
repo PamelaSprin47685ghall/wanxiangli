@@ -33,14 +33,14 @@ test('SPEC[lifecycle-002] S4 requires review and two different delivery calls', 
   const rig = new Rig(['S4'])
   rig.open()
   assert.equal(rig.call(rig.delivery()).result.kind, 'ReviewRequired')
-  assert.equal(rig.journal.calls, 1)
+  assert.equal(rig.count, 1)
   rig.review()
   assert.equal(rig.work.inspect().deliveryAuthorized, false)
   const first = rig.delivery({ toolCallId: 'confirmation' })
-  assert.equal(rig.commit(first).kind, 'Confirmed')
-  const writes = rig.journal.calls
+  assert.equal(rig.apply(first).kind, 'Confirmed')
+  const writes = rig.count
   assert.equal(rig.call(first, 'confirmation-again').result.kind, 'Confirmed')
-  assert.equal(rig.journal.calls, writes)
+  assert.equal(rig.count, writes)
   assert.ok(rig.work.inspect().active)
   assert.equal(rig.deliver({ toolCallId: 'retirement' }).kind, 'Delivered')
   assert.equal(rig.work.inspect().active, null)
@@ -67,8 +67,8 @@ test('SPEC[lifecycle-002] a reused tool call under another provider is not a sec
   rig.open()
   rig.review()
   const command = rig.delivery({ toolCallId: 'same-call' })
-  rig.commit(command)
-  const count = rig.journal.calls
+  rig.apply(command)
+  const count = rig.count
   assert.throws(() => rig.call({ ...command, providerRunId: 'other-run' }), /RetirementConfirmationReplayConflict/)
-  assert.equal(rig.journal.calls, count)
+  assert.equal(rig.count, count)
 })

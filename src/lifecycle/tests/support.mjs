@@ -9,44 +9,26 @@ export function canonical(value) {
   return JSON.stringify(value)
 }
 
-// 只实现原子存储契约，不重写任何生命周期规则。
-export class MemoryJournal {
-  streams = new Map()
-  calls = 0
-  read(stream) { return (this.streams.get(stream) ?? []).map(entry => entry.body) }
-  append(stream, expectedRevision, requestId, body) {
-    this.calls += 1
-    const entries = this.streams.get(stream) ?? []
-    const index = entries.findIndex(entry => entry.requestId === requestId)
-    if (index >= 0) {
-      return { status: entries[index].body === body ? 'Replayed' : 'Conflict', revision: index + 1, reason: null }
-    }
-    if (entries.length !== expectedRevision) return { status: 'Conflict', revision: entries.length, reason: 'RevisionConflict' }
-    entries.push({ requestId, body })
-    this.streams.set(stream, entries)
-    return { status: 'Committed', revision: entries.length, reason: null }
-  }
-}
-
 export class Rig {
   serial = 0
-  constructor(sequence = ['S1', 'S2', 'S3'], journal = new MemoryJournal()) {
-    this.journal = journal
-    this.work = new Work('work-a', journal)
+  constructor(sequence = ['S1', 'S2', 'S3']) {
+    this.work = new Work('work-a')
     this.sequence = sequence
   }
+  get count() { return this.work.records().length }
   call(command, requestId = `request-${++this.serial}`) { return this.work.execute(requestId, command) }
-  commit(command, requestId) {
+  apply(command, requestId) {
     const reply = this.call(command, requestId)
-    assert.equal(reply.status, 'Committed', JSON.stringify(reply))
+    assert.equal(reply.status, 'Applied', JSON.stringify(reply))
+    assert.equal(reply.record, this.work.records().at(-1))
     return reply.result
   }
   open(overrides = {}) {
     this.openCommand = { type: 'Open', root: '用户的工作 🧭\n第二行', sequence: this.sequence, ownerId: 'manager', openingCursor: 0, ...overrides }
-    return this.commit(this.openCommand, 'open')
+    return this.apply(this.openCommand, 'open')
   }
   review(findings = [], overrides = {}) {
-    return this.commit({ type: 'Review', incumbencyId: this.work.inspect().active.id, reviewerId: 'reviewer', findings, ...overrides })
+    return this.apply({ type: 'Review', incumbencyId: this.work.inspect().active.id, reviewerId: 'reviewer', findings, ...overrides })
   }
   delivery(overrides = {}) {
     const state = this.work.inspect()
@@ -55,7 +37,7 @@ export class Rig {
   }
   deliver(overrides = {}) {
     this.lastDelivery = this.delivery(overrides)
-    return this.commit(this.lastDelivery)
+    return this.apply(this.lastDelivery)
   }
   authorizePlan() {
     this.open()
@@ -69,7 +51,7 @@ export class Rig {
     this.authorizePlan()
     const command = this.delivery({ draft: { digest: 'draft-digest', path: '/plans/approved.md' } })
     const reply = this.call(command, 'reserve')
-    assert.equal(reply.status, 'Committed')
+    assert.equal(reply.status, 'Applied')
     return { command, reply, operationId: reply.result.operationId }
   }
   accepted(operationId, overrides = {}) {

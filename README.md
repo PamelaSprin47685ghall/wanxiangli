@@ -1,19 +1,35 @@
 # wanxiangli
 
-从旧万象术抽取的工作生命周期库。F# 实现，编译为独立 ESM，通过 npm 包使用。
+逐步承接旧系统职责的独立库。F# 实现，编译为独立 ESM，通过 npm 包使用。
 
-本次不是完整新宿主。已经实现的是：**工作开立 → 评审 → 接力或交付 → 持久恢复**。旧仓尚未接线；原 `src/` 中只有说明、没有 fsproj 的目录仍是草稿。
+当前不是完整新宿主。第一刀是 **工作开立 → 评审 → 接力或交付 → 持久恢复**；第二刀是独立的真实进程会话；第三刀是确认轨迹、字节原件和固定取材区间；0.5.0 第四刀是资源归属与收尾。旧仓尚未接线；原 `src/` 中只有说明、没有 fsproj 的目录仍是草稿。
 
-## 两个独立入口
+进程入口是 `wanxiangli/process` / `ProcessSession`：真实启动、有界 stdin、双路原始输出尾部、独立等待和 POSIX 进程组信号。它不导入下面三个入口，下面三个入口也不导入它。完整用法、字节游标和监管边界见 `PROCESS.md`。本轮没有读取或修改合作者正在精修的旧仓，第一刀的五个生产 F# 文件也保持原样。
+
+轨迹入口是 `wanxiangli/trace` / `Trace`：稳定观察身份、只追加的已确认部件、原始字节和运行终态；边界同时绑定轨迹、游标和前缀摘要。原始观察、全部用户原件和当前区间消息是同一份事实的不同视图，不复制成可相互覆盖的账本。它不依赖前两刀，也不把存储服务换名后注入。完整用法及字节、恢复、来源可信度的限制见 `TRACE.md`。
+
+归属入口是 `wanxiangli/ownership` / `Ownership`：作用域森林、唯一资源预留、取消与排空、带实例身份的终态和递归 blocker。Reserved、Unknown、信号与超时都不会释放归属；固定父范围资源不随子任期关闭。本库不调用前三刀，C 分别组合归属、物理观察、持久提交和 Work 退休。完整协议和限制见 `OWNERSHIP.md`。
+
+## 第一刀：两个独立个体，一个组合者
 
 | 入口 | 对象 | 职责 |
 |---|---|---|
-| `wanxiangli/work` | `Work` | 工作规则、原子事件组合、重放、恢复、交付操作认领 |
+| `wanxiangli/work` | `Work` | 自治内存对象：工作规则、原子转移、历史数据、重放与恢复 |
 | `wanxiangli/eventstore` | `SqliteJournal` | 修订号比较、原子追加、字节保存、提交结局 |
+| `wanxiangli/durable-work` | `DurableWork` | 协调两者：读取事实、建立候选、比较提交、处理竞争与未知回执 |
 
-两库没有源码或工程引用关系。`Work` 接受两方法的结构契约 `Journal`；生产中可传 `SqliteJournal`，内核测试传一个只实现存储语义的内存日志。`SqliteJournal` 接受组装方创建的原生 SQLite 连接；不探测运行时，不动态猜选驱动。存储不认识生命周期，生命周期不认识 SQLite、OpenCode、omp 或旧系统。
+```text
+                  DurableWork (C)
+                  /             \
+          Work (A)               SqliteJournal (B)
+     命令、结果、领域记录          记录、修订号、提交结果
+```
 
-F# 对象封装局部可变状态。没有全局单例、公共大 Context、通用工作流引擎或多层 port 包。每次调用从已提交事实重建局部状态，失败候选直接丢弃，不把内存快照当第二权威。
+Work 不持有 Journal，不调用它，也不接收它的接口、闭包或替身。Journal 不认识工作规则。C 在公开消息之间完成协作，不解析事件、不复制 Plan/S4 的判断；类型和产物依赖朝向参与者，A、B 之间没有依赖边。
+
+三个公开构造器返回 F# 对象表达式：私有可变状态留在 JavaScript 闭包中，公开对象只含协议方法。没有全局单例、公共大 Context、邮箱或通用调度器，也不依赖 `instanceof`、继承或暴露字段来识别对象。仅在 F# 源码里写 private 不足以保证生成物的封装，因此验收检查实际产物的字段和别名边界。
+
+Work 跨调用持有自己的内存状态；每次变化在私有候选上完整验证后替换，失败不留下半次变化。DurableWork 每次从 Journal 的已提交记录建立候选，只在首次确认提交后公布结果；它只持有活动标记和未知请求身份，不保留第二份业务账本。
 
 ## 构建与验证
 
@@ -30,25 +46,58 @@ node --test src/lifecycle/tests/*.test.mjs
 npm run build -- eventstore
 node --test src/eventstore/tests/*.test.mjs
 
+npm run build -- assembly
+node --test src/assembly/tests/*.test.mjs
+
+npm run build -- process
+node --test src/process/tests/*.test.mjs
+
+npm run build -- trace
+node --test src/trace/tests/*.test.mjs
+
+npm run build -- session
+node --test src/session/tests/*.test.mjs
+
 # 实际交付包；不发布到 registry
 npm pack
 ```
 
-构建只有一个脚本：读取各目录的显式 fsproj → npm Fable 编译 → esbuild 打成一个独立 ESM。没有自建增量图、缓存协议或编译分片系统。指定一个模块不会重编其他模块；编译失败不覆盖旧产物。
+构建只有一个脚本：读取各目录的显式 fsproj → npm Fable 编译 → esbuild 生成 ESM。组合者保留 `wanxiangli/work` 的公开导入，不内联、编译兄弟源码。没有自建增量图、缓存协议或编译分片系统。指定一个模块不会重编其他模块；编译失败不覆盖旧产物。单编 assembly 后运行组合测试，需要已构建的参与者产物，不需要其源码。
 
 发布包没有 npm 运行时依赖，Fable 运行库用到的部分已打入产物。消费者不需要 F# 源码、编译器、esbuild 或本仓路径。当前包标为 private，防止验收前意外发布；tarball 安装不受影响。Fable 的许可声明随包保留。
 
-## 最小使用示例
+第二刀的安装包验收删除第一刀产物和类型，再在 Node/Bun 下启动真实进程；第三刀验证原件恢复及 Trace 单独使用；第四刀验证真实资源阻止 Work 退休、协调进程强杀后的未结算归属，以及删除全部前三刀产物后的独立使用。分项证据、完整验收结果及限制见 `施工顺序.md`。这些测试不是完整宿主、进程树监管或原始来源认证的证明。
+
+## 独立内存用法
+
+没有数据库，也没有存储替身。可以直接运行领域规则、校验离线记录或恢复一个隔离对象：
+
+```js
+import { Work } from 'wanxiangli/work'
+
+const work = new Work('local-work')
+const reply = work.execute('open', {
+  type: 'Open', root: '本地工作', sequence: ['S4'],
+  ownerId: 'manager', openingCursor: 0,
+})
+console.log(reply.status) // Applied，不是 Committed
+const restored = new Work('local-work', work.records())
+console.log(restored.inspect().active.id === work.inspect().active.id) // true
+```
+
+`records()` 返回可复制的序列化数据，`history()` 返回解码后的事务视图；两者都没有存储回调。`execute()` 只在新转移时返回一条 `record`，观察与重放返回 null。每条领域记录已包含完整转移，不是要求组合者逐条执行的脚本。
+
+## 持久组合用法
 
 下面在内存 SQLite 中完成一条 S4 工作，验证的是真实库，不涉及宿主执行能力。实际持久化时把 `:memory:` 换成调用者明确提供的数据库绝对路径；父目录须已存在。连接交由日志独占管理，`journal.close()` 会关闭该连接。
 
 ```js
-import { Work } from 'wanxiangli/work'
+import { DurableWork } from 'wanxiangli/durable-work'
 import { SqliteJournal } from 'wanxiangli/eventstore'
 import { DatabaseSync } from 'node:sqlite'
 
 const journal = new SqliteJournal(new DatabaseSync(':memory:'))
-const work = new Work('work-1', journal)
+const work = new DurableWork('work-1', journal)
 
 function commit(requestId, command) {
   const reply = work.execute(requestId, command)
@@ -80,7 +129,7 @@ try {
 }
 ```
 
-在 Bun 中只替换连接的构造；Work 和 SqliteJournal 仍是同一份包、同一份实现：
+在 Bun 中只替换连接的构造；三个对象仍是同一份包、同一份实现：
 
 ```js
 import { Database } from 'bun:sqlite'
@@ -89,7 +138,9 @@ import { SqliteJournal } from 'wanxiangli/eventstore'
 const journal = new SqliteJournal(new Database(':memory:'))
 ```
 
-完整命令及返回值在两个入口自带的 `.d.ts` 中；包验收会在干净消费者里运行 TypeScript 正反类型用例。命令名、字段名和结果名都是协议，不做语言翻译。本库不直接生成面向模型的提示词。
+完整命令及返回值在三个入口自带的 `.d.ts` 中；包验收会在干净消费者里运行 TypeScript 正反类型用例，包括拒绝向 Work 注入 Journal、拒绝把 Applied 当作 Committed。命令名、字段名和结果名都是协议，不做语言翻译。本库不直接生成面向模型的提示词。
+
+DurableWork 是新增持久承诺的组合，不是声称与内存版完全同约的透明 decorator。拆掉 C 和 SQLite 后，Work 仍完整兑现内存契约；持久保证不保留，也不能继续宣称存在。同一组领域测试分别验证基础版与组合版。暂时没有其他增强层，不为满足设计风格预建框架。
 
 ## 已承接的工作规则
 
@@ -99,11 +150,11 @@ Plan 的一次 deliver 接力到当前折叠阶段；末阶段晋级后才获得
 
 DevOps 绑定跨任期保留。Advance 要求已评审、旧权威值匹配、新值从未用过。Reopen 创建新的任期，清空评审与交付授权，不复活已退休的对象。物理 blocker 由调用方提供；测试失败、findings 非空或脏工作区本身不是 blocker。
 
-`inspect()` 给出 detached 视图，`history()` 给出已提交事务，`recover()` 给出从事实导出的下一项义务。`rounds` 是任期与阶段的结构化核对记录，不是完整 LWR 正文或用户原文轨迹。
+`inspect()` 给出分离视图，`recover()` 给出从记录导出的下一项义务。Work 的记录是内存中已应用的转移；DurableWork 的记录来自已提交历史，二者不混称。`rounds` 是任期与阶段的结构化核对记录，不是完整 LWR 正文或用户原文轨迹。
 
 ## 交付外部执行者
 
-持权 Plan 不在库内启动子会话。它先落盘 `DeliveryRequested`，首次提交成功才返回 `DispatchExecution`，携带稳定 `operationId`、草案摘要与路径。**只有 `status === 'Committed'` 且 `result.kind === 'DispatchExecution'` 时，外侧可以首次发起该操作。**
+持权 Plan 不在库内启动子会话。Work 产生领域事实 `DeliveryRequested`，携带稳定 operationId、草案摘要与路径；它不声称该事实已经持久。DurableWork 先把整笔记录提交到 Journal，再返回同一领域结果。**只有来自 DurableWork 的 `status === 'Committed'` 且 `result.kind === 'DeliveryRequested'` 时，更外层才可以首次发起该操作。Applied 不满足这个条件。**
 
 重放、恢复及丢回执之后只会得到 `ObserveExecution`，不能再派发。调用方将真实观察提交为 `ResolveDelivery`：
 
@@ -119,7 +170,7 @@ NotStarted 必须是执行侧对这个 operationId **已确定且不会再改变
 
 ## 失败与存储边界
 
-输入非法、错误任期、未知事件和损坏历史抛错，且不追加。`execute` 的提交结果分清：
+输入非法、错误任期、未知事件和损坏历史抛错，且不留下半次转移。Work 的结果为 Applied/Replayed/Observed；DurableWork 的提交结果分清：
 
 | status | 调用方应如何理解 |
 |---|---|
@@ -127,14 +178,16 @@ NotStarted 必须是执行侧对这个 operationId **已确定且不会再改变
 | Replayed / Observed | 返回已知结果或当前义务，不能当成新的外部执行许可 |
 | Conflict | 另一个请求先赢得修订号；本次零写，不自动重试 |
 | NotWritten | 已知没提交；没有外部执行许可 |
-| Unknown | 不能断言已写或没写；停止继续写，重开存储与 Work 后核对同一请求 |
+| Unknown | 不能断言已写或没写；封存组合，重开存储与 DurableWork 后核对同一请求 |
+
+未知提交期间只有 `recover()` 返回 ObserveCommit；`inspect/history/records/execute` 不再暴露可能被误用为许可的状态。同一 Work、Journal 或 DurableWork 的同步重入均拒绝，不限制其他对象运行。实例字段不泄漏，但外部仍须履行公开契约：如实提供物理观察，并把原生数据库连接独占交给 Journal。
 
 SQLite 使用 `BEGIN IMMEDIATE`、WAL、`synchronous=FULL` 和零等待竞争策略。整个事务体作为 UTF-8 BLOB 保存，包含 BOM、NUL、组合字符的字节可完整读回；非法 UTF-16 孤立代理项拒绝，不静默替换。单笔体积上限 1 MiB。读回检查修订连续性与摘要，普通 UPDATE/DELETE 被 schema 拒绝；没有自动修复。
 
-这是一份本地磁盘上的同步小型事实日志，不用于 token 流，不包含多机同步、远程合并、保留策略或磁盘断电证明。每次操作读取本工作的历史，复杂度随历史长度增长；目前不引入第二份业务缓存。需要高吞吐时先用真实负载测量，再决定工作线程或派生缓存。
+这是一份本地磁盘上的同步小型事实日志，不用于 token 流，不包含多机同步、远程合并、保留策略或磁盘断电证明。DurableWork 每次读取本工作的历史；Work 创建候选也重放已有记录，成本随历史长度增长。这里先保留最简完整实现，不建立持久快照或通用缓存。真实负载证明需要时，再各自加强，不改变参与者之间的依赖方向。
 
 ## 验收入口与迁移范围
 
-`npm test` 包含生命周期反例、真正的 SQLite 故障注入、双进程竞争、两处 SIGKILL、兄弟源码缺席时的独立构建与测试，以及实际 npm 包安装后的端到端场景。子模块规范及证明在各自 `AGENTS.md` 中。
+`npm test` 分别运行无存储替身的 Work 测试、真实 SQLite 的事务测试、DurableWork 组合与故障测试、同一领域契约的两种整体、拆除兄弟源码及组合者后的独立验证，以及 Node/Bun 实际安装包的强杀恢复。测试还覆盖先完成内存工作再存档、逐笔提交后发布两种真实合作方式，A、B 的内部实现不变。
 
-旧系统的接线与删除清单见 `MIGRATION.md`。本次不读取旧日志，不复制旧业务源码，也没有修改旧仓、执行 git commit 或发布 npm 包。完整抽吸还需要下一阶段授权后的旧仓消费与旧实现退出。
+0.1→0.2 的接口变化、旧系统的接线与删除边界见 `MIGRATION.md`。本轮只重写新仓第一刀，不修改旧仓、不发布 npm 包。完整抽吸仍需要下一阶段授权后的旧仓消费与旧实现退出。

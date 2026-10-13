@@ -1,15 +1,5 @@
 export type Sequence = readonly ['S1', 'S2', 'S3'] | readonly ['S4'];
 export type Stage = 'S1' | 'S2' | 'S3' | 'S4';
-export type AppendStatus = 'Committed' | 'Replayed' | 'Conflict' | 'NotWritten' | 'Unknown';
-export interface AppendResult {
-  status: AppendStatus;
-  revision: number;
-  reason: string | null;
-}
-export interface Journal {
-  read(stream: string): string[];
-  append(stream: string, expectedRevision: number, requestId: string, body: string): AppendResult;
-}
 export interface Draft { digest: string; path: string }
 export type Command =
   | { type: 'Open'; root: string; sequence: Sequence; ownerId: string; openingCursor: number }
@@ -28,13 +18,13 @@ export type Decision =
   | { kind: 'Advanced'; authority: string }
   | { kind: 'Blocked'; blockerDigest: string }
   | { kind: 'ReviewRequired' }
-  | { kind: 'DispatchExecution' | 'ObserveExecution'; operationId: string; digest: string; path: string }
+  | { kind: 'DeliveryRequested' | 'ObserveExecution'; operationId: string; digest: string; path: string }
   | { kind: 'ExecutionRejected'; operationId: string; reason: string }
   | { kind: 'Delivered'; retirementId: string; incumbencyId: string }
   | { kind: 'Relayed'; retirementId: string; incumbencyId: string; successorId: string; autoDispatch: boolean };
 export type ExecutionResult =
-  | { status: 'Committed' | 'Replayed' | 'Observed'; revision: number; result: Decision; reason: null }
-  | { status: 'Conflict' | 'NotWritten' | 'Unknown'; revision: number; result: null; reason: string | null };
+  | { status: 'Applied'; revision: number; result: Decision; record: string }
+  | { status: 'Replayed' | 'Observed'; revision: number; result: Decision; record: null };
 export interface Round {
   readonly incumbencyId: string;
   readonly ownerId: string;
@@ -69,18 +59,17 @@ export interface Snapshot {
   readonly pendingDelivery: null | { readonly kind: 'ObserveExecution'; readonly operationId: string; readonly digest: string; readonly path: string };
   readonly rounds: readonly Round[];
 }
-export type Recovery =
-  | { next: 'Open' | 'Review' | 'Confirm' | 'Continue' | 'ObserveExecution' | 'Done'; state: Snapshot }
-  | { next: 'ObserveCommit'; requestId: string; state: null };
+export type Recovery = { next: 'Open' | 'Review' | 'Confirm' | 'Continue' | 'ObserveExecution' | 'Done'; state: Snapshot };
 export interface Frame {
   readonly requestId: string;
   readonly requestHash: string;
   readonly events: readonly Readonly<Record<string, unknown>>[];
 }
-export class Work {
-  constructor(workId: string, journal: Journal);
+export interface Work {
   execute(requestId: string, command: Command): ExecutionResult;
   inspect(): Snapshot;
   history(): Frame[];
+  records(): string[];
   recover(): Recovery;
 }
+export const Work: { new(workId: string, records?: readonly string[]): Work };

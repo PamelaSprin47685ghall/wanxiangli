@@ -1,7 +1,12 @@
-namespace Wanxiangli.EventStore
+module Wanxiangli.EventStore.SqliteJournal
 
 open Fable.Core
 open Fable.Core.JsInterop
+
+type IJournal =
+    abstract read: stream: string -> string array
+    abstract append: stream: string * expectedRevision: float * requestId: string * body: string -> obj
+    abstract close: unit -> unit
 
 module private Native =
     [<ImportAll("node:crypto")>]
@@ -40,10 +45,15 @@ module private Native =
     let result (status: string) (revision: float) (reason: string): obj =
         createObj [ "status" ==> status; "revision" ==> revision; "reason" ==> reason ]
 
-[<AttachMembers>]
-type SqliteJournal(database: obj) =
+let SqliteJournal (database: obj): IJournal =
     do Native.require (Native.isDatabase database) "An explicit SQLite connection is required"
     let mutable closed = false
+    let mutable busy = false
+
+    let guard action =
+        Native.require (not busy) "Journal does not allow reentrant messages"
+        busy <- true
+        try action () finally busy <- false
 
     let ensureOpen () = Native.require (not closed) "Journal is closed; reopen after an unknown commit"
     let execute (sql: string): unit = database?exec(sql)
@@ -76,7 +86,7 @@ BEGIN SELECT RAISE(ABORT, 'Journal is append-only'); END;
             closed <- true
             raise error
 
-    member _.read(stream: string): string array =
+    let read (stream: string): string array =
         ensureOpen ()
         Native.require (Native.isKey (box stream)) "Stream must be valid text without NUL"
         let rows: obj array = (prepare "SELECT revision, body, checksum FROM journal_entries WHERE stream=? ORDER BY revision")?all(stream)
@@ -89,7 +99,7 @@ BEGIN SELECT RAISE(ABORT, 'Journal is append-only'); END;
             Native.require (Native.isText (box body) && Native.digest body = checksum) "Journal checksum mismatch"
             body)
 
-    member _.append(stream: string, expectedRevision: float, requestId: string, body: string): obj =
+    let append (stream: string, expectedRevision: float, requestId: string, body: string): obj =
         ensureOpen ()
         Native.require (Native.isKey (box stream) && Native.isKey (box requestId)) "Stream and requestId must be valid text without NUL"
         Native.require (Native.isRevision (box expectedRevision)) "Expected revision is invalid"
@@ -140,7 +150,12 @@ BEGIN SELECT RAISE(ABORT, 'Journal is append-only'); END;
                 Native.result "Unknown" expectedRevision error.Message
             else Native.result "NotWritten" expectedRevision error.Message
 
-    member _.close(): unit =
+    let close (): unit =
         if not closed then
             closeConnection ()
             closed <- true
+
+    { new IJournal with
+        member _.read(stream) = guard (fun () -> read stream)
+        member _.append(stream, expectedRevision, requestId, body) = guard (fun () -> append (stream, expectedRevision, requestId, body))
+        member _.close() = guard close }

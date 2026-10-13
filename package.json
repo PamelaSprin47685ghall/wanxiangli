@@ -1,18 +1,22 @@
 {
   "name": "wanxiangli",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "private": true,
-  "description": "Host-independent work lifecycle and durable journal, written in F#.",
+  "description": "Independent work, journal, process, trace and resource ownership libraries, written in F#.",
   "type": "module",
   "engines": { "node": ">=22.13.0" },
   "exports": {
     "./work": { "types": "./src/lifecycle/index.d.ts", "import": "./dist/lifecycle/Work.js" },
-    "./eventstore": { "types": "./src/eventstore/index.d.ts", "import": "./dist/eventstore/SqliteJournal.js" }
+    "./eventstore": { "types": "./src/eventstore/index.d.ts", "import": "./dist/eventstore/SqliteJournal.js" },
+    "./durable-work": { "types": "./src/assembly/index.d.ts", "import": "./dist/assembly/DurableWork.js" },
+    "./process": { "types": "./src/process/index.d.ts", "import": "./dist/process/ProcessSession.js" },
+    "./trace": { "types": "./src/trace/index.d.ts", "import": "./dist/trace/Trace.js" },
+    "./ownership": { "types": "./src/session/index.d.ts", "import": "./dist/session/Ownership.js" }
   },
-  "files": ["dist/", "src/lifecycle/index.d.ts", "src/eventstore/index.d.ts", "README.md", "MIGRATION.md", "THIRD_PARTY_NOTICES"],
+  "files": ["dist/", "src/lifecycle/index.d.ts", "src/eventstore/index.d.ts", "src/assembly/index.d.ts", "src/process/index.d.ts", "src/trace/index.d.ts", "src/session/index.d.ts", "README.md", "PROCESS.md", "TRACE.md", "OWNERSHIP.md", "MIGRATION.md", "THIRD_PARTY_NOTICES"],
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "npm run build && node --test src/lifecycle/tests/*.test.mjs src/eventstore/tests/*.test.mjs scripts/tests/*.test.mjs",
+    "test": "npm run build && node --test src/lifecycle/tests/*.test.mjs src/eventstore/tests/*.test.mjs src/assembly/tests/*.test.mjs src/process/tests/*.test.mjs src/trace/tests/*.test.mjs src/session/tests/*.test.mjs scripts/tests/*.test.mjs",
     "prepack": "npm run build"
   },
   "devDependencies": {

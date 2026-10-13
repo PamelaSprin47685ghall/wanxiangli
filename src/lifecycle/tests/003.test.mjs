@@ -9,9 +9,9 @@ test('SPEC[lifecycle-003] request identity binds canonical input and does not ap
   const replay = rig.call({ openingCursor: 0, ownerId: 'manager', sequence: rig.sequence, root: rig.openCommand.root, type: 'Open' }, 'open')
   assert.equal(replay.status, 'Replayed')
   assert.deepEqual(replay.result, first)
-  assert.equal(rig.journal.calls, 1)
+  assert.equal(rig.count, 1)
   assert.throws(() => rig.call({ ...rig.openCommand, root: 'other-root' }, 'open'), /RequestIdConflict/)
-  assert.equal(rig.journal.calls, 1)
+  assert.equal(rig.count, 1)
 })
 
 test('SPEC[lifecycle-003] self-review and a second distinct review are rejected without writes', () => {
@@ -19,13 +19,13 @@ test('SPEC[lifecycle-003] self-review and a second distinct review are rejected 
   const opened = rig.open()
   const review = { type: 'Review', incumbencyId: opened.incumbencyId, reviewerId: 'manager', findings: [] }
   assert.throws(() => rig.call(review), /own incumbency/)
-  assert.equal(rig.journal.calls, 1)
-  rig.commit({ ...review, reviewerId: 'reviewer' }, 'review')
+  assert.equal(rig.count, 1)
+  rig.apply({ ...review, reviewerId: 'reviewer' }, 'review')
   assert.throws(() => rig.call({ ...review, reviewerId: 'another-reviewer' }), /already reviewed/)
-  assert.equal(rig.journal.calls, 2)
+  assert.equal(rig.count, 2)
 })
 
-test('SPEC[lifecycle-003] findings are returned but are not copied into the durable review event', () => {
+test('SPEC[lifecycle-003] findings are returned but are not copied into the review event', () => {
   const rig = new Rig()
   rig.open()
   const findings = ['Private review detail.']
@@ -39,16 +39,16 @@ test('SPEC[lifecycle-003] stale retirement and confirmation replays do not act o
   rig.open()
   rig.review(['Not done.'])
   const confirmation = rig.delivery({ toolCallId: 'first-call' })
-  rig.commit(confirmation, 'confirm')
+  rig.apply(confirmation, 'confirm')
   const retirement = rig.delivery({ toolCallId: 'last-call' })
-  const retired = rig.commit(retirement, 'retire')
+  const retired = rig.apply(retirement, 'retire')
   const successor = rig.work.inspect().active.id
-  const writes = rig.journal.calls
+  const writes = rig.count
   assert.equal(rig.call(confirmation, 'confirm').result.kind, 'Confirmed')
   assert.equal(rig.call(retirement, 'different-request-same-fence').result.retirementId, retired.retirementId)
   assert.equal(rig.work.inspect().active.id, successor)
   assert.equal(rig.work.inspect().active.confirmed, false)
-  assert.equal(rig.journal.calls, writes)
+  assert.equal(rig.count, writes)
 })
 
 test('SPEC[lifecycle-003] snapshots and histories are detached views', () => {
@@ -67,7 +67,7 @@ for (const value of [-1, 0.5, Infinity, NaN, '0', null, Number.MAX_SAFE_INTEGER 
   test(`SPEC[lifecycle-003] invalid cursor ${String(value)} causes zero appends`, () => {
     const rig = new Rig()
     assert.throws(() => rig.open({ openingCursor: value }))
-    assert.equal(rig.journal.calls, 0)
+    assert.equal(rig.count, 0)
   })
 }
 
@@ -76,18 +76,18 @@ test('SPEC[lifecycle-003] unknown fields, sequence and commands do not become ne
   assert.throws(() => rig.open({ sequence: ['S1'] }), /Sequence/)
   assert.throws(() => rig.open({ snapshotId: 'forbidden' }), /Unknown field/)
   assert.throws(() => rig.call({ type: 'suicide' }), /Unknown work command/)
-  assert.equal(rig.journal.calls, 0)
+  assert.equal(rig.count, 0)
   rig.open()
   assert.throws(() => rig.call({ type: 'Review', incumbencyId: 'another-tenure', reviewerId: 'reviewer', findings: [] }), /mismatch/)
   assert.throws(() => rig.deliver({ nextOwnerId: '' }), /empty/)
-  assert.equal(rig.journal.calls, 1)
+  assert.equal(rig.count, 1)
 })
 
 test('SPEC[lifecycle-003] identifiers cannot be changed by a native UTF-8 binding', () => {
   const rig = new Rig()
   for (const value of ['key\u0000suffix', '\ud800']) {
-    assert.throws(() => new Work(value, rig.journal), /valid text/)
+    assert.throws(() => new Work(value), /valid text/)
     assert.throws(() => rig.open({ ownerId: value }), /valid text/)
   }
-  assert.equal(rig.journal.calls, 0)
+  assert.equal(rig.count, 0)
 })

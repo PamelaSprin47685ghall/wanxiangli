@@ -8,9 +8,9 @@ export interface SqliteConnection {
   prepare(sql: string): unknown;
   close(): unknown;
 }
-export class SqliteJournal {
-  constructor(connection: SqliteConnection);
+export interface SqliteJournal {
   read(stream: string): string[];
   append(stream: string, expectedRevision: number, requestId: string, body: string): AppendResult;
   close(): void;
 }
+export const SqliteJournal: { new(connection: SqliteConnection): SqliteJournal };

@@ -6,7 +6,7 @@ import { Rig } from './support.mjs'
 test('SPEC[lifecycle-001] opening is one transaction with one first incumbent', () => {
   const rig = new Rig()
   const opened = rig.open({ openingCursor: 41 })
-  assert.equal(rig.journal.calls, 1)
+  assert.equal(rig.count, 1)
   const history = rig.work.history()
   assert.equal(history.length, 1)
   assert.deepEqual(history[0].events.map(event => event.type), ['WorkOpened', 'IncumbencyOpened'])
@@ -36,23 +36,23 @@ test('SPEC[lifecycle-001] relay atomically retires the old incumbent and opens i
   assert.equal(rig.work.inspect().active.reviewOutcome, null)
 })
 
-test('SPEC[lifecycle-001] independent objects recover identical facts without writing', () => {
+test('SPEC[lifecycle-001] an independent object restores data without any service', () => {
   const rig = new Rig()
   rig.open()
   rig.review()
   rig.deliver()
-  const writes = rig.journal.calls
-  const restored = new Work('work-a', rig.journal)
+  const records = rig.work.records()
+  const restored = new Work('work-a', records)
   assert.deepEqual(restored.inspect(), rig.work.inspect())
   assert.deepEqual(restored.history(), rig.work.history())
   assert.equal(restored.recover().next, 'Review')
-  assert.equal(rig.journal.calls, writes)
+  assert.deepEqual(rig.work.records(), records)
 })
 
 test('SPEC[lifecycle-001] separate work streams never share ownership or state', () => {
   const rig = new Rig()
   rig.open()
-  const other = new Work('work-b', rig.journal)
+  const other = new Work('work-b')
   other.execute('open', { ...rig.openCommand, ownerId: 'another-manager' })
   assert.notEqual(other.inspect().active.id, rig.work.inspect().active.id)
   assert.equal(other.inspect().active.ownerId, 'another-manager')
@@ -64,5 +64,5 @@ test('SPEC[lifecycle-001] an unopened work can be inspected but cannot be review
   assert.equal(rig.work.recover().next, 'Open')
   assert.equal(rig.work.inspect().active, null)
   assert.throws(() => rig.call({ type: 'Review', incumbencyId: 'absent', reviewerId: 'reviewer', findings: [] }), /No active/)
-  assert.equal(rig.journal.calls, 0)
+  assert.equal(rig.count, 0)
 })

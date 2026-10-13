@@ -7,7 +7,7 @@ test('SPEC[lifecycle-006] DevOps binding is stable across relay and cannot be re
   rig.open()
   const bind = { type: 'BindDevOps', incumbencyId: rig.work.inspect().active.id, trigger: 'Ask', devopsId: 'devops', target: '/target' }
   assert.throws(() => rig.call({ ...bind, trigger: 'Resume' }), /trigger/)
-  rig.commit(bind)
+  rig.apply(bind)
   assert.equal(rig.work.inspect().canDispatchDevOps, false)
   rig.review()
   assert.equal(rig.work.inspect().canDispatchDevOps, true)
@@ -24,7 +24,7 @@ test('SPEC[lifecycle-006] S4 binds on Resume or Horizon, not Ask', () => {
   rig.open()
   const bind = { type: 'BindDevOps', incumbencyId: rig.work.inspect().active.id, trigger: 'Ask', devopsId: 'devops', target: null }
   assert.throws(() => rig.call(bind), /trigger/)
-  rig.commit({ ...bind, trigger: 'Horizon' })
+  rig.apply({ ...bind, trigger: 'Horizon' })
   assert.equal(rig.work.inspect().devopsId, 'devops')
 })
 
@@ -35,7 +35,7 @@ test('SPEC[lifecycle-006] authority advance requires review, exact previous valu
   assert.throws(() => rig.call(command), /advance/)
   rig.review()
   assert.throws(() => rig.call({ ...command, expected: 'wrong' }), /advance/)
-  rig.commit(command)
+  rig.apply(command)
   assert.equal(rig.work.inspect().authority, 'next-authority')
   assert.throws(() => rig.call({ ...command, expected: 'next-authority', next: command.expected }), /advance/)
   assert.throws(() => rig.call({ ...command, expected: 'next-authority' }), /advance/)
@@ -45,11 +45,11 @@ test('SPEC[lifecycle-006] reopening creates a new reviewed-by-nobody incumbency,
   const rig = new Rig()
   const { operationId } = rig.reserve()
   const oldId = rig.work.inspect().active.id
-  const retired = rig.commit(rig.accepted(operationId))
+  const retired = rig.apply(rig.accepted(operationId))
   const closing = rig.work.history().at(-1).events[0].retirementCursor
   const reopen = { type: 'Reopen', retirementId: retired.retirementId, ownerId: 'new-manager', openingCursor: closing + 1, blockers: [] }
   assert.throws(() => rig.call({ ...reopen, blockers: ['old-provider-is-live'] }), /block/)
-  rig.commit(reopen)
+  rig.apply(reopen)
   const state = rig.work.inspect()
   assert.notEqual(state.active.id, oldId)
   assert.equal(state.active.ownerId, 'new-manager')
@@ -76,8 +76,8 @@ test('SPEC[lifecycle-006] all state-changing work commands stop behind a pending
   const rig = new Rig()
   rig.reserve()
   const state = rig.work.inspect()
-  const count = rig.journal.calls
+  const count = rig.count
   assert.throws(() => rig.call({ type: 'Advance', incumbencyId: state.active.id, expected: state.authority, next: 'next' }), /pending/)
   assert.throws(() => rig.call({ type: 'BindDevOps', incumbencyId: state.active.id, trigger: 'Ask', devopsId: 'devops', target: null }), /pending/)
-  assert.equal(rig.journal.calls, count)
+  assert.equal(rig.count, count)
 })

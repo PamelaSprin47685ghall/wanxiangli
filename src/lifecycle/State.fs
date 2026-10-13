@@ -359,7 +359,7 @@ type internal WorkState(workId: string) =
             rememberFence delivery.Fence observed false
             operations.Add(delivery.Id, observed)
             pending <- Some delivery
-            Vocabulary.result "DispatchExecution" [ "operationId", box delivery.Id; "digest", box delivery.Draft.Digest; "path", box delivery.Draft.Path ]
+            Vocabulary.result "DeliveryRequested" [ "operationId", box delivery.Id; "digest", box delivery.Draft.Digest; "path", box delivery.Draft.Path ]
         | [ Fact.DeliveryRejected(operation, reason) ] ->
             let delivery = pending |> Option.defaultWith (fun () -> fail "No pending delivery")
             require (delivery.Id = operation) "Delivery operation mismatch"

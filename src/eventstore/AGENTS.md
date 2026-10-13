@@ -29,6 +29,8 @@
    - 证明：`tests/002.test.mjs` 主动篡改、删掉中间修订、非法输入；`001` 核对含 BOM、NUL、组合字符的 UTF-8 BLOB 字节。
 4. [LEMMA 4] 同一 npm 产物接受 Node DatabaseSync 与 Bun Database，两者运行相同的工作交付、外部效果、强杀和恢复场景。
    - 证明：`scripts/tests/package.test.mjs` 的 node / bun 实际消费者。当前实测 Node 25.9.0、Bun 1.3.14；不能据此声称完整宿主支持。
+5. [LEMMA 1, 4; 根 LEMMA 3] 连接与活动标记留在对象闭包中；同一 Journal 的同步重入拒绝，不能在提交过程中读取候选行或关闭连接。
+   - 证明：`tests/004.test.mjs` 已验证生成物无内部字段、原生 COMMIT 回调中的 read/append/close 均被拒绝；正常提交和下一次操作仍成立。
 
 ## 边界
 
