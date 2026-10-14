@@ -8,7 +8,7 @@ export interface Journal {
 
 export type DurableResult =
   | { status: 'Committed' | 'Replayed' | 'Observed'; revision: number; result: Decision; reason: null }
-  | { status: 'Conflict' | 'NotWritten' | 'Unknown'; revision: number; result: null; reason: string | null };
+  | { status: 'Conflict' | 'NotWritten' | 'Unknown'; revision: number; result: null; reason: string | null; ok?: false };
 
 export type DurableRecovery = Recovery | { next: 'ObserveCommit'; requestId: string; state: null };
 

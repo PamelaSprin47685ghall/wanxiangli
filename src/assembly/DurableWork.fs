@@ -70,44 +70,62 @@ let DurableWork (workId: string) (journal: Journal): WorkMessages =
     let execute (requestId: string, input: obj): obj =
         guard (fun () ->
             let candidate = load ()
-            let proposal = candidate.execute(requestId, input)
-            let status: string = proposal?status
-            let revision: float = proposal?revision
-            let result: obj = proposal?result
-            if status <> "Applied" then
-                Protocol.response status revision result (null: obj)
-            else
-                // Work 已验证输入；组合者保留自己的消息副本供竞争后的重放使用。
-                let command = Protocol.copy input
-                let body: string = proposal?record
-                let expected = revision - 1.
-                let unknown (reason: obj) =
-                    unknownRequest <- Some requestId
-                    Protocol.response "Unknown" expected (null: obj) reason
+            let refused =
                 try
-                    let acknowledgement = journal.append(workId, expected, requestId, body)
-                    Protocol.require (Protocol.isAcknowledgement acknowledgement) "Invalid journal acknowledgement"
-                    let outcome: string = acknowledgement?status
-                    let committedRevision: float = acknowledgement?revision
-                    let reason: obj = acknowledgement?reason
-                    match outcome with
-                    | "Committed" ->
-                        Protocol.require (committedRevision = revision) "Unexpected commit revision"
-                        Protocol.response "Committed" revision result (null: obj)
-                    | "Replayed" ->
-                        let records = journal.read workId
-                        Protocol.require (committedRevision >= 1. && committedRevision <= float records.Length) "Replay revision is absent"
-                        Protocol.require (records[int committedRevision - 1] = body) "Replay record differs"
-                        let replay = (Protocol.create workId records).execute(requestId, command)
-                        let replayStatus: string = replay?status
-                        Protocol.require (replayStatus = "Replayed") "Replay receipt is absent"
-                        let replayRevision: float = replay?revision
-                        let replayResult: obj = replay?result
-                        Protocol.response "Replayed" replayRevision replayResult (null: obj)
-                    | "Conflict" | "NotWritten" -> Protocol.response outcome expected (null: obj) reason
-                    | "Unknown" -> unknown reason
-                    | _ -> unknown (box "Unknown journal acknowledgement")
-                with error -> unknown (box error.Message))
+                    Choice1Of2(candidate.execute(requestId, input))
+                with error ->
+                    if error.Message = "Work is already open or identity differs"
+                       || error.Message = "RequestIdConflict"
+                       || error.Message = "An owner cannot review its own incumbency" then
+                        Choice2Of2 error.Message
+                    else
+                        raise error
+            match refused with
+            | Choice2Of2 reason ->
+                createObj [
+                    "status" ==> "NotWritten"
+                    "revision" ==> float (candidate.records().Length)
+                    "result" ==> (null: obj)
+                    "reason" ==> reason
+                    "ok" ==> false ]
+            | Choice1Of2 proposal ->
+                let status: string = proposal?status
+                let revision: float = proposal?revision
+                let result: obj = proposal?result
+                if status <> "Applied" then
+                    Protocol.response status revision result (null: obj)
+                else
+                    // Work 已验证输入；组合者保留自己的消息副本供竞争后的重放使用。
+                    let command = Protocol.copy input
+                    let body: string = proposal?record
+                    let expected = revision - 1.
+                    let unknown (reason: obj) =
+                        unknownRequest <- Some requestId
+                        Protocol.response "Unknown" expected (null: obj) reason
+                    try
+                        let acknowledgement = journal.append(workId, expected, requestId, body)
+                        Protocol.require (Protocol.isAcknowledgement acknowledgement) "Invalid journal acknowledgement"
+                        let outcome: string = acknowledgement?status
+                        let committedRevision: float = acknowledgement?revision
+                        let reason: obj = acknowledgement?reason
+                        match outcome with
+                        | "Committed" ->
+                            Protocol.require (committedRevision = revision) "Unexpected commit revision"
+                            Protocol.response "Committed" revision result (null: obj)
+                        | "Replayed" ->
+                            let records = journal.read workId
+                            Protocol.require (committedRevision >= 1. && committedRevision <= float records.Length) "Replay revision is absent"
+                            Protocol.require (records[int committedRevision - 1] = body) "Replay record differs"
+                            let replay = (Protocol.create workId records).execute(requestId, command)
+                            let replayStatus: string = replay?status
+                            Protocol.require (replayStatus = "Replayed") "Replay receipt is absent"
+                            let replayRevision: float = replay?revision
+                            let replayResult: obj = replay?result
+                            Protocol.response "Replayed" replayRevision replayResult (null: obj)
+                        | "Conflict" | "NotWritten" -> Protocol.response outcome expected (null: obj) reason
+                        | "Unknown" -> unknown reason
+                        | _ -> unknown (box "Unknown journal acknowledgement")
+                    with error -> unknown (box error.Message))
 
     { new WorkMessages with
         member _.inspect() = inspect ()
