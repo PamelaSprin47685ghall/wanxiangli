@@ -28,13 +28,13 @@ function commit(requestId, command) {
   return reply.result
 }
 
-function dispatch(reply) {
+function dispatch(reply, execSessionId) {
   if (reply.status !== 'Committed' || reply.result.kind !== 'DeliveryRequested') return
   const effect = spawnSync(process.execPath, ['--input-type=module', '-e', `
     import { appendFileSync } from 'node:fs'
-    const [file, operationId, digest, path] = process.argv.slice(1)
-    appendFileSync(file, JSON.stringify({ operationId, digest, path, execSessionId: String(process.pid) }) + '\\n')
-  `, effectFile, reply.result.operationId, reply.result.digest, reply.result.path], { encoding: 'utf8' })
+    const [file, operationId, digest, path, execSessionId] = process.argv.slice(1)
+    appendFileSync(file, JSON.stringify({ operationId, digest, path, execSessionId }) + '\\n')
+  `, effectFile, reply.result.operationId, reply.result.digest, reply.result.path, execSessionId], { encoding: 'utf8' })
   assert.ifError(effect.error)
   assert.equal(effect.status, 0, effect.stderr)
 }
@@ -47,7 +47,10 @@ if (mode === 'start') {
   }
   const command = { type: 'Deliver', incumbencyId: work.inspect().active.id, providerRunId: 'run', toolCallId: 'delivery-call', cursor: 100, blockers: [], draft: { digest: 'approved-digest', path: '/approved-plan' } }
   const reply = work.execute('reserve', command)
-  dispatch(reply)
+  assert.equal(reply.status, 'Committed')
+  const execSessionId = 'external-session-1'
+  commit('bind-session', { type: 'ResolveDelivery', operationId: reply.result.operationId, outcome: 'SessionCreated', execSessionId })
+  dispatch(reply, execSessionId)
   assert.equal(readFileSync(effectFile, 'utf8').trim().split('\n').length, 1)
   console.log(JSON.stringify({ phase: 'effect-completed', operationId: reply.result.operationId }))
   // 故意不结算、不关闭数据库，由父测试在真实外部效果之后强杀。
@@ -58,8 +61,9 @@ if (mode === 'start') {
   const reserved = work.history().find(frame => frame.requestId === 'reserve').events[0]
   const command = { type: 'Deliver', incumbencyId: reserved.incumbencyId, providerRunId: 'run', toolCallId: 'delivery-call', cursor: 100, blockers: [], draft: { digest: 'approved-digest', path: '/approved-plan' } }
   const replay = work.execute('reserve', command)
-  assert.equal(replay.result.kind, 'ObserveExecution')
-  dispatch(replay)
+  assert.equal(replay.result.kind, 'ExecutionSessionBound')
+  assert.equal(replay.result.execSessionId, 'external-session-1')
+  dispatch(replay, replay.result.execSessionId)
   const effects = readFileSync(effectFile, 'utf8').trim().split('\n').map(JSON.parse)
   assert.equal(effects.length, 1)
   assert.equal(effects[0].operationId, reserved.operationId)

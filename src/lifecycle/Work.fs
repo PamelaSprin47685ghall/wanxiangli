@@ -107,6 +107,7 @@ module private Commands =
             let extra =
                 match outcome with
                 | "Accepted" -> [ "execSessionId"; "digest"; "path"; "blockers" ]
+                | "SessionCreated" -> [ "execSessionId" ]
                 | "NotStarted" -> [ "reason" ]
                 | "Unknown" -> []
                 | _ -> fail "Unknown execution observation"
@@ -115,6 +116,7 @@ module private Commands =
             let accepted =
                 if outcome = "Accepted" then Some(id "execSessionId", Vocabulary.draft command, blockers ())
                 else None
+            let createdSession = if outcome = "SessionCreated" then Some(id "execSessionId") else None
             match state.TryCompleted operation with
             | Some retired ->
                 require (outcome <> "NotStarted") "Observation conflicts with an accepted execution"
@@ -122,20 +124,33 @@ module private Commands =
                 | Some(session, draft, _) ->
                     require (retired.Session = Some session && retired.Draft = Some draft) "Execution receipt mismatch"
                 | None -> ()
+                match createdSession with
+                | Some session -> require (retired.Session = Some session) "Execution session mismatch"
+                | None -> ()
                 Observe(state.TryOperation operation |> Option.get)
             | None ->
                 match state.TryOperation operation with
                 | Some previous when (state.Pending |> Option.map (fun delivery -> delivery.Id)) <> Some operation ->
-                    require (outcome <> "Accepted") "Observation conflicts with a rejected execution"
-                    if outcome = "NotStarted" then require (read "reason" = (get previous "reason" |> text)) "Execution rejection conflict"
-                    Observe previous
+                    match outcome with
+                    | "Unknown" -> Observe previous
+                    | "NotStarted" ->
+                        require (read "reason" = (get previous "reason" |> text)) "Execution rejection conflict"
+                        Observe previous
+                    | _ -> fail "Observation conflicts with a rejected execution"
                 | _ ->
                     let delivery = state.Pending |> Option.defaultWith (fun () -> fail "No pending delivery")
                     require (delivery.Id = operation) "Delivery operation mismatch"
-                    match outcome, accepted with
-                    | "Unknown", _ -> Observe(state.TryOperation operation |> Option.get)
-                    | "NotStarted", _ -> Write [ Fact.DeliveryRejected(delivery.Id, read "reason") ]
-                    | _, Some(session, draft, reasons) ->
+                    match outcome, accepted, createdSession with
+                    | "Unknown", _, _ -> Observe(state.TryOperation operation |> Option.get)
+                    | "NotStarted", _, _ -> Write [ Fact.DeliveryRejected(delivery.Id, read "reason") ]
+                    | "SessionCreated", _, Some session ->
+                        match state.PendingSession with
+                        | Some existing ->
+                            require (existing = session) "Execution session mismatch"
+                            Observe(state.TryOperation operation |> Option.get)
+                        | None -> Write [ Fact.DeliverySessionBound(delivery.Id, session) ]
+                    | _, Some(session, draft, reasons), _ ->
+                        require (state.PendingSession = Some session) "Execution session is not durably bound"
                         require (draft = delivery.Draft) "Execution receipt draft mismatch"
                         if not (Array.isEmpty reasons) then blocked delivery.Tenure reasons
                         else

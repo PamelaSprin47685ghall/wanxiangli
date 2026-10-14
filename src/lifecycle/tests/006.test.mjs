@@ -44,6 +44,7 @@ test('SPEC[lifecycle-006] authority advance requires review, exact previous valu
 test('SPEC[lifecycle-006] reopening creates a new reviewed-by-nobody incumbency, not a resurrected owner', () => {
   const rig = new Rig()
   const { operationId } = rig.reserve()
+  rig.bindSession(operationId)
   const oldId = rig.work.inspect().active.id
   const retired = rig.apply(rig.accepted(operationId))
   const closing = rig.work.history().at(-1).events[0].retirementCursor

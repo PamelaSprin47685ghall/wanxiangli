@@ -33,6 +33,7 @@ type internal Fact =
     | Reopened of retirementId: string
     | RetirementBlocked of tenure: string * digest: string
     | DeliveryRequested of Delivery
+    | DeliverySessionBound of operationId: string * sessionId: string
     | DeliveryRejected of operationId: string * reason: string
 
 module internal Vocabulary =
@@ -101,6 +102,8 @@ module internal FactCodec =
             make "DeliveryRequested"
                 ([ "operationId", box delivery.Id; "incumbencyId", box delivery.Tenure
                    "retirementCursor", box delivery.Cursor; "digest", box delivery.Draft.Digest; "path", box delivery.Draft.Path ] @ fenceFields delivery.Fence)
+        | Fact.DeliverySessionBound(operation, session) ->
+            make "DeliverySessionBound" [ "operationId", box operation; "execSessionId", box session ]
         | Fact.DeliveryRejected(operation, reason) -> make "DeliveryRejected" [ "operationId", box operation; "reason", box reason ]
 
     let decode (value: obj) =
@@ -147,6 +150,9 @@ module internal FactCodec =
         | "DeliveryRequested" ->
             exact [ "operationId"; "incumbencyId"; "providerRunId"; "toolCallId"; "retirementCursor"; "digest"; "path" ]
             Fact.DeliveryRequested { Id = id "operationId"; Tenure = id "incumbencyId"; Fence = Vocabulary.fence value; Cursor = cursor (get value "retirementCursor"); Draft = Vocabulary.draft value }
+        | "DeliverySessionBound" ->
+            exact [ "operationId"; "execSessionId" ]
+            Fact.DeliverySessionBound(id "operationId", id "execSessionId")
         | "DeliveryRejected" -> exact [ "operationId"; "reason" ]; Fact.DeliveryRejected(id "operationId", read "reason")
         | _ -> fail "Unknown lifecycle event"
 
@@ -170,6 +176,7 @@ type internal WorkState(workId: string) =
     let mutable active: Tenure option = None
     let mutable devops: (string * string option) option = None
     let mutable pending: Delivery option = None
+    let mutable pendingSession: string option = None
     let mutable lastRetirement: Retirement option = None
     let mutable lastCursor = 0.
     let advances = HashSet<string>()
@@ -185,9 +192,16 @@ type internal WorkState(workId: string) =
         require (tenure.Id = id) "Incumbency mismatch"
         tenure
 
-    let noDelivery () = require pending.IsNone "Delivery is pending; observe the existing operation"
+    let noDelivery () =
+        require (pending.IsNone && pendingSession.IsNone) "Delivery is pending; observe the existing operation"
+
     let observeDelivery (delivery: Delivery) =
-        Vocabulary.result "ObserveExecution" [ "operationId", box delivery.Id; "digest", box delivery.Draft.Digest; "path", box delivery.Draft.Path ]
+        Vocabulary.result
+            "ObserveExecution"
+            [ "operationId", box delivery.Id
+              "digest", box delivery.Draft.Digest
+              "path", box delivery.Draft.Path
+              "execSessionId", nullable pendingSession ]
 
     let rememberFence (fence: Fence) result replace =
         require (replace || not (fences.ContainsKey fence.Call)) "Tool call already belongs to another transition"
@@ -206,7 +220,14 @@ type internal WorkState(workId: string) =
             if retired.Delivered then
                 require authorized "Plan is not authorized for delivery"
                 let delivery = pending |> Option.defaultWith (fun () -> fail "Delivery was not reserved")
-                require (retired.Operation = Some delivery.Id && retired.Fence = delivery.Fence && retired.Draft = Some delivery.Draft && retired.Cursor = Some delivery.Cursor && retired.Session.IsSome) "Execution receipt mismatch"
+                require
+                    (retired.Operation = Some delivery.Id
+                     && retired.Fence = delivery.Fence
+                     && retired.Draft = Some delivery.Draft
+                     && retired.Cursor = Some delivery.Cursor
+                     && retired.Session = pendingSession
+                     && pendingSession.IsSome)
+                    "Execution receipt mismatch"
             else
                 noDelivery ()
                 require (not authorized) "Authorized plan must deliver through an execution receipt"
@@ -233,6 +254,7 @@ type internal WorkState(workId: string) =
               "outcome", box (Vocabulary.ending retired.Delivered); "retirementId", box retired.Id ])
         active <- None
         pending <- None
+        pendingSession <- None
         lastRetirement <- Some retired
         result
 
@@ -243,6 +265,7 @@ type internal WorkState(workId: string) =
     member _.Authorized = authorized
     member _.Active = active
     member _.Pending = pending
+    member _.PendingSession = pendingSession
     member _.DevOps = devops
     member _.LastRetirement = lastRetirement
     member _.Revision = receipts.Count
@@ -359,7 +382,22 @@ type internal WorkState(workId: string) =
             rememberFence delivery.Fence observed false
             operations.Add(delivery.Id, observed)
             pending <- Some delivery
+            pendingSession <- None
             Vocabulary.result "DeliveryRequested" [ "operationId", box delivery.Id; "digest", box delivery.Draft.Digest; "path", box delivery.Draft.Path ]
+        | [ Fact.DeliverySessionBound(operation, session) ] ->
+            let delivery = pending |> Option.defaultWith (fun () -> fail "No pending delivery")
+            require (delivery.Id = operation) "Delivery operation mismatch"
+            require pendingSession.IsNone "Execution session is already bound"
+            pendingSession <- Some session
+            let result =
+                Vocabulary.result
+                    "ExecutionSessionBound"
+                    [ "operationId", box operation
+                      "execSessionId", box session
+                      "digest", box delivery.Draft.Digest
+                      "path", box delivery.Draft.Path ]
+            operations[operation] <- result
+            result
         | [ Fact.DeliveryRejected(operation, reason) ] ->
             let delivery = pending |> Option.defaultWith (fun () -> fail "No pending delivery")
             require (delivery.Id = operation) "Delivery operation mismatch"
@@ -367,6 +405,7 @@ type internal WorkState(workId: string) =
             operations[operation] <- result
             fences[delivery.Fence.Call] <- delivery.Fence.Run, result
             pending <- None
+            pendingSession <- None
             result
         | _ -> fail "Invalid lifecycle transaction; atomic event pair is incomplete or vocabulary is invalid"
 

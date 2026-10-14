@@ -10,6 +10,7 @@ test('SPEC[lifecycle-005] a new reservation is a domain fact, not a durable disp
   assert.equal(reply.result.kind, 'DeliveryRequested')
   const state = rig.work.inspect()
   assert.equal(state.pendingDelivery.operationId, operationId)
+  assert.equal(state.pendingDelivery.execSessionId, null)
   assert.equal(state.canWriteSource, false)
   assert.ok(state.active)
   assert.equal(rig.work.history().at(-1).events[0].type, 'DeliveryRequested')
@@ -31,13 +32,34 @@ test('SPEC[lifecycle-005] an unknown execution remains pending and produces no n
   assert.throws(() => rig.deliver({ draft: { digest: 'another', path: '/new' } }), /pending/)
 })
 
+test('SPEC[lifecycle-005] the physical session identity is committed before prompt acceptance and survives recovery', () => {
+  const rig = new Rig()
+  const { command, operationId } = rig.reserve()
+  const bound = rig.bindSession(operationId, 'execution-session-42')
+  assert.equal(bound.kind, 'ExecutionSessionBound')
+  assert.equal(bound.execSessionId, 'execution-session-42')
+  assert.equal(rig.work.inspect().pendingDelivery.execSessionId, 'execution-session-42')
+  const restored = new Work('work-a', rig.work.records())
+  assert.equal(restored.recover().next, 'ObserveExecution')
+  assert.equal(restored.inspect().pendingDelivery.execSessionId, 'execution-session-42')
+  assert.equal(restored.execute('reserve', command).result.execSessionId, 'execution-session-42')
+  assert.throws(
+    () => rig.call({ type: 'ResolveDelivery', operationId, outcome: 'SessionCreated', execSessionId: 'other-session' }),
+    /session mismatch/i,
+  )
+})
+
 test('SPEC[lifecycle-005] an accepted receipt must identify the reserved operation and draft', () => {
   const rig = new Rig()
   const { operationId } = rig.reserve()
   const count = rig.count
   assert.throws(() => rig.call(rig.accepted('different-operation')), /mismatch/)
+  assert.throws(() => rig.call(rig.accepted(operationId)), /durably bound/)
+  const bound = rig.bindSession(operationId)
+  assert.equal(bound.kind, 'ExecutionSessionBound')
+  assert.equal(rig.work.inspect().pendingDelivery.execSessionId, 'execution-session')
   assert.throws(() => rig.call(rig.accepted(operationId, { digest: 'changed' })), /mismatch/)
-  assert.equal(rig.count, count)
+  assert.equal(rig.count, count + 1)
   const delivered = rig.apply(rig.accepted(operationId), 'accepted')
   assert.equal(delivered.kind, 'Delivered')
   assert.equal(rig.work.inspect().active, null)
@@ -49,6 +71,7 @@ test('SPEC[lifecycle-005] an accepted receipt must identify the reserved operati
 test('SPEC[lifecycle-005] pending execution does not bypass live-resource retirement blockers', () => {
   const rig = new Rig()
   const { operationId } = rig.reserve()
+  rig.bindSession(operationId)
   assert.equal(rig.apply(rig.accepted(operationId, { blockers: ['live-owned-process'] })).kind, 'Blocked')
   assert.equal(rig.work.inspect().pendingDelivery.operationId, operationId)
   assert.ok(rig.work.inspect().active)
@@ -70,6 +93,7 @@ test('SPEC[lifecycle-005] a known not-started result unlocks only an explicit ne
 test('SPEC[lifecycle-005] a late accepted receipt is idempotent and cannot settle a later delivery', () => {
   const rig = new Rig()
   const { operationId } = rig.reserve()
+  rig.bindSession(operationId)
   const retired = rig.apply(rig.accepted(operationId))
   const cursor = rig.work.history().at(-1).events[0].retirementCursor
   rig.apply({ type: 'Reopen', retirementId: retired.retirementId, ownerId: 'manager', openingCursor: cursor + 1, blockers: [] })

@@ -97,7 +97,7 @@ SQLite schema、领域记录的字段与身份算法没有因这次拆分而改�
 
 实例装配必须统一工作 ID、持久目录和命令请求身份。调用前携带当前任期；宿主回调重入使用相同 requestId 与相同输入，不能给每次重试发一个新 ID。reviewerId 与 ownerId 来源由宿主如实绑定，不能传两个任意名字绕过自评检查。`canWriteSource` 等投影只有被真实工具门禁采用，才成为实际防护。
 
-交付时把 operationId 贯穿真实启动和查询。只有 DurableWork 首次 Committed 的 DeliveryRequested 可以调用启动；内存 Applied、回执未知、重启、重复回调都不另发启动。NotStarted 必须能阻止迟到的原启动请求，暂时未查到不是拒绝。宿主不能提供这种身份贯穿时，接线阶段应失败，不能降级成无条件重试。
+交付时把 operationId 贯穿真实启动和查询。只有 DurableWork 首次 Committed 的 DeliveryRequested 可以创建真实执行 session；拿到 execSessionId 后，先提交 ResolveDelivery(SessionCreated) 并确认 DeliverySessionBound，再发送首 prompt。这样创建后崩溃仍能恢复精确 session。内存 Applied、回执未知、重启、重复回调都不另发创建。NotStarted 必须能阻止迟到的原启动请求，暂时未查到不是拒绝。宿主不能提供这种 operationId→execSessionId 身份贯穿时，接线阶段应失败，不能降级成无条件重试。
 
 运行相关 work、planning、relay 需求回归，并补真实宿主场景：重复回调不重复执行、后任不吃前任回执、接力保持 DevOps、丢启动回执后恢复只查询。当前新包测试不能替代这些测试。
 

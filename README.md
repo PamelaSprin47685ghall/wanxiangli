@@ -156,15 +156,18 @@ DevOps 绑定跨任期保留。Advance 要求已评审、旧权威值匹配、�
 
 持权 Plan 不在库内启动子会话。Work 产生领域事实 `DeliveryRequested`，携带稳定 operationId、草案摘要与路径；它不声称该事实已经持久。DurableWork 先把整笔记录提交到 Journal，再返回同一领域结果。**只有来自 DurableWork 的 `status === 'Committed'` 且 `result.kind === 'DeliveryRequested'` 时，更外层才可以首次发起该操作。Applied 不满足这个条件。**
 
-重放、恢复及丢回执之后只会得到 `ObserveExecution`，不能再派发。调用方将真实观察提交为 `ResolveDelivery`：
+外层创建执行 session 后，必须在发送首 prompt **之前**把 `{ operationId, execSessionId }` 作为 `ResolveDelivery(SessionCreated)` 提交成功；这产生 `DeliverySessionBound`。因此重放、恢复及丢回执后的 `ObserveExecution` 会携带已经绑定的 `execSessionId`，而不是要求调用方重新猜测或再创建一个 session。
+
+调用方随后将真实观察继续提交为 `ResolveDelivery`：
 
 | 观察 | 结果 |
 |---|---|
-| Accepted：同一 operationId、执行者身份、摘要、路径，且无 blocker | 退休为 Delivered |
+| SessionCreated：同一 operationId 与真实 execSessionId | 绑定容器身份；仍保持 pending，不等于启动成功 |
+| Accepted：同一 operationId、已绑定执行者身份、摘要、路径，且无 blocker | 退休为 Delivered |
 | Unknown | 保持 pending，不追加成功、不重发 |
 | NotStarted | 记录拒绝，允许使用新请求身份显式开新尝试 |
 
-NotStarted 必须是执行侧对这个 operationId **已确定且不会再改变的拒绝**；暂时查不到会话、超时或丢失回执都不算。调用方必须防止已拒绝的操作稍后又被启动。不能把本库的逻辑单任唯一性当成物理进程互斥锁。
+Accepted 在 SessionCreated 持久绑定之前会被拒绝。NotStarted 必须是执行侧对这个 operationId **已确定且不会再改变的拒绝**；暂时查不到会话、超时或丢失回执都不算。调用方必须防止已拒绝的操作稍后又被启动。不能把本库的逻辑单任唯一性当成物理进程互斥锁。
 
 外部完成之后、回执提交之前崩溃的真实场景在包验收中覆盖：安装 tarball 的消费者启动一个真正的子进程，子进程写入效果文件，父进程被 SIGKILL；新进程只查询原操作并结算，效果计数仍为一。同一场景在 Node 和 Bun 下运行；环境没有 Bun 时会明确诊断未验证该运行时。该证明不是 omp/OpenCode 子会话能力证明。
 

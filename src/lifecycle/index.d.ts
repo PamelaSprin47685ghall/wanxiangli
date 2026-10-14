@@ -8,6 +8,7 @@ export type Command =
   | { type: 'Advance'; incumbencyId: string; expected: string; next: string }
   | { type: 'Reopen'; retirementId: string; ownerId: string; openingCursor: number; blockers: readonly string[] }
   | { type: 'Deliver'; incumbencyId: string; providerRunId: string; toolCallId: string; cursor: number; blockers: readonly string[]; nextOwnerId?: string; draft?: Draft }
+  | { type: 'ResolveDelivery'; operationId: string; outcome: 'SessionCreated'; execSessionId: string }
   | { type: 'ResolveDelivery'; operationId: string; outcome: 'Accepted'; execSessionId: string; digest: string; path: string; blockers: readonly string[] }
   | { type: 'ResolveDelivery'; operationId: string; outcome: 'NotStarted'; reason: string }
   | { type: 'ResolveDelivery'; operationId: string; outcome: 'Unknown' };
@@ -18,7 +19,9 @@ export type Decision =
   | { kind: 'Advanced'; authority: string }
   | { kind: 'Blocked'; blockerDigest: string }
   | { kind: 'ReviewRequired' }
-  | { kind: 'DeliveryRequested' | 'ObserveExecution'; operationId: string; digest: string; path: string }
+  | { kind: 'DeliveryRequested'; operationId: string; digest: string; path: string }
+  | { kind: 'ObserveExecution'; operationId: string; digest: string; path: string; execSessionId: string | null }
+  | { kind: 'ExecutionSessionBound'; operationId: string; execSessionId: string; digest: string; path: string }
   | { kind: 'ExecutionRejected'; operationId: string; reason: string }
   | { kind: 'Delivered'; retirementId: string; incumbencyId: string }
   | { kind: 'Relayed'; retirementId: string; incumbencyId: string; successorId: string; autoDispatch: boolean };
@@ -56,7 +59,7 @@ export interface Snapshot {
   readonly devopsId: string | null;
   readonly canWriteSource: boolean;
   readonly canDispatchDevOps: boolean;
-  readonly pendingDelivery: null | { readonly kind: 'ObserveExecution'; readonly operationId: string; readonly digest: string; readonly path: string };
+  readonly pendingDelivery: null | { readonly kind: 'ObserveExecution'; readonly operationId: string; readonly digest: string; readonly path: string; readonly execSessionId: string | null };
   readonly rounds: readonly Round[];
 }
 export type Recovery = { next: 'Open' | 'Review' | 'Confirm' | 'Continue' | 'ObserveExecution' | 'Done'; state: Snapshot };

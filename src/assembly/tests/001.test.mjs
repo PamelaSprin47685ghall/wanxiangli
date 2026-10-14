@@ -59,6 +59,9 @@ test('SPEC[assembly-001] only a fresh durable reservation can be used by an exte
   assert.equal(again.status, 'Replayed')
   assert.equal(again.result.kind, 'ObserveExecution')
   assert.equal(again.result.operationId, operationId)
+  const bound = { type: 'ResolveDelivery', operationId, outcome: 'SessionCreated', execSessionId: 'real-observed-session' }
+  assert.equal(rig.commit(bound, 'bind-session').kind, 'ExecutionSessionBound')
+  assert.equal(rig.reopen().execute('reserve', command).result.execSessionId, 'real-observed-session')
   const accepted = { type: 'ResolveDelivery', operationId, outcome: 'Accepted', execSessionId: 'real-observed-session', digest: 'draft', path: '/plan', blockers: [] }
   assert.equal(rig.commit(accepted, 'accepted').kind, 'Delivered')
   assert.equal(rig.work.execute('accepted', accepted).status, 'Replayed')

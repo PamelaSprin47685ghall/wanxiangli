@@ -57,5 +57,8 @@ export class Rig {
   accepted(operationId, overrides = {}) {
     return { type: 'ResolveDelivery', operationId, outcome: 'Accepted', execSessionId: 'execution-session', digest: 'draft-digest', path: '/plans/approved.md', blockers: [], ...overrides }
   }
+  bindSession(operationId, execSessionId = 'execution-session') {
+    return this.apply({ type: 'ResolveDelivery', operationId, outcome: 'SessionCreated', execSessionId }, 'bind-session')
+  }
   eventTypes() { return this.work.history().flatMap(frame => frame.events.map(event => event.type)) }
 }
