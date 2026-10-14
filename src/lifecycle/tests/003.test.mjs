@@ -10,7 +10,9 @@ test('SPEC[lifecycle-003] request identity binds canonical input and does not ap
   assert.equal(replay.status, 'Replayed')
   assert.deepEqual(replay.result, first)
   assert.equal(rig.count, 1)
-  assert.throws(() => rig.call({ ...rig.openCommand, root: 'other-root' }, 'open'), /RequestIdConflict/)
+  const conflict = rig.call({ ...rig.openCommand, root: 'other-root' }, 'open')
+  assert.equal(conflict.status, 'Conflict')
+  assert.equal(conflict.record, 'RequestIdConflict')
   assert.equal(rig.count, 1)
 })
 

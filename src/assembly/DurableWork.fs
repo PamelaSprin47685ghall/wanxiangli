@@ -75,7 +75,9 @@ let DurableWork (workId: string) (journal: Journal): WorkMessages =
             let revision: float = proposal?revision
             let result: obj = proposal?result
             if status <> "Applied" then
-                Protocol.response status revision result (null: obj)
+                // Work 的非 Applied 结果把拒绝原因放在 record 位；转交为宿主可见的 reason。
+                let reason: obj = proposal?record
+                Protocol.response status revision result reason
             else
                 // Work 已验证输入；组合者保留自己的消息副本供竞争后的重放使用。
                 let command = Protocol.copy input

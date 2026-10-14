@@ -12,7 +12,7 @@ type IWork =
     abstract recover: unit -> obj
     abstract execute: requestId: string * command: obj -> obj
 
-type private Decision = Write of Fact list | Observe of obj
+type private Decision = Write of Fact list | Observe of obj | Refuse of string
 
 module private Commands =
     let private retire (workId: string) (state: WorkState) (tenure: string) (fence: Fence) delivered retirementCursor operation session draft =
@@ -30,10 +30,16 @@ module private Commands =
         match read "type" with
         | "Open" ->
             exact [ "root"; "sequence"; "ownerId"; "openingCursor" ] []
-            let sequence = Vocabulary.readSequence (get command "sequence")
-            let firstStage = if sequence = WorkSequence.Plan then 0 else 3
-            Write [ Fact.WorkOpened(workId, read "root", sequence, identity "authority-initial-v1" [ workId ])
-                    Fact.IncumbencyOpened(workId, identity "first-incumbency-v1" [ workId ], id "ownerId", firstStage, cursor (get command "openingCursor")) ]
+            // A second open on an existing work is a foreseeable refusal, not a
+            // fold failure: leave the durable state untouched and return a typed
+            // Conflict instead of writing a fact the fold must reject.
+            if state.Opened then
+                Refuse "Work is already open"
+            else
+                let sequence = Vocabulary.readSequence (get command "sequence")
+                let firstStage = if sequence = WorkSequence.Plan then 0 else 3
+                Write [ Fact.WorkOpened(workId, read "root", sequence, identity "authority-initial-v1" [ workId ])
+                        Fact.IncumbencyOpened(workId, identity "first-incumbency-v1" [ workId ], id "ownerId", firstStage, cursor (get command "openingCursor")) ]
         | "Review" ->
             exact [ "incumbencyId"; "reviewerId"; "findings" ] []
             let findings = strings (get command "findings")
@@ -196,10 +202,14 @@ let Work (workId: string) (records: string array option): IWork =
             let hash = sha256 encoded
             match state.TryReceipt requestId with
             | Some receipt ->
-                require (receipt.Hash = hash) "RequestIdConflict"
-                response "Replayed" state.Revision (addFindings command (state.Replay receipt)) (null: obj)
+                if receipt.Hash = hash then
+                    response "Replayed" state.Revision (addFindings command (state.Replay receipt)) (null: obj)
+                else
+                    // 同一 requestId 的异载荷是可预见的冲突：返回结构化结果，不写、不抛。
+                    response "Conflict" state.Revision (null: obj) (box "RequestIdConflict")
             | None ->
                 match Commands.decide workId requestId state command with
+                | Refuse reason -> response "Conflict" state.Revision (null: obj) (box reason)
                 | Observe result -> response "Observed" state.Revision (addFindings command result) (null: obj)
                 | Write facts ->
                     // 事务在私有候选上完成；任何验证失败都不改变当前个体。
