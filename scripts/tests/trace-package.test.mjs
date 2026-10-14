@@ -7,6 +7,7 @@ import { createInterface } from 'node:readline'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { packedPackage } from './package-metadata.mjs'
 
 const root = fileURLToPath(new URL('../..', import.meta.url))
 const { NODE_PATH, NODE_OPTIONS, ...env } = process.env
@@ -19,7 +20,7 @@ const succeed = result => {
 test('SPEC[build-005] installed trace preserves bytes after SIGKILL and also works with all other libraries removed', { timeout: 90000, skip: process.platform === 'win32' }, async t => {
   const directory = mkdtempSync(path.join(tmpdir(), 'wanxiangli-trace-package-'))
   t.after(() => rmSync(directory, { recursive: true, force: true }))
-  const packed = JSON.parse(succeed(spawnSync('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', directory], { cwd: root, env, encoding: 'utf8', timeout: 30000 })))[0]
+  const packed = packedPackage(succeed(spawnSync('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', directory], { cwd: root, env, encoding: 'utf8', timeout: 30000 })))
   assert.ok(packed.files.some(file => file.path === 'dist/trace/Trace.js'))
   for (const file of packed.files) assert.doesNotMatch(file.path, /\.fs(?:proj|i)?$|^scripts\/|^node_modules\//)
   const consumer = path.join(directory, 'consumer')

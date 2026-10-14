@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { packedPackage } from './package-metadata.mjs'
 
 const root = fileURLToPath(new URL('../..', import.meta.url))
 const { NODE_PATH, NODE_OPTIONS, ...env } = process.env
@@ -17,7 +18,7 @@ const succeed = result => {
 test('SPEC[build-004] the installed second cut runs after removing every first-cut artifact', { timeout: 90000, skip: process.platform !== 'linux' }, async t => {
   const directory = mkdtempSync(path.join(tmpdir(), 'wanxiangli-process-package-'))
   t.after(() => rmSync(directory, { recursive: true, force: true }))
-  const packed = JSON.parse(succeed(spawnSync('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', directory], { cwd: root, env, encoding: 'utf8', timeout: 30000 })))[0]
+  const packed = packedPackage(succeed(spawnSync('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', directory], { cwd: root, env, encoding: 'utf8', timeout: 30000 })))
   assert.ok(packed.files.some(file => file.path === 'dist/process/ProcessSession.js'))
   assert.ok(packed.files.some(file => file.path === 'src/process/index.d.ts'))
   const consumer = path.join(directory, 'consumer')

@@ -50,12 +50,12 @@ Trace 的 cut 与 Work/ProcessSession 的游标不是同一种值，不能混用
    wanxiangli/work (A)     wanxiangli/eventstore (B)
 ```
 
-C 组织持久协作：读取 B，向 A 提供数据和命令，把 A 的完整记录提交给 B，然后按真实回执回答。A 不认识 B 的服务，B 不认识 A 的业务。第一刀包含三个 ESM，当前 0.5.0 包还包含后三刀的独立入口；C 使用 A 的公开导入，不把它内联成私有副本。禁止 `npm link`、导入新仓的 `src/`、引用旧系统 dist、从旧仓动态解析依赖，或把整个旧 Context 传进来。
+C 组织持久协作：读取 B，向 A 提供数据和命令，把 A 的完整记录提交给 B，然后按真实回执回答。A 不认识 B 的服务，B 不认识 A 的业务。第一刀包含三个 ESM，当前 0.5.1 包还包含后三刀的独立入口；C 使用 A 的公开导入，不把它内联成私有副本。禁止 `npm link`、导入新仓的 `src/`、引用旧系统 dist、从旧仓动态解析依赖，或把整个旧 Context 传进来。
 
 验收通过并获得旧仓修改授权后，才在旧仓执行安装。包由新仓 `npm pack` 产生；把确定版本的 tarball 加入旧仓 npm dependency。包没有发布到 registry，本轮没有替旧仓运行下面的命令：
 
 ```sh
-npm install ../wanxiangli/wanxiangli-0.5.0.tgz
+npm install ../wanxiangli/wanxiangli-0.5.1.tgz
 ```
 
 Node 路径要求 >=22.13；旧包原先的 Node >=20 声明不够。Bun 1.3.14 实测没有 `node:sqlite`，因此在组装处使用 `new SqliteJournal(new Database(path))`，其中 Database 来自 `bun:sqlite`；Node 则传 `node:sqlite` 的 DatabaseSync。新库不直接导入任何一个驱动。

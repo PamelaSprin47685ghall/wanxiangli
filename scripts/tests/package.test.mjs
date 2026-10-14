@@ -7,6 +7,7 @@ import { createInterface } from 'node:readline'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { packedPackage } from './package-metadata.mjs'
 
 const root = fileURLToPath(new URL('../..', import.meta.url))
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm'
@@ -21,7 +22,7 @@ function succeed(result) {
 test('SPEC[build-002] an installed tarball survives a real effect and process death without dispatching twice', { timeout: 90000, skip: process.platform === 'win32' }, async t => {
   const temporary = mkdtempSync(path.join(tmpdir(), 'wanxiangli-package-'))
   t.after(() => rmSync(temporary, { recursive: true, force: true }))
-  const packed = JSON.parse(succeed(spawnSync(npm, ['pack', '--ignore-scripts', '--json', '--pack-destination', temporary], { cwd: root, env: cleanEnvironment, encoding: 'utf8', timeout: 30000 })))[0]
+  const packed = packedPackage(succeed(spawnSync(npm, ['pack', '--ignore-scripts', '--json', '--pack-destination', temporary], { cwd: root, env: cleanEnvironment, encoding: 'utf8', timeout: 30000 })))
   assert.ok(packed.files.some(file => file.path === 'dist/lifecycle/Work.js'))
   assert.ok(packed.files.some(file => file.path === 'dist/eventstore/SqliteJournal.js'))
   assert.ok(packed.files.some(file => file.path === 'dist/assembly/DurableWork.js'))
