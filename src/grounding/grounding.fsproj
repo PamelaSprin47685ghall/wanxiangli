@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Wire.fs" />
+    <Compile Include="Catalog.fs" />
+    <Compile Include="Grounding.fs" />
+  </ItemGroup>
+</Project>

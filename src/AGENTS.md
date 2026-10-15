@@ -91,4 +91,4 @@
 - 旧系统里这些包不再建：`journal`（并入 `events` 与 `eventstore`）、多副本收敛（并入 `eventstore`）、`participant`（并入 `identity` 与 `capability`）、行为诊断与规则书、`guidance`、`knowledge`、`strength`、`sphinx`、`repository-*`。它们大多只守可撤销的动作，或只为旧宿主服务。出现真实义务或第二个真实使用方时再建。
 - 旧系统的用户可见行为由各子模块在自己的 `AGENTS.md` 里承接；本文只承接到"一次委托驱动多轮无人值守工作且逐轮可复核"这条验收。
 - 施工顺序见仓库根 `施工顺序.md`。本次已由使用者改为大粒度渐进抽取，不再把 omp canary 作为独立内核的前置条件。
-- 除 lifecycle、eventstore、assembly、process、trace、session 外均为未实现候选；其中旧的“注入即独立”“只接线无协作责任”等表述不是实现依据。实际开工时依据根规则重判，不因草稿存在而扩大工作包。Trace 的最后助手散文不代表完整 LWR；Ownership 的资源归属不代表实际宿主会话管理已经完成。
+- 除 lifecycle、eventstore、assembly、process、trace、session 外均为未实现候选；events 已有 0.6.0 的源码实现与契约测试（`src/events/tests/`），运行与安装验证待 DevOps 执行，验证通过前不与已实现六库混写。其中旧的“注入即独立”“只接线无协作责任”等表述不是实现依据。实际开工时依据根规则重判，不因草稿存在而扩大工作包。Trace 的最后助手散文不代表完整 LWR；Ownership 的资源归属不代表实际宿主会话管理已经完成。

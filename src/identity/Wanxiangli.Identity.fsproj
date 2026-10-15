@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Wanxiangli.Identity</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Wire.fs" />
+    <Compile Include="Roles.fs" />
+    <Compile Include="PersonaCatalog.fs" />
+    <Compile Include="ParticipantIdentity.fs" />
+    <Compile Include="PromptOrigin.fs" />
+    <Compile Include="ExecutionBinding.fs" />
+    <Compile Include="Identity.fs" />
+  </ItemGroup>
+</Project>

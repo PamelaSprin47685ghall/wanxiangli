@@ -1,6 +1,6 @@
 # resources
 
-层：内核。不得 import 任何宿主 SDK。
+层：内核。不得 import 任何宿主 SDK。npm 入口 `wanxiangli/resources`，公开对象 `Resources`。
 
 # AXIOM
 
@@ -18,16 +18,28 @@
 3. [本模块 AXIOM 1] 路径以包自身的绝对位置上溯解析，不依赖当前工作目录，不探测候选路径。
     - 推理：依赖工作目录，同一份包在不同地方跑就会读不到资源。
 
+4. [本模块 LEMMA 1] 语言是封闭代数 `English | SimplifiedChinese`；跨界以外部名 `English` / `SimplifiedChinese` 或规范标签 `en` / `zh-CN` 表达。偏好阶梯为显式环境 → 宿主配置 → 环境探测 → English；显式非法即拒绝，不静默降级。
+    - 推理：任意字符串作为语言事实会把拼写漂移变成行为漂移；未指定偏好与非法输入是两种不同的未知。
+
 # SPEC
 
 1. [本模块 LEMMA 1] 同一模板的各语言版本占位符集合相同；缺填值或残留占位符报错。
-    - 证明：[TODO] 机械检查。
+    - 证明：[TODO] `tests/002.test.mjs` 已落盘（反例：集合不一致、缺填值），待 DevOps 运行。
 
 2. [本模块 LEMMA 3] 资源根由模块自身位置确定；不回落读源码目录或产物目录内的副本。
-    - 证明：[TODO]
+    - 证明：[TODO] `tests/004.test.mjs` 已落盘（任意 cwd 与缺失即抛），待 DevOps 运行。
 
-# TODO
+3. [本模块 LEMMA 1] 缺一侧时 `requireLanguagePair` 与 `readText` 对两种语言都失败，不回退。
+    - 证明：[TODO] `tests/001.test.mjs` 已落盘（两个方向的单语残缺反例），待 DevOps 运行。
 
-- 目录布局与命名约定待定（沿用旧系统 `resources/` 的相对路径风格，还是另定）。
-- 语言选择的阶梯（环境变量、宿主配置、探测、默认）待定。
-- 旧系统的 `resources/provider/**` 334 个语义目录、`resources/enforcer/**` 120 个规则目录：本次不搬；新写的资源按新结构落。
+4. [本模块 LEMMA 2, 4] 解析、阶梯与全局偏好切换不绑定会话；协议字面量替换后逐字符保留。
+    - 证明：[TODO] `tests/005.test.mjs` 已落盘，待 DevOps 运行。
+
+5. [总规则 SPEC 1] 单模块独立编译：`npm run build -- resources` 不编译其他子模块。
+    - 证明：构建脚本按 fsproj 逐模块编译；[TODO] 待 DevOps 运行确认。
+
+# 边界
+
+- 主仓 `resources/**` 的 334 个 provider 语义目录与 120 个 enforcer 规则目录仍归主仓各语义 owner；本库只拥有定位、成对、占位符与语言解析原语。
+- 包内样例资源 `resources/provider/library/resource-pair` 只用于自证包内定位与成对规则；`files` 白名单是否纳入 `resources/` 由 CUT-33 串行裁决。
+- 语义路径校验拒绝绝对路径、盘符与 `..` 段；“禁止带后缀名”未机械强制（现无带后缀消费者），留待真实反例出现再收紧。

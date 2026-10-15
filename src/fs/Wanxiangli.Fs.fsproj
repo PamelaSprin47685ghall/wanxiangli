@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Native.fs" />
+    <Compile Include="GlobMatch.fs" />
+    <Compile Include="Anchor.fs" />
+    <Compile Include="Transaction.fs" />
+    <Compile Include="Utf8Fs.fs" />
+    <Compile Include="GlobFs.fs" />
+    <Compile Include="AnchorFs.fs" />
+    <Compile Include="MutationFs.fs" />
+    <Compile Include="Filesystem.fs" />
+  </ItemGroup>
+</Project>

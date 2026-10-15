@@ -1,6 +1,6 @@
 {
   "name": "wanxiangli",
-  "version": "0.5.2",
+  "version": "0.7.0",
   "private": true,
   "description": "Independent work, journal, process, trace and resource ownership libraries, written in F#.",
   "type": "module",
@@ -11,12 +11,17 @@
     "./durable-work": { "types": "./src/assembly/index.d.ts", "import": "./dist/assembly/DurableWork.js" },
     "./process": { "types": "./src/process/index.d.ts", "import": "./dist/process/ProcessSession.js" },
     "./trace": { "types": "./src/trace/index.d.ts", "import": "./dist/trace/Trace.js" },
-    "./ownership": { "types": "./src/session/index.d.ts", "import": "./dist/session/Ownership.js" }
+    "./ownership": { "types": "./src/session/index.d.ts", "import": "./dist/session/Ownership.js" },
+    "./identity": { "types": "./src/identity/index.d.ts", "import": "./dist/identity/Identity.js" },
+    "./events": { "types": "./src/events/index.d.ts", "import": "./dist/events/CanonicalEventCodec.js" },
+    "./resources": { "types": "./src/resources/index.d.ts", "import": "./dist/resources/Resources.js" },
+    "./fs": { "types": "./src/fs/index.d.ts", "import": "./dist/fs/Filesystem.js" },
+    "./grounding": { "types": "./src/grounding/index.d.ts", "import": "./dist/grounding/Grounding.js" }
   },
-  "files": ["dist/", "src/lifecycle/index.d.ts", "src/eventstore/index.d.ts", "src/assembly/index.d.ts", "src/process/index.d.ts", "src/trace/index.d.ts", "src/session/index.d.ts", "README.md", "PROCESS.md", "TRACE.md", "OWNERSHIP.md", "MIGRATION.md", "THIRD_PARTY_NOTICES"],
+  "files": ["dist/", "resources/", "src/lifecycle/index.d.ts", "src/eventstore/index.d.ts", "src/assembly/index.d.ts", "src/process/index.d.ts", "src/trace/index.d.ts", "src/session/index.d.ts", "src/identity/index.d.ts", "src/events/index.d.ts", "src/resources/index.d.ts", "src/fs/index.d.ts", "src/grounding/index.d.ts", "README.md", "PROCESS.md", "TRACE.md", "OWNERSHIP.md", "MIGRATION.md", "THIRD_PARTY_NOTICES"],
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "npm run build && node --test src/lifecycle/tests/*.test.mjs src/eventstore/tests/*.test.mjs src/assembly/tests/*.test.mjs src/process/tests/*.test.mjs src/trace/tests/*.test.mjs src/session/tests/*.test.mjs scripts/tests/*.test.mjs",
+    "test": "npm run build && node --test src/lifecycle/tests/*.test.mjs src/eventstore/tests/*.test.mjs src/assembly/tests/*.test.mjs src/process/tests/*.test.mjs src/trace/tests/*.test.mjs src/session/tests/*.test.mjs src/resources/tests/*.test.mjs src/identity/tests/*.test.mjs src/events/tests/*.test.mjs src/fs/tests/*.test.mjs src/grounding/tests/*.test.mjs scripts/tests/*.test.mjs",
     "prepack": "npm run build"
   },
   "devDependencies": {
