@@ -12,6 +12,8 @@
 2. [AXIOM 2] 交付验收使用实际 tarball，不用 workspace link、NODE_PATH 或源码回退。
    - 推理：链接会掩盖遗漏文件和反向依赖。
 
+此条约束独立发行验收，不禁止宿主在开发期通过 submodule 和 `file:wanxiangli` 消费源码依赖。任何打包所得 `.tgz` 都只能是临时构建产物，永远不得进入 Git。开发接线的通过不能代替发行包验收。
+
 ## SPEC
 1. [LEMMA 1] `npm run build -- lifecycle`、`eventstore`、`assembly`、`process`、`trace`、`session` 可分别运行；不允许源码跨工程编译。assembly 的运行依赖由公开入口及类型声明表达，不靠 ProjectReference 或私有 dist 路径。process、trace、session 不依赖其他职责或 SQLite。
    - 证明：`tests/build.test.mjs` 在只有该模块源码的临时目录中，实际编译并跑其全部测试；另用非法工程证明跨源引用被拒、真实编译错误不覆盖旧产物。
@@ -25,3 +27,5 @@
    - 证明：`tests/trace-package.test.mjs` 实际安装包、TypeScript 正反用例、Node/Bun 保持 SQLite 连接打开时强杀及重启；随后删除前两刀产物，Trace 单独捕获和恢复仍通过。`tests/build.test.mjs` 的隔离构建与产物保留检查覆盖第三刀；不改变现有构建脚本。
 6. [LEMMA 1, 2] 第四刀在前三刀缺席时保持独立，组合层另证明持久预留、物理收尾与 Work 退休的先后关系。
    - 证明：`tests/ownership-package.test.mjs` 在实际 tarball 上运行 Node/Bun 的物理进程阻塞退休、协调进程 SIGKILL 恢复，随后删除前三刀产物与类型做单独消费和 TypeScript 正反用例。`tests/ownership-composition.test.mjs` 覆盖真实提交竞争；构建脚本没有新增专用流程。
+7. [根 AXIOM 2, 3] Git 只保存源码、规则与构建描述，不保存 `.tgz` 包。旧的 tarball 例外撤销。
+   - 证明：[TODO] `tests/repository.test.mjs` 检查实际 Git 索引；本轮只写入测试，未执行。

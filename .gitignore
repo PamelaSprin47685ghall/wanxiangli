@@ -2,7 +2,7 @@ node_modules/
 dist/
 .build/
 *.tgz
-!wanxiangli-0.5.1.tgz
+.Herdchestra/
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
