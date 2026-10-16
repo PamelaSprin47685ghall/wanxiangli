@@ -93,6 +93,10 @@ module private Commands =
                     Write [ Fact.DeliveryRequested
                                 { Id = identity "delivery-operation-v1" [ workId; tenureId; state.Authority; requestId ]
                                   Tenure = tenureId; Fence = fence; Cursor = observedCursor; Draft = selected } ]
+                elif state.Sequence = WorkSequence.Plan
+                     && tenure.Review.IsNone
+                     && state.LastRoundWasUnreviewedRelay then
+                    Observe(Vocabulary.result "ReviewRequired" [])
                 else
                     let delivered = state.Sequence = WorkSequence.Execution && tenure.Review.Value.Promoted
                     let retirementCursor = if state.Sequence = WorkSequence.Plan then Some observedCursor else None

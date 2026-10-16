@@ -27,8 +27,8 @@
 ## SPEC
 1. [LEMMA 1] Open 一笔写入 WorkOpened 与 IncumbencyOpened；Relayed 一笔写入 IncumbencyRetired 与 IncumbencyOpened；中断不能暴露半对。
    - 证明：`tests/001.test.mjs` 核对原子事件对、游标与恢复无写入；eventstore 的强杀测试验证物理事务边界。
-2. [LEMMA 2] Plan 一次 deliver 接力；S4 必须先评审、第一次只确认、另一个 toolCallId 才退休。S4 Promoted 交付、Stayed 接力；Plan 在末阶段晋级才允许执行交付。
-   - 证明：`tests/002.test.mjs` 完整推进两种序列、留级分支、未评审门禁与同一次确认重放。
+2. [LEMMA 2] Plan 一次 deliver 接力；S4 必须先评审、第一次只确认、另一个 toolCallId 才退休。S4 Promoted 交付、Stayed 接力；Plan 在末阶段晋级才允许执行交付。接力不得成为 no-op：本任未评审且上一笔退休也无评审时，Plan 的再次 deliver 返回 ReviewRequired、零写、本任不退休——单笔无评审接力仍允许，背靠背连跳禁止。
+   - 证明：`tests/002.test.mjs` 完整推进两种序列、留级分支、未评审门禁、同一次确认重放，以及背靠背无评审接力拒绝与评审后恢复。
 3. [LEMMA 2, 3] 自评、第二次异请求评审、错误任期、未知字段/词表、非法游标与非法后继均零追加。相同请求相同输入返回原结果，异输入拒绝。
    - 证明：`tests/003.test.mjs` 的自评、第二评、异请求、非法游标、未知字段、身份编码与旧回执反例。
 4. [LEMMA 3, 5] 不接收服务；非法消息与损坏历史整份拒绝，不修复、不跳过；输入、输出、恢复视图与构造历史都不泄漏别名。同步重入拒绝。

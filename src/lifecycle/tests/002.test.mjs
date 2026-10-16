@@ -29,6 +29,27 @@ test('SPEC[lifecycle-002] an unreviewed Plan can relay but cannot write source',
   assert.equal(rig.work.inspect().stage, 'S1')
 })
 
+test('SPEC[lifecycle-002] a second consecutive unreviewed Plan relay is refused without writes', () => {
+  const rig = new Rig()
+  rig.open()
+  rig.review(['S1 facts are not complete.'])
+  assert.equal(rig.deliver().kind, 'Relayed')
+  // The first unreviewed successor relay is allowed: the prior retirement was reviewed.
+  assert.equal(rig.deliver().kind, 'Relayed')
+  // The second consecutive unreviewed relay is the no-op chain. Refused, zero append, tenure stays.
+  const successor = rig.work.inspect().active.id
+  const writes = rig.count
+  assert.equal(rig.call(rig.delivery()).result.kind, 'ReviewRequired')
+  assert.equal(rig.count, writes)
+  assert.equal(rig.work.inspect().active.id, successor)
+  // A review opens the handoff again at the same stage; the chain length resets.
+  rig.review(['Still incomplete.'])
+  assert.equal(rig.deliver().kind, 'Relayed')
+  const next = rig.work.inspect().active.id
+  assert.notEqual(next, successor)
+  assert.equal(rig.work.inspect().stage, 'S1')
+})
+
 test('SPEC[lifecycle-002] S4 requires review and two different delivery calls', () => {
   const rig = new Rig(['S4'])
   rig.open()

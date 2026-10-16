@@ -272,6 +272,16 @@ type internal WorkState(workId: string) =
     member _.RequireTenure id = requireTenure id
     member _.NoDelivery() = noDelivery ()
 
+    /// The last committed retirement, if any: an unreviewed Plan relay that
+    /// opened the current tenure. Two consecutive unreviewed relays is the
+    /// no-op handoff chain the kernel must refuse.
+    member _.LastRoundWasUnreviewedRelay =
+        match rounds.Count with
+        | 0 -> false
+        | count ->
+            let last = rounds[count - 1]
+            isNull (get last "reviewOutcome") && text (get last "outcome") = "Relayed"
+
     member _.TryReceipt id =
         match receipts.TryGetValue id with true, receipt -> Some receipt | _ -> None
 
