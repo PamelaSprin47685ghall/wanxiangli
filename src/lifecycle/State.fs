@@ -371,7 +371,14 @@ type internal WorkState(workId: string) =
             Vocabulary.result "Advanced" [ "authority", box next ]
         | [ Fact.Reopened(retirementId); Fact.IncumbencyOpened(id, tenureId, owner, openingStage, openingCursor) ] ->
             noDelivery ()
-            require (sequence = WorkSequence.Plan && active.IsNone && id = workId) "Only an inactive delivered plan can reopen"
+            // The hand-off shape is shared: work-037 owns the Plan reprompt reopen,
+            // change-integration-005/013 drive the same pair for a delivered
+            // execution (S4) work whose candidate lost to a machine conflict. The
+            // kernel guards only the shape — no open tenure, exactly the delivered
+            // retirement of this work, the fixed identity, the same stage, a
+            // cursor that does not regress. Which occasion may trigger it is the
+            // caller's contract, not a second durable fact.
+            require (active.IsNone && id = workId) "Only an inactive delivered work can reopen"
             let retired = lastRetirement |> Option.defaultWith (fun () -> fail "No retirement to reopen")
             require (retired.Delivered && retired.Id = retirementId) "Reopen retirement mismatch"
             require (tenureId = identity "reopened-incumbency-v1" [ retirementId; requestId ] && openingStage = stage && openingCursor >= lastCursor) "Invalid reopened incumbency"

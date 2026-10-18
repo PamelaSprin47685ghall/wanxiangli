@@ -60,6 +60,53 @@ test('SPEC[lifecycle-006] reopening creates a new reviewed-by-nobody incumbency,
   assert.deepEqual(rig.work.history().at(-1).events.map(event => event.type), ['Reopened', 'IncumbencyOpened'])
 })
 
+test('SPEC[lifecycle-006] a delivered S4 tenure hands off to its own next tenure', () => {
+  const rig = new Rig(['S4'])
+  rig.open()
+  rig.review()
+  const deliveredTenure = rig.work.inspect().active.id
+  rig.deliver()
+  const retired = rig.deliver()
+  assert.equal(retired.kind, 'Delivered')
+  assert.equal(rig.work.inspect().active, null, 'a delivery leaves no open tenure')
+
+  const reopen = { type: 'Reopen', retirementId: retired.retirementId, ownerId: 'manager', openingCursor: 1, blockers: [] }
+  assert.throws(() => rig.call({ ...reopen, retirementId: 'not-the-delivered-retirement' }), /retirement mismatch/)
+  assert.throws(() => rig.call({ ...reopen, openingCursor: -1 }), /Cursor must be a non-negative safe integer/)
+
+  rig.apply(reopen)
+  const state = rig.work.inspect()
+  assert.notEqual(state.active.id, deliveredTenure)
+  assert.equal(state.active.ownerId, 'manager')
+  assert.equal(state.active.openingStage, 'S4')
+  assert.equal(state.active.reviewOutcome, null)
+  assert.equal(state.canWriteSource, false, 'the successor tenure is read-only until its review')
+  assert.equal(state.deliveryAuthorized, false)
+  assert.notEqual(state.active.openingCursor, null)
+  assert.equal(state.rounds.length, 1, 'the delivered tenure stays in the retired history')
+  assert.deepEqual(rig.work.history().at(-1).events.map(event => event.type), ['Reopened', 'IncumbencyOpened'])
+  assert.equal(rig.work.recover().next, 'Review', 'the successor owes its own review')
+})
+
+test('SPEC[lifecycle-006] an S4 hand-off is refused while a tenure is open, with zero writes', () => {
+  const rig = new Rig(['S4'])
+  rig.open()
+  rig.review(['the gap is still open'])
+  rig.deliver()
+  const relayed = rig.deliver()
+  assert.equal(relayed.kind, 'Relayed')
+  const openTenure = rig.work.inspect().active.id
+  const count = rig.count
+  // An open tenure is not a legal hand-off source at all: the write is refused
+  // before it becomes a record, and the relay successor stays in place.
+  assert.throws(
+    () => rig.call({ type: 'Reopen', retirementId: relayed.retirementId, ownerId: 'manager', openingCursor: 1, blockers: [] }),
+    /Only an inactive delivered work can reopen/,
+  )
+  assert.equal(rig.count, count, 'a refused hand-off writes nothing')
+  assert.equal(rig.work.inspect().active.id, openTenure, 'the relay successor stays in place')
+})
+
 test('SPEC[lifecycle-006] retirement blockers are recorded observations, not dirty-workspace policy', () => {
   const rig = new Rig(['S4'])
   rig.open()
