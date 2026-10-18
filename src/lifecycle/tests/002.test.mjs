@@ -93,3 +93,35 @@ test('SPEC[lifecycle-002] a reused tool call under another provider is not a sec
   assert.throws(() => rig.call({ ...command, providerRunId: 'other-run' }), /RetirementConfirmationReplayConflict/)
   assert.equal(rig.count, count)
 })
+
+test('SPEC[lifecycle-002] a reused one-shot retirement fence under another provider is a retirement replay conflict', () => {
+  const rig = new Rig()
+  rig.open()
+  const command = rig.delivery({ toolCallId: 'relay-call' })
+  const relayed = rig.apply(command)
+  assert.equal(relayed.kind, 'Relayed')
+  const count = rig.count
+  // The recorded retirement owns this call: another provider run cannot reuse it,
+  // and the refusal is the retirement conflict, not the confirmation one.
+  assert.throws(
+    () => rig.call({ ...command, providerRunId: 'other-run' }),
+    (error) => !/RetirementConfirmationReplayConflict/.test(error.message) && /RetirementReplayConflict/.test(error.message),
+  )
+  assert.equal(rig.count, count)
+  // The recorded fence itself still replays its own result with zero writes.
+  assert.equal(rig.call(command, 'retirement-fence-replay').result.retirementId, relayed.retirementId)
+  assert.equal(rig.count, count)
+})
+
+test('SPEC[lifecycle-002] a reused delivery-operation fence under another provider is a retirement replay conflict', () => {
+  const rig = new Rig()
+  const { command } = rig.reserve()
+  const count = rig.count
+  assert.throws(
+    () => rig.call({ ...command, providerRunId: 'other-run' }),
+    (error) => !/RetirementConfirmationReplayConflict/.test(error.message) && /RetirementReplayConflict/.test(error.message),
+  )
+  assert.equal(rig.count, count)
+  assert.equal(rig.call(command, 'delivery-fence-replay').result.kind, 'ObserveExecution')
+  assert.equal(rig.count, count)
+})

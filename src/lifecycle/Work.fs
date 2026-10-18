@@ -43,7 +43,10 @@ module private Commands =
         | "Review" ->
             exact [ "incumbencyId"; "reviewerId"; "findings" ] []
             let findings = strings (get command "findings")
-            Write [ Fact.Reviewed(id "incumbencyId", { Stage = state.Stage; Promoted = Array.isEmpty findings; Reviewer = id "reviewerId" }) ]
+            let tenure = state.RequireTenure(id "incumbencyId")
+            require tenure.Review.IsNone "Incumbency already reviewed"
+            require (id "reviewerId" <> tenure.Owner) "An owner cannot review its own incumbency"
+            Write [ Fact.Reviewed(tenure.Id, { Stage = state.Stage; Promoted = Array.isEmpty findings }) ]
         | "BindDevOps" ->
             exact [ "incumbencyId"; "trigger"; "devopsId"; "target" ] []
             state.RequireTenure(id "incumbencyId") |> ignore

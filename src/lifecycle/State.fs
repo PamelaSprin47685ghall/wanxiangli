@@ -8,7 +8,7 @@ type internal WorkSequence = Plan | Execution
 
 type internal Fence = { Run: string; Call: string }
 type internal Draft = { Digest: string; Path: string }
-type internal Review = { Stage: int; Promoted: bool; Reviewer: string }
+type internal Review = { Stage: int; Promoted: bool }
 type internal Delivery = { Id: string; Tenure: string; Fence: Fence; Cursor: float; Draft: Draft }
 type internal Retirement =
     { Id: string
@@ -75,7 +75,7 @@ module internal FactCodec =
         | Fact.IncumbencyOpened(workId, id, owner, stage, cursor) ->
             make "IncumbencyOpened" [ "workId", box workId; "incumbencyId", box id; "ownerId", box owner; "stage", box (Vocabulary.stage stage); "openingCursor", box cursor ]
         | Fact.Reviewed(tenure, review) ->
-            make "Reviewed" [ "incumbencyId", box tenure; "stage", box (Vocabulary.stage review.Stage); "outcome", box (Vocabulary.outcome review.Promoted); "reviewerId", box review.Reviewer ]
+            make "Reviewed" [ "incumbencyId", box tenure; "stage", box (Vocabulary.stage review.Stage); "outcome", box (Vocabulary.outcome review.Promoted) ]
         | Fact.ConfirmationCommitted(tenure, fence) ->
             make "ConfirmationCommitted" (("incumbencyId", box tenure) :: fenceFields fence)
         | Fact.IncumbencyRetired retired ->
@@ -118,8 +118,8 @@ module internal FactCodec =
             exact [ "workId"; "incumbencyId"; "ownerId"; "stage"; "openingCursor" ]
             Fact.IncumbencyOpened(id "workId", id "incumbencyId", id "ownerId", Vocabulary.readStage (get value "stage"), cursor (get value "openingCursor"))
         | "Reviewed" ->
-            exact [ "incumbencyId"; "stage"; "outcome"; "reviewerId" ]
-            Fact.Reviewed(id "incumbencyId", { Stage = Vocabulary.readStage (get value "stage"); Promoted = Vocabulary.readChoice "Promoted" "Stayed" (get value "outcome"); Reviewer = id "reviewerId" })
+            exact [ "incumbencyId"; "stage"; "outcome" ]
+            Fact.Reviewed(id "incumbencyId", { Stage = Vocabulary.readStage (get value "stage"); Promoted = Vocabulary.readChoice "Promoted" "Stayed" (get value "outcome") })
         | "ConfirmationCommitted" ->
             exact [ "incumbencyId"; "providerRunId"; "toolCallId" ]
             Fact.ConfirmationCommitted(id "incumbencyId", Vocabulary.fence value)
@@ -166,6 +166,20 @@ type internal Tenure(id: string, owner: string, openingStage: int, openingCursor
 
 type internal Receipt = { Hash: string; Result: obj; Operation: string option }
 
+/// Which durable fact owns a recorded tool-call fence. The replay refusal keeps
+/// the owner: only the two-stage first call's confirmation names the
+/// confirmation conflict; a retirement or a delivery operation names the
+/// retirement replay conflict.
+type internal FenceOwner =
+    | Confirmation
+    | Retirement
+    | Delivery
+
+type internal RecordedFence =
+    { Run: string
+      Owner: FenceOwner
+      Result: obj }
+
 type internal WorkState(workId: string) =
     let mutable opened = false
     let mutable root = ""
@@ -181,7 +195,7 @@ type internal WorkState(workId: string) =
     let mutable lastCursor = 0.
     let advances = HashSet<string>()
     let receipts = Dictionary<string, Receipt>()
-    let fences = Dictionary<string, string * obj>()
+    let fences = Dictionary<string, RecordedFence>()
     let operations = Dictionary<string, obj>()
     let completedOperations = Dictionary<string, Retirement>()
     let rounds = ResizeArray<obj>()
@@ -203,9 +217,15 @@ type internal WorkState(workId: string) =
               "path", box delivery.Draft.Path
               "execSessionId", nullable pendingSession ]
 
-    let rememberFence (fence: Fence) result replace =
+    let rememberFence owner (fence: Fence) result replace =
         require (replace || not (fences.ContainsKey fence.Call)) "Tool call already belongs to another transition"
-        fences[fence.Call] <- fence.Run, result
+        fences[fence.Call] <- { Run = fence.Run; Owner = owner; Result = result }
+
+    let fenceConflict owner =
+        match owner with
+        | FenceOwner.Confirmation -> "RetirementConfirmationReplayConflict"
+        | FenceOwner.Retirement
+        | FenceOwner.Delivery -> "RetirementReplayConflict"
 
     let retirementId (retired: Retirement) =
         let tag = if sequence = WorkSequence.Plan then "oneshot-retirement-v1" else "retirement-v1"
@@ -240,7 +260,7 @@ type internal WorkState(workId: string) =
             let confirmed = tenure.Confirmation |> Option.defaultWith (fun () -> fail "Confirmation is required")
             require (retired.Fence.Call <> confirmed.Call && retired.Delivered = review.Promoted) "Second delivery must use another call and the review outcome"
         let result = Vocabulary.result (Vocabulary.ending retired.Delivered) [ "retirementId", box retired.Id; "incumbencyId", box retired.Tenure ]
-        rememberFence retired.Fence result (retired.Operation.IsSome)
+        rememberFence FenceOwner.Retirement retired.Fence result (retired.Operation.IsSome)
         match retired.Operation with
         | Some operation ->
             operations[operation] <- result
@@ -298,9 +318,8 @@ type internal WorkState(workId: string) =
 
     member _.TryFence(fence: Fence) =
         match fences.TryGetValue fence.Call with
-        | true, (run, result) ->
-            require (run = fence.Run) "RetirementConfirmationReplayConflict"
-            Some result
+        | true, recorded when recorded.Run = fence.Run -> Some recorded.Result
+        | true, recorded -> fail (fenceConflict recorded.Owner)
         | _ -> None
 
     member _.Remember(requestId, hash, result, operation) =
@@ -332,7 +351,7 @@ type internal WorkState(workId: string) =
             lastCursor <- openingCursor
             active <- Some(Tenure(tenureId, owner, stage, openingCursor))
             let response = objectOf [ "kind", box "Relayed"; "retirementId", get result "retirementId"; "incumbencyId", box retired.Tenure; "successorId", box tenureId; "autoDispatch", box (sequence = WorkSequence.Execution) ]
-            fences[retired.Fence.Call] <- retired.Fence.Run, response
+            fences[retired.Fence.Call] <- { Run = retired.Fence.Run; Owner = FenceOwner.Retirement; Result = response }
             response
         | [ Fact.IncumbencyRetired retired ] ->
             require retired.Delivered "Relay is missing its successor"
@@ -341,7 +360,6 @@ type internal WorkState(workId: string) =
             noDelivery ()
             let tenure = requireTenure id
             require tenure.Review.IsNone "Incumbency already reviewed"
-            require (review.Reviewer <> tenure.Owner) "An owner cannot review its own incumbency"
             require (review.Stage = stage) "Review stage mismatch"
             tenure.Review <- Some review
             if sequence = WorkSequence.Plan && review.Promoted then
@@ -354,7 +372,7 @@ type internal WorkState(workId: string) =
             require (sequence = WorkSequence.Execution && tenure.Review.IsSome && tenure.Confirmation.IsNone) "Confirmation requires an unconfirmed reviewed S4 incumbency"
             tenure.Confirmation <- Some fence
             let result = Vocabulary.result "Confirmed" [ "incumbencyId", box id ]
-            rememberFence fence result false
+            rememberFence FenceOwner.Confirmation fence result false
             result
         | [ Fact.DevOpsBound(id, target) ] ->
             current () |> ignore
@@ -396,7 +414,7 @@ type internal WorkState(workId: string) =
             require (delivery.Id = identity "delivery-operation-v1" [ workId; delivery.Tenure; authority; requestId ]) "Delivery operation identity mismatch"
             require (delivery.Cursor >= tenure.OpeningCursor && delivery.Cursor >= lastCursor) "Delivery cursor moved backwards"
             let observed = observeDelivery delivery
-            rememberFence delivery.Fence observed false
+            rememberFence FenceOwner.Delivery delivery.Fence observed false
             operations.Add(delivery.Id, observed)
             pending <- Some delivery
             pendingSession <- None
@@ -420,7 +438,7 @@ type internal WorkState(workId: string) =
             require (delivery.Id = operation) "Delivery operation mismatch"
             let result = Vocabulary.result "ExecutionRejected" [ "operationId", box operation; "reason", box reason ]
             operations[operation] <- result
-            fences[delivery.Fence.Call] <- delivery.Fence.Run, result
+            fences[delivery.Fence.Call] <- { Run = delivery.Fence.Run; Owner = FenceOwner.Delivery; Result = result }
             pending <- None
             pendingSession <- None
             result
