@@ -24,7 +24,7 @@
 ## SPEC
 
 1. [LEMMA 1, 6] `tests/001.test.mjs`：严格 UTF-8、NUL/坏字节拒绝、ENOENT、路径逃逸与根外符号链接拒绝。
-2. [LEMMA 3] `tests/002.test.mjs`：glob 的 gitignore/exclude/symlink/`.git` 语义与 `{a,b}`、`**` 边界。
+2. [LEMMA 3] `tests/002.test.mjs`：glob 与单目录 `visibleEntries` 的 gitignore/exclude/symlink/`.git` 语义及 `{a,b}`、`**` 边界。
 3. [LEMMA 2, 4] `tests/003.test.mjs`：有序锚点、occurrence、唯一性拒绝、空 pattern、非法正则、grep 行列。
 4. [LEMMA 4, 5] `tests/004.test.mjs`：单意图拒绝、preflight 新鲜度、双文件中途失败回滚、第三方修改保留。
 5. [LEMMA 7] `tests/005.test.mjs`：GlobMatch 内核对齐（供 CUT-26 共用）与结果形状契约。

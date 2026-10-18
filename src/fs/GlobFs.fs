@@ -140,6 +140,88 @@ module GlobFs =
             | None -> SkipEntry
             | Some st -> classifyStatKind rules childRel full st
 
+    type VisibleListingEntry =
+        { Name: string
+          IsDir: bool }
+
+    let private classifyReadDirectoryFailure (path: string) (ex: obj): FsFailure =
+        let code = string (Fable.Core.JsInterop.(?) ex "code")
+        if code = "ENOENT" then failure "FILE_NOT_FOUND" ("target file does not exist: " + path)
+        else failure "FILE_READ_FAILED" ("file read failed: " + path)
+
+    let private resolveInsideRoot (root: string) (path: string): Result<string * string, FsFailure> =
+        let resolvedRoot = pathResolve root
+        let resolved =
+            if pathIsAbsolute path then pathResolve path
+            else pathResolve (pathJoin root path)
+
+        let inside (candidate: string): bool =
+            candidate = resolvedRoot || candidate.StartsWith(resolvedRoot + "/")
+
+        let rec firstExisting (candidate: string): string =
+            let present =
+                try existsSync candidate
+                with _ -> false
+
+            if present then candidate
+            else
+                let parent = pathDirname candidate
+                if parent = candidate then candidate else firstExisting parent
+
+        let denied = failure "PATH_DENIED" ("path outside capability boundary: " + path)
+
+        try
+            let existing = firstExisting resolved
+            let real = realpathSync existing
+            let suffix = resolved.Substring(existing.Length)
+            if inside real && inside (real + suffix) then
+                let rel =
+                    if resolved = resolvedRoot then ""
+                    elif resolved.StartsWith(resolvedRoot + "/") then
+                        resolved.Substring(resolvedRoot.Length + 1).Replace('\\', '/')
+                    else
+                        path.Replace('\\', '/').Trim('/')
+                Ok(resolved, rel)
+            else
+                Error denied
+        with _ ->
+            Error denied
+
+    let private buildIgnoreRulesForDirectory (root: string) (rel: string): ResizeArray<IgnoreRule> =
+        let rules = ResizeArray<IgnoreRule>()
+        for rule in loadIgnoreFile (pathJoin root ".git/info/exclude") "" do
+            rules.Add(rule)
+        for rule in loadIgnoreFile (pathJoin root ".gitignore") "" do
+            rules.Add(rule)
+        if rel <> "" then
+            let segments = rel.Split([| '/' |]) |> Array.filter (fun s -> s <> "")
+            let mutable curRel = ""
+            for seg in segments do
+                curRel <- if curRel = "" then seg else curRel + "/" + seg
+                let curDir = pathJoin root curRel
+                for rule in loadIgnoreFile (pathJoin curDir ".gitignore") curRel do
+                    rules.Add(rule)
+        rules
+
+    /// 单目录确定性 gitignore 感知枚举（非递归）：返回直接子项的名称与目录标记。
+    let visibleEntries (root: string) (path: string): Result<VisibleListingEntry list, FsFailure> =
+        match resolveInsideRoot root path with
+        | Error e -> Error e
+        | Ok(full, rel) ->
+            try
+                let names = readdirSync full |> Array.toList |> List.sort
+                let rules = buildIgnoreRulesForDirectory root rel
+                let entries =
+                    names
+                    |> List.choose (fun entry ->
+                        match visibleEntry rules rel full entry with
+                        | SkipEntry -> None
+                        | RecurseDirectory _ -> Some { Name = entry; IsDir = true }
+                        | EmitFile _ -> Some { Name = entry; IsDir = false })
+                Ok entries
+            with ex ->
+                Error(classifyReadDirectoryFailure path (box ex))
+
     let private collectVisibleFiles (root: string): System.Threading.Tasks.Task<string list> =
         // DSL-MUTABLE: algorithm-scratch — visible file accumulator
         let files = ResizeArray<string>()

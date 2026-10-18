@@ -81,3 +81,50 @@ test('SPEC[fs-002] empty pattern is refused with the stable invalid-pattern code
   assert.equal(result.ok, false)
   assert.equal(result.code, 'INVALID_ANCHOR_PATTERN')
 })
+
+test('SPEC[fs-002] visibleEntries lists one directory sorted with isDir, respecting .gitignore, negation, nested rules, and .git/info/exclude', t => {
+  const root = gitRoot(t)
+  writeFileSync(path.join(root, '.git/info/exclude'), 'excluded.txt\n')
+  write(root, '.gitignore', '*.log\n!keep.log\nignored-dir/\n')
+  write(root, 'a.txt', 'x')
+  write(root, 'drop.log', 'x')
+  write(root, 'keep.log', 'x')
+  write(root, 'excluded.txt', 'x')
+  write(root, 'ignored-dir/file.txt', 'x')
+  write(root, 'src/.gitignore', '*.tmp\n!important.tmp\n')
+  write(root, 'src/index.ts', 'x')
+  write(root, 'src/scratch.tmp', 'x')
+  write(root, 'src/important.tmp', 'x')
+  write(root, 'src/nested/deep.txt', 'x')
+  symlinkSync(path.join(root, 'a.txt'), path.join(root, 'link.txt'))
+
+  const api = fs(root)
+
+  const top = api.visibleEntries(root, '.')
+  assert.equal(top.ok, true)
+  assert.deepEqual(top.entries, [
+    { name: '.gitignore', isDir: false },
+    { name: 'a.txt', isDir: false },
+    { name: 'keep.log', isDir: false },
+    { name: 'src', isDir: true },
+  ])
+  assert.deepEqual(top.value.entries, top.entries)
+  assert.deepEqual(api.visibleEntries('.').entries, top.entries)
+
+  const sub = api.visibleEntries(root, 'src')
+  assert.equal(sub.ok, true)
+  assert.deepEqual(sub.entries, [
+    { name: '.gitignore', isDir: false },
+    { name: 'important.tmp', isDir: false },
+    { name: 'index.ts', isDir: false },
+    { name: 'nested', isDir: true },
+  ])
+
+  const missing = api.visibleEntries(root, 'no-such-dir')
+  assert.equal(missing.ok, false)
+  assert.equal(missing.code, 'FILE_NOT_FOUND')
+
+  const escaped = api.visibleEntries(root, '../outside')
+  assert.equal(escaped.ok, false)
+  assert.equal(escaped.code, 'PATH_DENIED')
+})

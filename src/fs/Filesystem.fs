@@ -9,6 +9,7 @@ open Wanxiangli.Fs.Native
 type FilesystemMessages =
     abstract readUtf8: path: string -> obj
     abstract readUtf8Classified: path: string -> obj
+    abstract visibleEntries: root: obj * ?path: string -> obj
     abstract glob: pattern: string -> JS.Promise<obj>
     abstract grep: needle: obj * pattern: string -> JS.Promise<obj>
     abstract findAnchor: text: string * declaration: obj * occurrence: float -> obj
@@ -84,6 +85,25 @@ let Filesystem (input: obj): FilesystemMessages =
         member _.readUtf8Classified path =
             match Utf8Fs.readUtf8Classified (MutationFs.resolveToolPath root path) with
             | Ok value -> okResult (box value)
+            | Error e -> failureResult e
+
+        member _.visibleEntries (rootOrPath, ?maybePath) =
+            let effectiveRoot, targetPath =
+                match maybePath with
+                | Some p ->
+                    let r = text rootOrPath
+                    (if r = "" then root else r), p
+                | None ->
+                    root, text rootOrPath
+
+            match GlobFs.visibleEntries effectiveRoot targetPath with
+            | Ok entries ->
+                let mapped =
+                    entries
+                    |> List.map (fun item ->
+                        objectOf [| "name", box item.Name; "isDir", box item.IsDir |])
+                    |> Array.ofList
+                objectOf [| "ok", box true; "entries", box mapped; "value", objectOf [| "entries", box mapped |] |]
             | Error e -> failureResult e
 
         member _.glob pattern =

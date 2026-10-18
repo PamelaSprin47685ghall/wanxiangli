@@ -15,10 +15,19 @@ export interface StagedMutation {
   readonly newText?: string;
   readonly text?: string;
 }
+export interface VisibleEntry {
+  readonly name: string;
+  readonly isDir: boolean;
+}
+export type VisibleEntriesResult =
+  | { readonly ok: true; readonly entries: readonly VisibleEntry[]; readonly value: { readonly entries: readonly VisibleEntry[] } }
+  | { readonly ok: false; readonly code: string; readonly reason: string };
 export type Result<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly code: string; readonly reason: string };
 export interface Filesystem {
   readUtf8(path: string): Result<string>;
   readUtf8Classified(path: string): Result<string>;
+  visibleEntries(root: string, path: string): VisibleEntriesResult;
+  visibleEntries(path: string): VisibleEntriesResult;
   glob(pattern: string): Promise<Result<{ readonly paths: readonly string[] }>>;
   grep(needle: string | AnchorSpec, pattern: string): Promise<Result<{ readonly matches: readonly GrepHit[] }>>;
   findAnchor(text: string, declaration: AnchorSpec, occurrence: number): Result<readonly [number, number]>;
