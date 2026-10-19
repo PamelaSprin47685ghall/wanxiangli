@@ -13,7 +13,6 @@ type Persona =
     | Auditor
     | Distiller
     | Curator
-    | Predictor
     | Planner
 
 [<RequireQualifiedAccess>]
@@ -32,7 +31,6 @@ module Persona =
         | Persona.Auditor -> "Auditor"
         | Persona.Distiller -> "Distiller"
         | Persona.Curator -> "Curator"
-        | Persona.Predictor -> "Predictor"
         | Persona.Planner -> "Planner"
 
 [<RequireQualifiedAccess>]
@@ -56,9 +54,6 @@ module PersonaCatalog =
 
     /// Bookkeeper 的目录人格（内部槽位，非活跃角色）。
     let bookkeeperPersona: Persona = Persona.Curator
-
-    /// Predictor 的目录人格（内部槽位，非活跃角色）。
-    let predictorPersona: Persona = Persona.Predictor
 
     let personaV1 (role: Role): string = persona role |> Persona.render
 

@@ -31,9 +31,20 @@ test('WHAT[participant-identity-002] internal slot names resolve with explicit r
   assert.equal(bookkeeper.ok, true)
   assert.equal(bookkeeper.evidence.role, null)
   assert.equal(bookkeeper.evidence.persona, 'Curator')
-  const predictor = identity.resolveAtRoot('predictor')
-  assert.equal(predictor.evidence.role, 'engineer')
-  assert.equal(predictor.evidence.persona, 'Engineer')
+})
+
+test('WHAT[participant-identity-002] retired slot names resolve to no identity, never to a live role', () => {
+  for (const retired of ['predictor', 'chronicler']) {
+    const resolved = identity.resolveAtRoot(retired)
+    assert.equal(resolved.ok, undefined, `${retired} must not resolve to an identity`)
+    assert.equal(resolved.evidence, undefined, `${retired} must not carry identity evidence`)
+    assert.equal(resolved.error, 'UnknownParticipantName')
+    assert.equal(resolved.detail, retired)
+    const inherited = identity.inheritFromOwner(retired, identity.resolveAtRoot('engineer').evidence)
+    assert.equal(inherited.ok, undefined, `${retired} must not be inheritable`)
+    assert.equal(inherited.error, 'UnknownParticipantName')
+    assert.equal(inherited.detail, retired)
+  }
 })
 
 test('WHAT[participant-identity-002] rehydrated evidence round-trips through the plain view', () => {

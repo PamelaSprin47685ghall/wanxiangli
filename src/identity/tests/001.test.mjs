@@ -46,6 +46,7 @@ test('WHAT[participant-identity-001] persona catalog maps every role to its V1 p
   assert.equal(identity.personaOfRole('plan'), 'Planner')
   assert.equal(identity.personaOfRole('blogger'), null)
   assert.equal(identity.personaOfRole('chronicler'), null)
+  assert.equal(identity.personaOfRole('predictor'), null)
   assert.equal(identity.personaOfRole('coder'), 'Coder')
   assert.equal(identity.personaOfRole(null), null)
   assert.equal(identity.personaOfRole('no-such-role'), null)

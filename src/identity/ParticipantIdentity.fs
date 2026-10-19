@@ -27,7 +27,7 @@ type ParticipantIdentityError =
 
 type private PersonaName = PersonaName of string
 
-/// 参与者种类：受管角色或内部槽位。Predictor 映射为受管 Engineer。
+/// 参与者种类：受管角色或内部槽位（Bookkeeper）。已退役的槽位名不再解析。
 type private ParticipantKind =
     | ManagedRole of Role
     | Bookkeeper
@@ -76,7 +76,7 @@ module ParticipantIdentity =
         | ManagedRole role -> PersonaCatalog.personaV1 role
         | Bookkeeper -> PersonaCatalog.bookkeeperPersonaV1
 
-    /// 规范名解析：活跃角色 + 内部槽位（bookkeeper/predictor）。
+    /// 规范名解析：活跃角色 + 内部槽位（bookkeeper）。
     /// 历史/废弃/畸形名返回对应错误，绝不静默映射到活跃角色。
     let private parseKnownCanonicalName (name: string): Result<ParticipantKind, ParticipantIdentityError> =
         if String.IsNullOrWhiteSpace name then Error ParticipantIdentityError.BlankParticipantName
@@ -86,7 +86,6 @@ module ParticipantIdentity =
             let lowered = name.ToLowerInvariant()
             match lowered with
             | "bookkeeper" -> Ok ParticipantKind.Bookkeeper
-            | "predictor" -> Ok(ManagedRole Role.Engineer)
             | _ ->
                 match Roles.tryParseRole lowered with
                 | Some role -> Ok(ManagedRole role)

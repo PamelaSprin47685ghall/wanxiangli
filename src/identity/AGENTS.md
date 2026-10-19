@@ -14,7 +14,7 @@
 
 1. [AXIOM 1] 身份证据（name、role、persona、catalogVersion、origin）在构造点一次证明；`ParticipantIdentityEvidence` 只能经 `resolveAtRoot`/`inheritFromOwner`/`rehydrate` 产生，plain 视图在消费点必须整体重验。
    - 推理：可绕过构造点的证据等于没有证据。
-2. [AXIOM 1] 活跃角色词汇闭合（五个）：orchestrator、manager、engineer、devops、plan。历史角色（coder 等）只供历史事件解码，活跃解析一律拒绝；内部槽位（bookkeeper、predictor）显式映射，不冒充角色。
+2. [AXIOM 1] 活跃角色词汇闭合（五个）：orchestrator、manager、engineer、devops、plan。历史角色（coder 等）只供历史事件解码，活跃解析一律拒绝；内部槽位（bookkeeper）显式映射，不冒充角色。
    - 推理：词汇开放会把已废弃的参与者悄悄复活。
 3. [AXIOM 2] 来源鉴别只认四类已验证来源：human-root（必须携带 participant 证明）、agent-owner-root（必须携带 owner/child 的 logical run 与 child 参与者）、host-internal、continuation（闭合词汇）。其余一律 `UnknownPromptOrigin`。
    - 推理：拒绝分支必须闭合，否则"未知"会退化成"默认"。
@@ -23,14 +23,14 @@
 
 ## SPEC
 
-1. [LEMMA 1, 2] 活跃解析接受且仅接受五个活跃角色；历史、内部槽位名、非字符串输入一律 None；历史解码接受 10 个角色。
+1. [LEMMA 1, 2] 活跃解析接受且仅接受五个活跃角色；历史、内部槽位名、已退役槽位名、非字符串输入一律 None；历史解码接受 10 个角色。
    - 证明：`tests/001.test.mjs` 的活跃/历史/畸形三组反例与正例。
-2. [LEMMA 1] 根选定产出规范证据投影；legacy、malformed、unknown 名分别给出对应错误，无回退；bookkeeper 的 role 投影为 null；rehydrate 对每个字段错配（RoleMismatch、PersonaMismatch、UnsupportedPersonaCatalogVersion、OriginMismatch、OwnerRequired、LegacyParticipantName、BlankParticipantName）逐一拒绝。
-   - 证明：`tests/002.test.mjs` 的正控、round-trip 与逐字段反例。
+2. [LEMMA 1] 根选定产出规范证据投影；legacy、malformed、unknown 名分别给出对应错误，无回退；bookkeeper 的 role 投影为 null；rehydrate 对每个字段错配（RoleMismatch、PersonaMismatch、UnsupportedPersonaCatalogVersion、OriginMismatch、OwnerRequired、LegacyParticipantName、BlankParticipantName）逐一拒绝；已退役的内部槽位名不再解析，根选定与继承都给出 unknown 名错误，不回退到任何活跃角色。
+   - 证明：`tests/002.test.mjs` 的正控、round-trip、逐字段反例与已退役槽位名的 fail-closed 反例。
 3. [LEMMA 3] classifyOrigin 对 human-root 缺 participant、agent-owner-root 缺任一字段、未知 kind、未知 continuationKind、非 plain-object 输入一律 `UnknownPromptOrigin`；不存在任何产出 human 的回退分支。
    - 证明：`tests/003.test.mjs` 的四类正控与 D-01 无回退断言（失败结果不含 participant/origin 字段）。
-4. [LEMMA 4] bindExecution 要求全部字段、活跃角色、证据与绑定角色一致；rebindTarget 只改物理目标，evidence 深比较不变；篡改证据的视图在重建时被拒。
-   - 证明：`tests/004.test.mjs` 的字段缺失、RoleNotActive、RoleMismatch、重绑不变量与篡改反例。
+4. [LEMMA 4] bindExecution 要求全部字段、活跃角色、证据与绑定角色一致；rebindTarget 只改物理目标，evidence 深比较不变；篡改证据的视图在重建时被拒；已退役的内部槽位名不产生可绑定证据，以其作绑定角色一律 RoleNotActive。
+   - 证明：`tests/004.test.mjs` 的字段缺失、RoleNotActive、RoleMismatch、重绑不变量、篡改反例与已退役槽位名的 fail-closed 反例。
 5. [LEMMA 1] 继承身份沿用 owner 的 persona 与目录版本；无 owner 见证时 InheritedFromOwner 输入被拒（OwnerRequired）；owner 与输入的 persona 错配被拒。
    - 证明：`tests/005.test.mjs` 的继承正控、round-trip、OwnerRequired、persona 错配与来源/身份组合。
 

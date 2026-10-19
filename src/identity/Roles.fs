@@ -61,7 +61,7 @@ module Roles =
         | _ -> None
 
     /// 活跃解析（participant-identity-010）：仅接受五个活跃角色；历史角色、内部
-    /// 槽位名（bookkeeper/predictor）与非字符串一律 None。
+    /// 槽位名（bookkeeper）与非字符串一律 None。
     let tryParseRole (value: string): Role option =
         if isNull (box value) then None
         else parseActive (value.ToLowerInvariant())

@@ -37,6 +37,18 @@ test('WHAT[participant-identity-004] binding requires every field and an active 
   assert.equal(identity.bindExecution(bindInput({ role: 'predictor' })).error, 'RoleNotActive')
 })
 
+test('WHAT[participant-identity-004] retired slot names never produce bindable evidence', () => {
+  for (const retired of ['predictor', 'chronicler']) {
+    const resolved = identity.resolveAtRoot(retired)
+    assert.equal(resolved.evidence, undefined, `${retired} must not yield evidence to bind`)
+    assert.equal(
+      identity.bindExecution(bindInput({ role: retired })).error,
+      'RoleNotActive',
+      `${retired} must fail closed as a binding role`
+    )
+  }
+})
+
 test('WHAT[participant-identity-004] binding rejects evidence whose role disagrees with the binding role', () => {
   const managerEvidence = identity.resolveAtRoot('manager').evidence
   assert.equal(identity.bindExecution(bindInput({ evidence: managerEvidence })).error, 'RoleMismatch')
