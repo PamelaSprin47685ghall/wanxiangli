@@ -48,10 +48,6 @@
       "types": "./src/fs/index.d.ts",
       "import": "./dist/fs/Filesystem.js"
     },
-    "./grounding": {
-      "types": "./src/grounding/index.d.ts",
-      "import": "./dist/grounding/Grounding.js"
-    },
     "./time": {
       "types": "./src/time/index.d.ts",
       "import": "./dist/time/Time.js"
@@ -74,7 +70,6 @@
     "src/events/index.d.ts",
     "src/resources/index.d.ts",
     "src/fs/index.d.ts",
-    "src/grounding/index.d.ts",
     "src/time/index.d.ts",
     "src/wait/index.d.ts",
     "README.md",
@@ -86,7 +81,7 @@
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "npm run build && node --test src/lifecycle/tests/*.test.mjs src/eventstore/tests/*.test.mjs src/assembly/tests/*.test.mjs src/process/tests/*.test.mjs src/trace/tests/*.test.mjs src/session/tests/*.test.mjs src/resources/tests/*.test.mjs src/identity/tests/*.test.mjs src/events/tests/*.test.mjs src/fs/tests/*.test.mjs src/grounding/tests/*.test.mjs src/time/tests/*.test.mjs src/wait/tests/*.test.mjs scripts/tests/*.test.mjs",
+    "test": "npm run build && node --test src/lifecycle/tests/*.test.mjs src/eventstore/tests/*.test.mjs src/assembly/tests/*.test.mjs src/process/tests/*.test.mjs src/trace/tests/*.test.mjs src/session/tests/*.test.mjs src/resources/tests/*.test.mjs src/identity/tests/*.test.mjs src/events/tests/*.test.mjs src/fs/tests/*.test.mjs src/time/tests/*.test.mjs src/wait/tests/*.test.mjs scripts/tests/*.test.mjs",
     "prepack": "npm run build"
   },
   "devDependencies": {

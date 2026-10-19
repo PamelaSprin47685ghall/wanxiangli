@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { workspace, fs } from './support.mjs'
 
-test('SPEC[fs-005] matchesPathPattern keeps the git wildmatch semantics shared with requirement grounding', t => {
+test('SPEC[fs-005] matchesPathPattern keeps git wildmatch semantics', t => {
   const api = fs(workspace(t))
   assert.equal(api.matchesPathPattern('*.md', 'README.md').value, true)
   assert.equal(api.matchesPathPattern('*.md', 'docs/README.md').value, true)
