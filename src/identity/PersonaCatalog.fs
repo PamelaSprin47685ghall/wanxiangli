@@ -1,6 +1,6 @@
 namespace Wanxiangli.Identity
 
-/// Persona：角色在目录中的稳定人格名。V1 目录与宿主主仓保持一致。
+/// Persona：角色在目录中的稳定人格名。
 type Persona =
     | Director
     | Lead
@@ -11,7 +11,6 @@ type Persona =
     | Researcher
     | Analyst
     | Auditor
-    | Chronicler
     | Distiller
     | Curator
     | Predictor
@@ -31,7 +30,6 @@ module Persona =
         | Persona.Researcher -> "Researcher"
         | Persona.Analyst -> "Analyst"
         | Persona.Auditor -> "Auditor"
-        | Persona.Chronicler -> "Chronicler"
         | Persona.Distiller -> "Distiller"
         | Persona.Curator -> "Curator"
         | Persona.Predictor -> "Predictor"
@@ -42,7 +40,7 @@ module PersonaCatalog =
 
     let currentVersion = 1
 
-    /// 角色 → Persona（V1 目录，与主仓 Wanxiangshu.Participant.Persona 一致）。
+    /// 角色 → Persona（V1 目录）。
     let persona (role: Role): Persona =
         match role with
         | Role.Manager -> Persona.Lead
@@ -54,7 +52,6 @@ module PersonaCatalog =
         | Role.Inquiry -> Persona.Analyst
         | Role.DevOps -> Persona.Operator
         | Role.Distiller -> Persona.Distiller
-        | Role.Blogger -> Persona.Chronicler
         | Role.Plan -> Persona.Planner
 
     /// Bookkeeper 的目录人格（内部槽位，非活跃角色）。

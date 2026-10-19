@@ -13,16 +13,15 @@ type Role =
     | Inquiry
     | DevOps
     | Distiller
-    | Blogger
     | Plan
 
 [<RequireQualifiedAccess>]
 module Roles =
 
-    /// 活跃身份集合（participant-identity-010）：只有这六个可进入活跃解析。
+    /// 活跃身份集合（participant-identity-010）：只有这五个可进入活跃解析。
     let active: Role list =
         [ Role.Orchestrator; Role.Manager; Role.Engineer; Role.DevOps
-          Role.Blogger; Role.Plan ]
+          Role.Plan ]
 
     /// 历史角色：只供历史事件/日志解码，活跃路径一律拒绝。
     let historical: Role list =
@@ -41,7 +40,6 @@ module Roles =
         | Role.Inquiry -> "inquiry"
         | Role.DevOps -> "devops"
         | Role.Distiller -> "distiller"
-        | Role.Blogger -> "blogger"
         | Role.Plan -> "plan"
 
     let private parseActive (value: string): Role option =
@@ -50,7 +48,6 @@ module Roles =
         | "orchestrator" -> Some Role.Orchestrator
         | "engineer" -> Some Role.Engineer
         | "devops" -> Some Role.DevOps
-        | "blogger" -> Some Role.Blogger
         | "plan" -> Some Role.Plan
         | _ -> None
 
@@ -63,13 +60,13 @@ module Roles =
         | "distiller" -> Some Role.Distiller
         | _ -> None
 
-    /// 活跃解析（participant-identity-010）：仅接受六个活跃角色；历史角色、内部
+    /// 活跃解析（participant-identity-010）：仅接受五个活跃角色；历史角色、内部
     /// 槽位名（bookkeeper/predictor）与非字符串一律 None。
     let tryParseRole (value: string): Role option =
         if isNull (box value) then None
         else parseActive (value.ToLowerInvariant())
 
-    /// 历史解码：活跃 + 历史 11 个角色，仅供历史事件/日志解码边界使用。
+    /// 历史解码：活跃 + 历史 10 个角色，仅供历史事件/日志解码边界使用。
     let tryParseHistoricalRole (value: string): Role option =
         if isNull (box value) then None
         else

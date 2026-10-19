@@ -9,7 +9,7 @@ open Fable.Core.JsInterop
 [<AttachMembers>]
 type Identity() =
 
-    /// 活跃角色解析（participant-identity-010）：仅六个活跃角色；历史角色、
+    /// 活跃角色解析（participant-identity-010）：仅五个活跃角色；历史角色、
     /// 内部槽位名与非字符串输入一律 null。
     member _.tryParseRole(label: obj): obj =
         if Wire.isString label then
@@ -19,7 +19,7 @@ type Identity() =
         else
             null
 
-    /// 历史角色解码：活跃 + 历史 11 个角色，供历史事件/日志解码边界。
+    /// 历史角色解码：活跃 + 历史 10 个角色，供历史事件/日志解码边界。
     member _.tryParseHistoricalRole(label: obj): obj =
         if Wire.isString label then
             match Roles.tryParseHistoricalRole(unbox<string> label) with

@@ -9,7 +9,7 @@
 
 export type RoleLabel =
   | 'manager' | 'orchestrator' | 'engineer' | 'coder' | 'inspector'
-  | 'browser' | 'inquiry' | 'devops' | 'distiller' | 'blogger' | 'plan'
+  | 'browser' | 'inquiry' | 'devops' | 'distiller' | 'plan'
 
 export type PersonaOriginLabel = 'ResolvedAtRoot' | 'InheritedFromOwner'
 

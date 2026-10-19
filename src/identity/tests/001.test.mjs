@@ -4,10 +4,10 @@ import { Identity } from 'wanxiangli/identity'
 
 const identity = new Identity()
 
-const activeRoles = ['orchestrator', 'manager', 'engineer', 'devops', 'blogger', 'plan']
+const activeRoles = ['orchestrator', 'manager', 'engineer', 'devops', 'plan']
 const historicalRoles = ['coder', 'inspector', 'browser', 'inquiry', 'distiller']
 
-test('WHAT[participant-identity-001] active parsing accepts exactly the six active roles', () => {
+test('WHAT[participant-identity-001] active parsing accepts exactly the five active roles', () => {
   for (const role of activeRoles) {
     assert.equal(identity.tryParseRole(role), role)
   }
@@ -17,7 +17,7 @@ test('WHAT[participant-identity-001] active parsing accepts exactly the six acti
 })
 
 test('WHAT[participant-identity-001] active parsing rejects historical, internal and malformed inputs', () => {
-  for (const name of [...historicalRoles, 'predictor', 'bookkeeper', 'student', 'build', 'Fast_Engineer']) {
+  for (const name of [...historicalRoles, 'blogger', 'chronicler', 'predictor', 'bookkeeper', 'student', 'build', 'Fast_Engineer']) {
     assert.equal(identity.tryParseRole(name), null, `${name} must not resolve to an active role`)
   }
   assert.equal(identity.tryParseRole(''), null)
@@ -26,11 +26,13 @@ test('WHAT[participant-identity-001] active parsing rejects historical, internal
   assert.equal(identity.tryParseRole(undefined), null)
 })
 
-test('WHAT[participant-identity-001] historical decoding accepts all eleven roles for journal replay only', () => {
+test('WHAT[participant-identity-001] historical decoding accepts all ten roles for journal replay only', () => {
   for (const role of [...activeRoles, ...historicalRoles]) {
     assert.equal(identity.tryParseHistoricalRole(role), role)
   }
   assert.equal(identity.tryParseHistoricalRole('CODER'.toLowerCase()), 'coder')
+  assert.equal(identity.tryParseHistoricalRole('blogger'), null)
+  assert.equal(identity.tryParseHistoricalRole('chronicler'), null)
   assert.equal(identity.tryParseHistoricalRole('predictor'), null)
   assert.equal(identity.tryParseHistoricalRole('bookkeeper'), null)
   assert.equal(identity.tryParseHistoricalRole('no-such-role'), null)
@@ -41,8 +43,9 @@ test('WHAT[participant-identity-001] persona catalog maps every role to its V1 p
   assert.equal(identity.personaOfRole('orchestrator'), 'Director')
   assert.equal(identity.personaOfRole('engineer'), 'Engineer')
   assert.equal(identity.personaOfRole('devops'), 'Operator')
-  assert.equal(identity.personaOfRole('blogger'), 'Chronicler')
   assert.equal(identity.personaOfRole('plan'), 'Planner')
+  assert.equal(identity.personaOfRole('blogger'), null)
+  assert.equal(identity.personaOfRole('chronicler'), null)
   assert.equal(identity.personaOfRole('coder'), 'Coder')
   assert.equal(identity.personaOfRole(null), null)
   assert.equal(identity.personaOfRole('no-such-role'), null)
