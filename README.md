@@ -16,6 +16,8 @@
 
 段名入口是 `wanxiangli/segments` / `WriterSegments`：writer 段文件的命名与分组律（`<writerId>-dddd.ndjson`，恰好四位 ASCII 数字，序号 0..9999 越界拒绝；连续段系列并组、断续名降为旧式 stem；旧式与段共存的形态命名）。只算名字，不读目录、不读写字节、不加锁；共存的字节裁决归调用方。见 `src/segments/AGENTS.md`。
 
+调度协议入口是 `wanxiangli/routing` / `RoutingProtocol`：用户 `wanxiangshu.mjs` 的协议 2 ABI owner——模块导出形状与版本、同步调用 `route(role, running, previous)`（冻结副本）、target 严格解码、理论容量查询只认布尔。不读文件、不加载模块、不持有容量；选择策略全部属于用户 MJS。见 `src/routing/AGENTS.md`。
+
 ## 第一刀：两个独立个体，一个组合者
 
 | 入口 | 对象 | 职责 |

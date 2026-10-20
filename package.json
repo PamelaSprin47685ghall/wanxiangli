@@ -103,6 +103,10 @@
     "./sandbox": {
       "types": "./src/sandbox/index.d.ts",
       "import": "./dist/sandbox/Sandbox.js"
+    },
+    "./routing": {
+      "types": "./src/routing/index.d.ts",
+      "import": "./dist/routing/RoutingProtocol.js"
     }
   },
   "files": [
@@ -132,6 +136,7 @@
     "src/compression/index.d.ts",
     "src/capability/index.d.ts",
     "src/sandbox/index.d.ts",
+    "src/routing/index.d.ts",
     "README.md",
     "PROCESS.md",
     "TRACE.md",
@@ -141,7 +146,7 @@
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "npm run build && node --test src/lifecycle/tests/*.test.mjs src/eventstore/tests/*.test.mjs src/assembly/tests/*.test.mjs src/process/tests/*.test.mjs src/trace/tests/*.test.mjs src/session/tests/*.test.mjs src/resources/tests/*.test.mjs src/identity/tests/*.test.mjs src/events/tests/*.test.mjs src/fs/tests/*.test.mjs src/time/tests/*.test.mjs src/wait/tests/*.test.mjs src/prefix/tests/*.test.mjs src/delivery/tests/*.test.mjs src/degeneration/tests/*.test.mjs src/spool/tests/*.test.mjs src/convergence/tests/*.test.mjs src/retention/tests/*.test.mjs src/segments/tests/*.test.mjs src/pty/tests/*.test.mjs src/ablation/tests/*.test.mjs src/capability/tests/*.test.mjs src/compression/tests/*.test.mjs src/sandbox/tests/*.test.mjs scripts/tests/*.test.mjs",
+    "test": "npm run build && node --test src/lifecycle/tests/*.test.mjs src/eventstore/tests/*.test.mjs src/assembly/tests/*.test.mjs src/process/tests/*.test.mjs src/trace/tests/*.test.mjs src/session/tests/*.test.mjs src/resources/tests/*.test.mjs src/identity/tests/*.test.mjs src/events/tests/*.test.mjs src/fs/tests/*.test.mjs src/time/tests/*.test.mjs src/wait/tests/*.test.mjs src/prefix/tests/*.test.mjs src/delivery/tests/*.test.mjs src/degeneration/tests/*.test.mjs src/spool/tests/*.test.mjs src/convergence/tests/*.test.mjs src/retention/tests/*.test.mjs src/segments/tests/*.test.mjs src/pty/tests/*.test.mjs src/ablation/tests/*.test.mjs src/capability/tests/*.test.mjs src/compression/tests/*.test.mjs src/sandbox/tests/*.test.mjs src/routing/tests/*.test.mjs scripts/tests/*.test.mjs",
     "prepack": "npm run build"
   },
   "devDependencies": {
