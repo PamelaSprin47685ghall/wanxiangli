@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { once } from 'node:events'
 import { createJournal, temporary, worker, message, kill } from './support.mjs'
 
 test('SPEC[eventstore-001] durable append preserves exact UTF-8 text across close and reopen', t => {
@@ -33,9 +34,13 @@ test('SPEC[eventstore-001] two real processes cannot both win revision zero', { 
   const second = worker(t, database, 'race', 'second')
   await Promise.all([message(first), message(second)])
   const results = [message(first), message(second)]
+  const exits = [once(first, 'exit'), once(second, 'exit')]
   first.send('go')
   second.send('go')
   const replies = (await Promise.all(results)).map(value => value.reply)
+  // Each worker closes its connection after replying; the last close checkpoints
+  // the WAL. Reopen only after both have exited, or busy_timeout=0 races that close.
+  await Promise.all(exits)
   assert.equal(replies.filter(reply => reply.status === 'Committed').length, 1)
   assert.ok(replies.some(reply => ['NotWritten', 'Conflict'].includes(reply.status)))
   const journal = createJournal(database)
