@@ -30,6 +30,36 @@ export interface Projection {
   readonly replaced: readonly number[]
 }
 
+export interface CheckpointCall {
+  readonly session: string
+  readonly callId: string
+}
+
+export interface CheckpointTerminal extends CheckpointCall {
+  readonly status: 'completed' | 'error'
+}
+
+export type CheckpointAppendOutcome =
+  | 'committed'
+  | 'WriterUnavailable'
+  | 'WriteUnknown'
+  | 'NoNewWriteReleaseFailed'
+  | 'FactRejected'
+
+export interface CheckpointSettlementMessages {
+  /**
+   * 一次终态观测：`append` 由组合者真正写入一次并之后调用 `settle`；`join` 表示同一调用的写入仍未结局
+   * 或已以终局失败结束，等待者应观察同一个结局；`skip` 表示已结算过或是 error 终态，不写。
+   */
+  observe(terminal: CheckpointTerminal): 'append' | 'join' | 'skip'
+  /**
+   * 写入结局：`committed` → `settled`（以后重复终态都 skip）；`WriterUnavailable`（未尝试）→ `released`
+   * （下一次终态可重新尝试）；`WriteUnknown`/`NoNewWriteReleaseFailed`/`FactRejected` → `failed`
+   * （保留在途，后来者 join 同一失败，永不重写）。
+   */
+  settle(call: CheckpointCall, outcome: CheckpointAppendOutcome): 'settled' | 'released' | 'failed'
+}
+
 export interface CompressionMessages {
   /** 严格形状 `{ prefixUntil, thenMap }`；非法时返回第一处原因，不抛出。 */
   parseView(value: unknown): ParsedView
@@ -39,6 +69,8 @@ export interface CompressionMessages {
   plan(anchors: readonly number[], history: readonly AnchorReplacement[], view: AnchorView): readonly AnchorReplacement[]
   /** 按 history 先后折叠输入行；`positions[i]` 为第 i 条消息所属锚点位置。 */
   project(positions: readonly number[], history: readonly AnchorReplacement[], prefixUntil: number): Projection
+  /** 新的有状态 view 检查点追加准入台账；每个组合者进程一个，实例之间互不影响。 */
+  checkpoints(): CheckpointSettlementMessages
 }
 
 export function Compression(): CompressionMessages

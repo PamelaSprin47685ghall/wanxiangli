@@ -4,6 +4,13 @@ open System
 open Fable.Core
 open Fable.Core.JsInterop
 
+/// view 检查点的追加准入。组合者负责真正的持久写入与等待者的会合；本对象只回答
+/// 这一次终态观测该做什么、这次写入结局之后这条调用是否还能再试。
+[<AllowNullLiteral>]
+type CheckpointSettlementMessages =
+    abstract observe: terminal: obj -> string
+    abstract settle: call: obj * outcome: obj -> string
+
 /// ANCHOR 视图覆盖定律的公开消息。锚点编号从哪里来、正文怎样计量、摘要怎样呈现回宿主消息，由组合者决定。
 [<AllowNullLiteral>]
 type CompressionMessages =
@@ -11,6 +18,8 @@ type CompressionMessages =
     abstract live: anchors: obj * history: obj -> obj
     abstract plan: anchors: obj * history: obj * view: obj -> obj
     abstract project: positions: obj * history: obj * prefixUntil: obj -> obj
+    /// 新的 view 检查点追加准入台账（有状态，每个组合者进程一个）。
+    abstract checkpoints: unit -> CheckpointSettlementMessages
 
 type private Replacement =
     { Anchor: int
@@ -323,7 +332,66 @@ let private projectRows (positions: int list) (history: Replacement list) (prefi
               ==> frozenArray (history |> List.map _.Anchor |> List.distinct |> List.sort |> List.map box) ]
     )
 
-/// ANCHOR 视图覆盖定律。每条消息独立、无状态：先完整校验输入，再给出冻结的回答。
+// ---- checkpoint：一次终态调用至多一次持久追加 -----------------------------------
+
+let private callKey (what: string) (value: obj) : string =
+    let text (name: string) =
+        let field = requiredField what value name
+
+        if jsTypeof field <> "string" || String.IsNullOrEmpty(unbox<string> field) then
+            fail (what + "." + name + " must be a non-empty string")
+
+        unbox<string> field
+
+    let session = text "session"
+    let callId = text "callId"
+    string session.Length + ":" + session + "|" + callId
+
+/// 有状态：每个实例只服务一个组合者进程；重启后由持久事实与 prefix 窗口去重承接。
+let private checkpointSettlement () : CheckpointSettlementMessages =
+    let settled = System.Collections.Generic.HashSet<string>()
+    let pending = System.Collections.Generic.HashSet<string>()
+
+    { new CheckpointSettlementMessages with
+        member _.observe(terminal) =
+            let key = callKey "terminal" terminal
+            let status = requiredField "terminal" terminal "status"
+
+            let completed =
+                match (if jsTypeof status = "string" then unbox<string> status else "") with
+                | "completed" -> true
+                | "error" -> false
+                | _ -> fail "terminal.status must be completed or error"
+
+            if pending.Contains key then "join"
+            elif not (settled.Add key) then "skip"
+            elif completed then
+                pending.Add key |> ignore
+                "append"
+            else
+                "skip"
+
+        member _.settle(call, outcome) =
+            let key = callKey "call" call
+
+            if not (pending.Contains key) then
+                fail "call has no pending checkpoint append"
+
+            match (if jsTypeof outcome = "string" then unbox<string> outcome else "") with
+            | "committed" ->
+                pending.Remove key |> ignore
+                "settled"
+            | "WriterUnavailable" ->
+                pending.Remove key |> ignore
+                settled.Remove key |> ignore
+                "released"
+            | "WriteUnknown"
+            | "NoNewWriteReleaseFailed"
+            | "FactRejected" -> "failed"
+            | _ -> fail "outcome must be committed, WriterUnavailable, WriteUnknown, NoNewWriteReleaseFailed or FactRejected" }
+
+/// ANCHOR 视图覆盖定律。每条消息独立、无状态：先完整校验输入，再给出冻结的回答；
+/// 唯一例外是 `checkpoints()`，它每次返回一个新的有状态准入台账。
 let Compression () : CompressionMessages =
     { new CompressionMessages with
         member _.parseView(value) =
@@ -344,4 +412,6 @@ let Compression () : CompressionMessages =
         member _.project(positions, history, prefixUntil) =
             let positionList = positionsOf positions
             let historyList = historyOf history
-            projectRows positionList historyList (anchorOf "prefixUntil" prefixUntil) }
+            projectRows positionList historyList (anchorOf "prefixUntil" prefixUntil)
+
+        member _.checkpoints() = checkpointSettlement () }
