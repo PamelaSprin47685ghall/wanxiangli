@@ -69,3 +69,26 @@ test('SPEC[handle-lifecycle-1] malformed input is refused and verdicts are froze
   assert.throws(() => w('complete', 'Active', { completion: { kind: 'Other', hasRef: true, hasDigest: true } }), /completion.kind/)
   assert.ok(Object.isFrozen(law.handle({ event: 'complete', phase: 'Active' })))
 })
+
+const r = (over) => plain(law.recoverChild({ durable: 'Active', snapshot: 'Missing', observations: [], proofError: null, ...over }))
+test('SPEC[handle-lifecycle-4] durable facts decide before any Host snapshot', () => {
+  assert.deepEqual(r({ durable: 'Abandoned', durableReason: 'DeadlineExceeded', snapshot: 'Terminal' }), { resolution: 'abandoned', reason: 'DeadlineExceeded', source: 'durable' })
+  assert.deepEqual(r({ durable: 'CompletedAwaitingJoin', observations: ['ParentCancelled'] }), { resolution: 'terminal', source: 'durable' })
+  assert.deepEqual(r({ durable: 'Retired', snapshot: 'Terminal' }), { resolution: 'blocked', reason: 'handle already retired' })
+})
+
+test('SPEC[handle-lifecycle-4] counterexample: an abort observation is never a completion, an unreadable snapshot only waits', () => {
+  assert.deepEqual(r({ observations: ['AbortedObserved'] }), { resolution: 'incomplete' })
+  assert.deepEqual(r({ observations: ['RecoveryInFlight'] }), { resolution: 'incomplete' })
+  assert.deepEqual(r({ snapshot: 'Unreadable', observations: ['SessionActive', 'HostSessionGone'] }), { resolution: 'incomplete' })
+  assert.deepEqual(r({ snapshot: 'Terminal', proofError: 'mismatch' }), { resolution: 'blocked', reason: 'mismatch' })
+  assert.deepEqual(r({ durable: 'Unknown', snapshot: 'Terminal' }), { resolution: 'terminal', source: 'snapshot' })
+})
+
+test('SPEC[handle-lifecycle-4] the first proven abandonment wins over a live session', () => {
+  assert.deepEqual(r({ snapshot: 'Active', observations: ['SessionActive', 'HostSessionGone', 'ParentCancelled'] }), { resolution: 'abandoned', reason: 'HostSessionGone', source: 'observation' })
+  assert.deepEqual(r({ snapshot: 'Active', observations: ['AbortedObserved', 'SessionActive'] }), { resolution: 'active' })
+  assert.throws(() => r({ observations: ['Done'] }), /observations/)
+  assert.throws(() => r({ durable: 'Abandoned', durableReason: 'Other' }), /durableReason/)
+  assert.throws(() => r({ snapshot: 'Gone' }), /snapshot/)
+})

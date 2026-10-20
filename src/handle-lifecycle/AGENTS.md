@@ -11,12 +11,17 @@
 3. [使用者] 错误的完成补偿只能撤销与其 ref/digest 精确相同的完成格；真完成不能被坏补偿撤销。
     - 理由：clean-break 迁移；坏补偿撤销真终局会让工作重跑。
 
+4. [使用者] 重启恢复只能从持久事实与可证明的 Host 观察下结论：中断（abort）只是观察，不是完成；未证明的状态不得发放许可。
+    - 理由：P0-RECOVERY-JOIN-001、GREEN-4；把 abort 当完成或把未知当活着会让 join 报告假结局。
+
 # LEMMA
 
 1. [AXIOM 1, 2] handle：complete 只从 Active 到 CompletedAwaitingJoin；abandon 从 Active/CompletedAwaitingJoin 到 Abandoned；retire 从 CompletedAwaitingJoin/Abandoned 到 Retired（Active 拒 NotCompleted）。拒绝次序：无格 UnknownHandle → Retired HandleIsRetired → Abandoned AlreadyAbandoned → 已完成 AlreadyCompleted。
 2. [AXIOM 3] rejectFalseCompletion：Active 幂等 keep；CompletedAwaitingJoin 且格匹配 → Active，否则 AlreadyCompleted。
 3. [AXIOM 1, 2] work：先无格 WorkNotAdmitted，再遗留 LegacyWorkAmbiguous；complete 需 Active 且 kind≠Cancelled、ref 与 digest 俱在；abandon/void 只从 Active（到 Abandoned/Retired）；consume 先拒空白 consumptionId，完成格等于期望或放弃格配空 Cancelled 期望 → Retired。
 
+4. [AXIOM 4] recoverChild 次序：持久 Abandoned → abandoned(durable)；持久 CompletedAwaitingJoin → terminal(durable)；持久 Retired → blocked；其余看快照：Terminal 证据成立 → terminal(snapshot)，不成立 → blocked(原因)；Unreadable → incomplete；Missing/Active 看观察：首个 ParentCancelled/DeadlineExceeded/HostSessionGone → abandoned(observation)，否则有 SessionActive → active，否则（含仅 abort、恢复进行中）→ incomplete。
+
 # SPEC
 
-1. [LEMMA 1, 2, 3] 证明：`tests/001.test.mjs`；与 vibe-fs 旧 `HandleProjection` 逐项对照见 vibe-fs `evidence/CUT-13/`。
+1. [LEMMA 1, 2, 3, 4] 证明：`tests/001.test.mjs`；与 vibe-fs 旧 `HandleProjection` 逐项对照见 vibe-fs `evidence/CUT-13/`。

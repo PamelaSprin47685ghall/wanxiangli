@@ -50,8 +50,31 @@ export type Verdict =
   | { readonly verdict: 'keep' }
   | { readonly verdict: 'reject'; readonly rejection: Rejection }
 
+export type ObservationKind =
+  | 'AbortedObserved' | 'ParentCancelled' | 'DeadlineExceeded' | 'HostSessionGone' | 'RecoveryInFlight' | 'SessionActive'
+
+export type AbandonReason = 'ParentCancelled' | 'DeadlineExceeded' | 'HostSessionGone'
+
+export interface RecoverChildInput {
+  readonly durable: 'Unknown' | 'Active' | 'CompletedAwaitingJoin' | 'Abandoned' | 'Retired'
+  /** Required when durable is Abandoned. */
+  readonly durableReason?: AbandonReason
+  readonly snapshot: 'Missing' | 'Active' | 'Terminal' | 'Unreadable'
+  /** For a Terminal snapshot: the host's refusal of the terminal evidence, null when the proof holds. */
+  readonly proofError?: string | null
+  readonly observations: readonly ObservationKind[]
+}
+
+export type ChildResolution =
+  | { readonly resolution: 'terminal'; readonly source: 'durable' | 'snapshot' }
+  | { readonly resolution: 'abandoned'; readonly reason: AbandonReason; readonly source: 'durable' | 'observation' }
+  | { readonly resolution: 'active' }
+  | { readonly resolution: 'incomplete' }
+  | { readonly resolution: 'blocked'; readonly reason: string }
+
 export declare class HandleLifecycleLaw {
   readonly contractVersion: 1
   handle(input: HandleInput): Verdict
   work(input: WorkInput): Verdict
+  recoverChild(input: RecoverChildInput): ChildResolution
 }

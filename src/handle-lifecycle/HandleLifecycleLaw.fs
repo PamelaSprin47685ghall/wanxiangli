@@ -15,6 +15,9 @@ let private isAbsent (_value: obj) : bool = jsNative
 [<Emit("$0 !== null && typeof $0 === 'object' && !Array.isArray($0)")>]
 let private isObject (_value: obj) : bool = jsNative
 
+[<Emit("Array.isArray($0)")>]
+let private isArrayValue (_value: obj) : bool = jsNative
+
 [<Emit("$0[$1]")>]
 let private field (_value: obj) (_name: string) : obj = jsNative
 
@@ -188,3 +191,75 @@ type HandleLifecycleLaw() =
                     | Retired -> reject "HandleIsRetired"
                     | Active -> reject "NotCompleted"
                     | Abandoned -> reject "ConsumptionMismatch"
+
+    /// P0-RECOVERY-JOIN-001 / GREEN-4: what restart recovery may conclude about one
+    /// child. `durable` is the handle's durable kind (Unknown | Active |
+    /// CompletedAwaitingJoin | Abandoned | Retired) and `durableReason` its abandon
+    /// reason; `snapshot` is the Host snapshot kind (Missing | Active | Terminal |
+    /// Unreadable); for a Terminal snapshot `proofError` is the host's refusal of
+    /// the terminal evidence (null when the proof holds); `observations` are the
+    /// Host observation kinds (AbortedObserved | ParentCancelled | DeadlineExceeded
+    /// | HostSessionGone | RecoveryInFlight | SessionActive), in order.
+    member _.recoverChild(input: obj) : obj =
+        if not (isObject input) then malformed "input"
+        let durable = text "durable" (field input "durable")
+        let snapshot = text "snapshot" (field input "snapshot")
+        let observations = field input "observations"
+        if not (isArrayValue observations) then malformed "observations"
+
+        let observations =
+            unbox<obj array> observations
+            |> Array.map (fun value ->
+                match text "observations[]" value with
+                | "AbortedObserved"
+                | "ParentCancelled"
+                | "DeadlineExceeded"
+                | "HostSessionGone"
+                | "RecoveryInFlight"
+                | "SessionActive" as kind -> kind
+                | _ -> malformed "observations[]")
+            |> Array.toList
+
+        let resolution (kind: string) (extra: (string * obj) list) =
+            freeze (createObj ([ "resolution" ==> kind ] @ extra))
+
+        let abandoned (reason: string) (source: string) =
+            resolution "abandoned" [ "reason" ==> reason; "source" ==> source ]
+
+        let nonTerminal () =
+            let reason =
+                observations
+                |> List.tryPick (function
+                    | "ParentCancelled"
+                    | "DeadlineExceeded"
+                    | "HostSessionGone" as r -> Some r
+                    | _ -> None)
+
+            match reason with
+            | Some reason -> abandoned reason "observation"
+            | None when List.contains "SessionActive" observations -> resolution "active" []
+            | None -> resolution "incomplete" []
+
+        let reasonOf () =
+            match text "durableReason" (field input "durableReason") with
+            | "ParentCancelled"
+            | "DeadlineExceeded"
+            | "HostSessionGone" as r -> r
+            | _ -> malformed "durableReason"
+
+        match durable with
+        | "Abandoned" -> abandoned (reasonOf ()) "durable"
+        | "CompletedAwaitingJoin" -> resolution "terminal" [ "source" ==> "durable" ]
+        | "Retired" -> resolution "blocked" [ "reason" ==> "handle already retired" ]
+        | "Unknown"
+        | "Active" ->
+            match snapshot with
+            | "Terminal" ->
+                match field input "proofError" with
+                | e when isAbsent e -> resolution "terminal" [ "source" ==> "snapshot" ]
+                | e -> resolution "blocked" [ "reason" ==> text "proofError" e ]
+            | "Unreadable" -> resolution "incomplete" []
+            | "Missing"
+            | "Active" -> nonTerminal ()
+            | _ -> malformed "snapshot"
+        | _ -> malformed "durable"
