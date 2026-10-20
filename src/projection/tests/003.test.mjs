@@ -89,3 +89,20 @@ test('SPEC[projection-003] malformed input and anchors past the base are refused
   list[0].anchor = null
   assert.deepEqual(src(out), ['0:0', 'b0'])
 })
+
+test('SPEC[projection-003] plan answers the same order and conflicts as layout without checking anchor range', () => {
+  const lists = [
+    [ins('z', null), ins('b', 1, 2), ins('a', 1), ins('c', 0), ins('y', 3), ins('m', null)],
+    [ins('k', 1), base('B', 2)],
+    [base('A', 1), base('B', 1)],
+    [ins('z', 0), ins('z', 1), ins('b', 0), ins('b', 1, 1, 'g')],
+  ]
+  for (const list of lists) {
+    const laid = p.layout(list, 9)
+    const plan = p.plan(list)
+    assert.ok(Object.isFrozen(plan))
+    assert.deepEqual({ ...plan }, laid.ok ? { ok: true, order: laid.order } : { ...laid })
+  }
+  assert.deepEqual([...p.plan([ins('k', 40)]).order], [0])
+  assert.throws(() => p.plan({}), /intents must be an array/)
+})

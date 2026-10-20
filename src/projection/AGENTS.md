@@ -28,5 +28,5 @@
     - 证明：`tests/001.test.mjs`；与宿主原 `TenureIsolation.assemble` 的双算见宿主 CUT-17 证据。
 2. [LEMMA 4] 非法输入逐一被拒且 accessor 不被读取；回答冻结。
     - 证明：`tests/002.test.mjs`。
-3. [LEMMA 4, 5, 6] `layout`：空意图、锚定与 append 次序、替换基底作锚点空间、幂等、各类冲突、200 次随机重排结果不变、越界与非法输入拒绝、回答冻结。
+3. [LEMMA 4, 5, 6] `layout` 与 `plan`（同一规划，plan 不校验锚点范围）：空意图、锚定与 append 次序、替换基底作锚点空间、幂等、各类冲突、200 次随机重排结果不变、越界与非法输入拒绝、回答冻结。
     - 证明：`tests/003.test.mjs`；与宿主原 `ProjectionPlanner`/`ProjectionRenderer` 的双算见宿主 CUT-17 证据。

@@ -39,6 +39,11 @@ export type Layout =
   | { readonly ok: false; readonly conflict: 'ConflictingMessageBase' }
   | { readonly ok: false; readonly conflict: 'ConflictingMessageRows'; readonly key: string }
 
+export type Plan =
+  | { readonly ok: true; readonly order: readonly number[] }
+  | { readonly ok: false; readonly conflict: 'ConflictingMessageBase' }
+  | { readonly ok: false; readonly conflict: 'ConflictingMessageRows'; readonly key: string }
+
 export interface ProjectionMessages {
   /**
    * 当前任期可见的物理消息：非合成 user 原样保留；assistant/tool 只在首次观测 `>= openingCursor`
@@ -51,6 +56,8 @@ export interface ProjectionMessages {
    * 锚点超出（替换后）基底长度时抛错。
    */
   layout(intents: readonly LayoutIntent[], baseLength: number): Layout
+  /** 只规划（与 layout 的 order/冲突相同），不校验锚点是否落在基底之内。 */
+  plan(intents: readonly LayoutIntent[]): Plan
 }
 
 export function Projection(): ProjectionMessages
