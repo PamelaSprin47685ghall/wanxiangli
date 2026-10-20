@@ -75,6 +75,10 @@
     "./convergence": {
       "types": "./src/convergence/index.d.ts",
       "import": "./dist/convergence/KWayMerge.js"
+    },
+    "./pty": {
+      "types": "./src/pty/index.d.ts",
+      "import": "./dist/pty/Terminal.js"
     }
   },
   "files": [
@@ -97,6 +101,7 @@
     "src/degeneration/index.d.ts",
     "src/spool/index.d.ts",
     "src/convergence/index.d.ts",
+    "src/pty/index.d.ts",
     "README.md",
     "PROCESS.md",
     "TRACE.md",
@@ -106,12 +111,13 @@
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "npm run build && node --test src/lifecycle/tests/*.test.mjs src/eventstore/tests/*.test.mjs src/assembly/tests/*.test.mjs src/process/tests/*.test.mjs src/trace/tests/*.test.mjs src/session/tests/*.test.mjs src/resources/tests/*.test.mjs src/identity/tests/*.test.mjs src/events/tests/*.test.mjs src/fs/tests/*.test.mjs src/time/tests/*.test.mjs src/wait/tests/*.test.mjs src/prefix/tests/*.test.mjs src/delivery/tests/*.test.mjs src/degeneration/tests/*.test.mjs src/spool/tests/*.test.mjs src/convergence/tests/*.test.mjs scripts/tests/*.test.mjs",
+    "test": "npm run build && node --test src/lifecycle/tests/*.test.mjs src/eventstore/tests/*.test.mjs src/assembly/tests/*.test.mjs src/process/tests/*.test.mjs src/trace/tests/*.test.mjs src/session/tests/*.test.mjs src/resources/tests/*.test.mjs src/identity/tests/*.test.mjs src/events/tests/*.test.mjs src/fs/tests/*.test.mjs src/time/tests/*.test.mjs src/wait/tests/*.test.mjs src/prefix/tests/*.test.mjs src/delivery/tests/*.test.mjs src/degeneration/tests/*.test.mjs src/spool/tests/*.test.mjs src/convergence/tests/*.test.mjs src/pty/tests/*.test.mjs scripts/tests/*.test.mjs",
     "prepack": "npm run build"
   },
   "devDependencies": {
     "@fable-org/fable-compiler-js": "3.8.1",
     "@fable-org/fable-library-js": "2.8.1",
+    "bun-pty": "0.4.10",
     "esbuild": "0.28.2",
     "typescript": "7.0.2"
   }
