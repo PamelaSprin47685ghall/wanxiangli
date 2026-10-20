@@ -11,6 +11,34 @@ export interface TenureMessage {
   readonly cursor: bigint | null
 }
 
+/** 一条通用投影意图的规划视图；行内容对本规则不透明，同值由所有者给出的指纹判定。 */
+export interface LayoutIntent {
+  readonly kind: 'ReplaceMessageBase' | 'InsertMessageRows'
+  readonly key: string
+  /** 仅 InsertMessageRows：基底下标（插在该行之前；等于基底长度即末尾）；null 表示 append。 */
+  readonly anchor?: number | null
+  /** 该意图携带的行数。 */
+  readonly rows: number
+  /** 行内容（含宿主元数据）的规范指纹；相等当且仅当行相等。 */
+  readonly fingerprint: string
+}
+
+/** 输出的一行来自哪里：intent 为 null 是原始基底第 row 行，否则是 intents[intent] 的第 row 行。 */
+export interface LayoutRow {
+  readonly intent: number | null
+  readonly row: number
+}
+
+export type Layout =
+  | {
+      readonly ok: true
+      /** 规范顺序下被采用的意图下标：替换基底在先，随后按 anchor（append 最后）再按 key。 */
+      readonly order: readonly number[]
+      readonly rows: readonly LayoutRow[]
+    }
+  | { readonly ok: false; readonly conflict: 'ConflictingMessageBase' }
+  | { readonly ok: false; readonly conflict: 'ConflictingMessageRows'; readonly key: string }
+
 export interface ProjectionMessages {
   /**
    * 当前任期可见的物理消息：非合成 user 原样保留；assistant/tool 只在首次观测 `>= openingCursor`
@@ -18,6 +46,11 @@ export interface ProjectionMessages {
    * 返回保留消息的输入下标（升序、冻结）。
    */
   tenure(messages: readonly TenureMessage[], openingCursor: bigint): readonly number[]
+  /**
+   * 规划并布局通用投影意图：同批不同基底、同键不同值显式冲突；同值重复幂等；结果与注册顺序无关。
+   * 锚点超出（替换后）基底长度时抛错。
+   */
+  layout(intents: readonly LayoutIntent[], baseLength: number): Layout
 }
 
 export function Projection(): ProjectionMessages
