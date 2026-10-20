@@ -14,7 +14,9 @@
 
 保留入口是 `wanxiangli/retention` / `WriterRetention`：整条 writer 的 UTC 日期分组保留规则（今天与昨天保留，更早整条过期）。截止时刻与活动时刻由调用方给出，非有限时间拒绝而非判过期；不读时钟、不读文件、不删除。见 `src/retention/AGENTS.md`。
 
-段名入口是 `wanxiangli/segments` / `WriterSegments`：writer 段文件的命名与分组律（`<writerId>-dddd.ndjson`，恰好四位 ASCII 数字，序号 0..9999 越界拒绝；连续段系列并组、断续名降为旧式 stem；旧式与段共存的形态命名）。只算名字，不读目录、不读写字节、不加锁；共存的字节裁决归调用方。见 `src/segments/AGENTS.md`。
+段名入口是 `wanxiangli/segments` / `WriterSegments`：writer 段文件的命名与分组律（`<writerId>-dddd.ndjson`，恰好四位 ASCII 数字，序号 0..9999 越界拒绝；连续段系列并组、断续名降为旧式 stem；旧式与段共存的形态命名），以及调用方读出的字节上的 writer 流成帧（`decodeStream`）与共存裁决（`coexistence`：series / legacy / continuation / diverged）。不读目录、不读写文件、不删除、不加锁。见 `src/segments/AGENTS.md`。
+
+Casebook 索引入口是 `wanxiangli/casebook` / `CasebookIndexLaw`：公开索引的纯投影（标题与 shelfmark、稳定排序与定位、epoch 是否推进、LRU 淘汰名单）。不读存储、不持有快照、不写事件。见 `src/casebook/AGENTS.md`。
 
 调度协议入口是 `wanxiangli/routing` / `RoutingProtocol`：用户 `wanxiangshu.mjs` 的协议 2 ABI owner——模块导出形状与版本、同步调用 `route(role, running, previous)`（冻结副本）、target 严格解码、理论容量查询只认布尔。不读文件、不加载模块、不持有容量；选择策略全部属于用户 MJS。见 `src/routing/AGENTS.md`。
 
