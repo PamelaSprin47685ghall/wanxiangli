@@ -11,6 +11,8 @@
    - 推理：工程文件已经是编译输入的唯一清单。
 2. [AXIOM 2] 交付验收使用实际 tarball，不用 workspace link、NODE_PATH 或源码回退。
    - 推理：链接会掩盖遗漏文件和反向依赖。
+3. [AXIOM 2; LEMMA 1] 公开入口由已实现模块推出：每个带 fsproj 的模块恰好一个 exports 项，指向 build 脚本产出的入口文件，类型声明在 files 白名单里；没有指向不存在模块的入口。
+   - 推理：多人并行加模块时，exports、files 与 fsproj 是三处手写清单；任何一处漏写，开发期 `file:` 链接仍能用，安装包却缺文件或缺类型。
 
 此条约束独立发行验收，不禁止宿主在开发期通过 submodule 和 `file:wanxiangli` 消费源码依赖。任何打包所得 `.tgz` 都只能是临时构建产物，永远不得进入 Git。开发接线的通过不能代替发行包验收。
 
@@ -28,4 +30,6 @@
 6. [LEMMA 1, 2] 第四刀在前三刀缺席时保持独立，组合层另证明持久预留、物理收尾与 Work 退休的先后关系。
    - 证明：`tests/ownership-package.test.mjs` 在实际 tarball 上运行 Node/Bun 的物理进程阻塞退休、协调进程 SIGKILL 恢复，随后删除前三刀产物与类型做单独消费和 TypeScript 正反用例。`tests/ownership-composition.test.mjs` 覆盖真实提交竞争；构建脚本没有新增专用流程。
 7. [根 AXIOM 2, 3] Git 只保存源码、规则与构建描述，不保存 `.tgz` 包。旧的 tarball 例外撤销。
-   - 证明：[TODO] `tests/repository.test.mjs` 检查实际 Git 索引；本轮只写入测试，未执行。
+   - 证明：`tests/repository.test.mjs` 检查实际 Git 索引与历史，2026-10-20 在 0.9.0 上执行通过。
+8. [LEMMA 3] exports、files 与已实现模块三者一致。
+   - 证明：`tests/exports.test.mjs`；删掉一个模块的入口、漏掉一个类型声明、或留一个指向已删模块的入口，分别实测报红（CUT-33 证据）。
