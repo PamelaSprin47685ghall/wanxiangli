@@ -40,6 +40,16 @@ export type RecoveryVerdict =
   | { readonly kind: 'Proven'; readonly physicalUserMessageId: string }
   | { readonly kind: 'StillPending'; readonly hasReceipt: boolean }
 
+export type SendAnswer = 'AdmittedWithReceipt' | 'AdmittedWithPhysicalMessage' | 'Retryable' | 'Fatal' | 'AcceptanceUnknown'
+
+export interface SendVerdict {
+  /** Submit：只记回执；SubmitThenAccept：回执后接真实物理 id；Abandon：确定拒绝显式放弃；KeepPending：结局未知，什么都不写。 */
+  readonly ledger: 'Submit' | 'SubmitThenAccept' | 'Abandon' | 'KeepPending'
+  /** 只有确定未发送才允许归还 exact quiescence permit。 */
+  readonly definitelyNotSent: boolean
+  readonly detached: 'OwnedSettled' | 'Refused' | 'OutcomeUnknown'
+}
+
 export declare class Dispatch {
   constructor()
   readonly contractVersion: 1
@@ -54,6 +64,7 @@ export declare class Dispatch {
   /** pending=false（已落地、已放弃或从未认领）时返回空数组：不改投影。 */
   settle(input: { event: ClaimEvent; pending: boolean; continuation: boolean }): readonly LedgerEdit[]
   occasionAdmitted(input: { pendingSameOccasion: boolean; landedOrigin?: string | null; origin: string }): boolean
+  answer(sent: SendAnswer): SendVerdict
   /** messages 按时间先后；只看最后 recoveryTailWindow 条、role=user、PromptKey 完全一致。 */
   recover(input: { promptKey: string; hasReceipt: boolean; messages: readonly RecoveryMessage[] }): RecoveryVerdict
 }

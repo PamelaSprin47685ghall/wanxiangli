@@ -68,6 +68,28 @@ module internal Wire =
         | LedgerEdit.RecordContinuation -> "RecordContinuation"
         | LedgerEdit.ClearOccasion -> "ClearOccasion"
 
+    let sendAnswer (value: obj) =
+        match (if isString value then unbox<string> value else "") with
+        | "AdmittedWithReceipt" -> SendAnswer.AdmittedWithReceipt
+        | "AdmittedWithPhysicalMessage" -> SendAnswer.AdmittedWithPhysicalMessage
+        | "Retryable" -> SendAnswer.Retryable
+        | "Fatal" -> SendAnswer.Fatal
+        | "AcceptanceUnknown" -> SendAnswer.AcceptanceUnknown
+        | _ -> malformed "send answer"
+
+    let ledgerLabel (ledger: SendLedger) =
+        match ledger with
+        | SendLedger.Submit -> "Submit"
+        | SendLedger.SubmitThenAccept -> "SubmitThenAccept"
+        | SendLedger.Abandon -> "Abandon"
+        | SendLedger.KeepPending -> "KeepPending"
+
+    let detachedLabel (verdict: DetachedVerdict) =
+        match verdict with
+        | DetachedVerdict.OwnedSettled -> "OwnedSettled"
+        | DetachedVerdict.Refused -> "Refused"
+        | DetachedVerdict.OutcomeUnknown -> "OutcomeUnknown"
+
     let message (value: obj) : RecoveryMessage =
         let value = input "message" value
 
@@ -139,6 +161,17 @@ type Dispatch() =
             (Wire.flag "pendingSameOccasion" (Wire.field value "pendingSameOccasion"))
             (Wire.optionalText "landedOrigin" (Wire.field value "landedOrigin"))
             (Wire.text "origin" (Wire.field value "origin"))
+
+    /// Host 的发送回答（'AdmittedWithReceipt' | 'AdmittedWithPhysicalMessage' | 'Retryable' | 'Fatal' |
+    /// 'AcceptanceUnknown'）→ 冻结的 { ledger, definitelyNotSent, detached }。
+    member _.answer(sent: obj) : obj =
+        let verdict = ClaimLaw.answer (Wire.sendAnswer sent)
+
+        createObj
+            [ "ledger" ==> Wire.ledgerLabel verdict.Ledger
+              "definitelyNotSent" ==> verdict.DefinitelyNotSent
+              "detached" ==> Wire.detachedLabel verdict.Detached ]
+        |> Wire.freeze
 
     /// { promptKey, hasReceipt, messages: [{ role, promptKey?, id }] }（按时间先后）→
     /// { kind: 'Proven', physicalUserMessageId } | { kind: 'StillPending', hasReceipt }。

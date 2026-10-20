@@ -29,6 +29,41 @@ type Recovery =
     | Proven of physicalUserMessageId: string
     | StillPending of hasReceipt: bool
 
+/// Host 对一次发送调用的回答（宿主 SendOutcome 的五种形状）。
+[<RequireQualifiedAccess>]
+type SendAnswer =
+    | AdmittedWithReceipt
+    | AdmittedWithPhysicalMessage
+    | Retryable
+    | Fatal
+    | AcceptanceUnknown
+
+/// 同步发送后认领账要做的事（dispatch-protocol [002][003][007]）。
+[<RequireQualifiedAccess>]
+type SendLedger =
+    /// 记 Submitted（回执），认领仍待决；物理身份只由真实 ingress 建立。
+    | Submit
+    /// Host 直接给了真实物理 id：先记 Submitted 再记 PhysicalAccepted，四段链不跳级。
+    | SubmitThenAccept
+    /// 物理承接前的确定拒绝：显式 Abandoned(SendFailed)。
+    | Abandon
+    /// 结局未知：什么都不写，认领保持待决，留给恢复核对；绝不重发。
+    | KeepPending
+
+/// Detached 发送的观察结论（[009]）。
+[<RequireQualifiedAccess>]
+type DetachedVerdict =
+    /// 已由 Host 承接；Detached 不凭 SDK 返回值写 PhysicalAccepted。
+    | OwnedSettled
+    | Refused
+    | OutcomeUnknown
+
+type SendVerdict =
+    { Ledger: SendLedger
+      /// 只有确定未发送（Retryable/Fatal 拒绝）才允许把 exact quiescence permit 归还为可重试（[007]）。
+      DefinitelyNotSent: bool
+      Detached: DetachedVerdict }
+
 type RecoveryMessage =
     { Role: string
       PromptKey: string option
@@ -94,6 +129,27 @@ module ClaimLaw =
     /// 或该载荷的 occasion 视图以同一来源落地。只有显式放弃才重新打开。
     let occasionAdmitted (pendingSameOccasion: bool) (landedOrigin: string option) (origin: string) =
         pendingSameOccasion || landedOrigin = Some origin
+
+    /// Host 对发送的回答 → 认领账动作、是否确定未发送、Detached 观察结论。
+    let answer (sent: SendAnswer) : SendVerdict =
+        match sent with
+        | SendAnswer.AdmittedWithReceipt ->
+            { Ledger = SendLedger.Submit
+              DefinitelyNotSent = false
+              Detached = DetachedVerdict.OwnedSettled }
+        | SendAnswer.AdmittedWithPhysicalMessage ->
+            { Ledger = SendLedger.SubmitThenAccept
+              DefinitelyNotSent = false
+              Detached = DetachedVerdict.OwnedSettled }
+        | SendAnswer.Retryable
+        | SendAnswer.Fatal ->
+            { Ledger = SendLedger.Abandon
+              DefinitelyNotSent = true
+              Detached = DetachedVerdict.Refused }
+        | SendAnswer.AcceptanceUnknown ->
+            { Ledger = SendLedger.KeepPending
+              DefinitelyNotSent = false
+              Detached = DetachedVerdict.OutcomeUnknown }
 
     /// 恢复核对：只看最近 recoveryTailWindow 条，只认 role=user 且 PromptKey 完全一致的消息。
     let recover (promptKey: string) (hasReceipt: bool) (messages: RecoveryMessage list) =

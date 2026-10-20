@@ -20,6 +20,9 @@
 5. [本模块 AXIOM 1] 恢复只凭最近 50 条中 role=user 且 PromptKey 完全一致的物理消息证明落地；找不到就保留待决并区分有无回执，绝不重发或放弃。
     - 推理：dispatch-protocol [004][007]，effect-accounting [002][005]。
 
+6. [本模块 AXIOM 1] Host 的发送回答只决定一次认领账动作：回执 → Submitted；真实物理 id → Submitted 再 PhysicalAccepted；物理承接前的确定拒绝 → 显式放弃且只有它算"确定未发送"；结局未知 → 不写任何事实、保持待决。Detached 不凭 SDK 返回值写 PhysicalAccepted。
+    - 推理：dispatch-protocol [002][003][007][009]，effect-accounting [002][006]。
+
 # SPEC
 
 1. [LEMMA 1] 原文确定、任一要素变动即迁移、缺席标记与空串不相撞、序号必须 ≥ 1。
@@ -32,3 +35,5 @@
     - 证明：`tests/001.test.mjs`。
 5. [LEMMA 5] 窗口边界、非 user 角色、近似 key、回执区分。
     - 证明：`tests/001.test.mjs`。
+6. [LEMMA 6] 五种回答的 ledger/definitelyNotSent/detached 与独立 oracle 一致；未知回答形状抛错。
+    - 证明：`tests/002.test.mjs`。
