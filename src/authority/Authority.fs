@@ -17,6 +17,9 @@ module internal Wire =
     [<Emit("$0 !== null && typeof $0 === 'object' && !Array.isArray($0)")>]
     let isObject (_value: obj) : bool = jsNative
 
+    [<Emit("$0[$1]")>]
+    let field (_value: obj) (_name: string) : obj = jsNative
+
     let malformed (what: string) : 'T = raise (System.ArgumentException(sprintf "wanxiangli/authority: malformed %s" what))
 
     let text (what: string) (value: obj) : string =
@@ -36,11 +39,11 @@ module internal Wire =
     let root (value: obj) : RunRoot =
         if not (isObject value) then malformed "root"
         else
-            { SessionId = text "root.sessionId" value?sessionId
-              LogicalRunId = text "root.logicalRunId" value?logicalRunId
-              RootId = text "root.rootId" value?rootId
-              Kind = rootKind value?kind
-              Seed = text "root.seed" value?seed }
+            { SessionId = text "root.sessionId" (field value "sessionId")
+              LogicalRunId = text "root.logicalRunId" (field value "logicalRunId")
+              RootId = text "root.rootId" (field value "rootId")
+              Kind = rootKind (field value "kind")
+              Seed = text "root.seed" (field value "seed") }
 
     let optionalRoot (value: obj) : RunRoot option =
         if isAbsent value then None else Some(root value)
@@ -51,9 +54,9 @@ module internal Wire =
     let origin (value: obj) : Origin =
         if not (isObject value) then malformed "origin"
         else
-            match (if isString value?kind then unbox<string> value?kind else "") with
-            | "AuthorityRoot" -> Origin.AuthorityRoot(rootKind value?root)
-            | "Continuation" -> Origin.Continuation(text "origin.continuation" value?continuation)
+            match (if isString (field value "kind") then unbox<string> (field value "kind") else "") with
+            | "AuthorityRoot" -> Origin.AuthorityRoot(rootKind (field value "root"))
+            | "Continuation" -> Origin.Continuation(text "origin.continuation" (field value "continuation"))
             | "HostInternal" -> Origin.HostInternal
             | "UnknownOrigin" -> Origin.UnknownOrigin
             | _ -> malformed "origin kind"
@@ -104,12 +107,12 @@ type Authority() =
         if not (Wire.isObject input) then Wire.malformed "origin input"
         else
             RunLaw.resolveOrigin
-                (if Wire.isAbsent input?acceptedContinuation then None
-                 else Some(Wire.text "acceptedContinuation" input?acceptedContinuation))
-                (if Wire.isAbsent input?claimOrigin then None else Some(Wire.origin input?claimOrigin))
-                (Wire.flag "hasPromptKey" input?hasPromptKey)
-                (Wire.flag "hostCompaction" input?hostCompaction)
-                (if Wire.isAbsent input?activeKind then None else Some(Wire.rootKind input?activeKind))
+                (if Wire.isAbsent (Wire.field input "acceptedContinuation") then None
+                 else Some(Wire.text "acceptedContinuation" (Wire.field input "acceptedContinuation")))
+                (if Wire.isAbsent (Wire.field input "claimOrigin") then None else Some(Wire.origin (Wire.field input "claimOrigin")))
+                (Wire.flag "hasPromptKey" (Wire.field input "hasPromptKey"))
+                (Wire.flag "hostCompaction" (Wire.field input "hostCompaction"))
+                (if Wire.isAbsent (Wire.field input "activeKind") then None else Some(Wire.rootKind (Wire.field input "activeKind")))
             |> Wire.originView
 
     static member private closureLabel(closure: Closure) : string =
