@@ -21,6 +21,9 @@
 4. [本模块 AXIOM 1] 关闭只命中精确命名的运行。旧运行的关闭不能关掉新运行；重复关闭幂等。
     - 推理：按"当前有人在跑"去关，会让迟到的旧证据结束一个无关的新委托。
 
+5. [本模块 AXIOM 1] 入口准入只按已观察到的事实裁决，次序固定：畸形身份载体 → 已接受 HumanRoot 物理消息的重放 → 会话、durable 快照、物理 id 的缺失 → 已接受或已落地的物理消息 → 精确 pending claim → Host 内部 → 未接受消息。新的 HumanRoot 只在宿主给出根上解析成功的显式 participant、且没有活跃运行时授予；claim 自带的 HumanRoot 来源永远不可准入。
+    - 推理：这是 LEMMA 2 所说的"入口边界"本身的规则。participant 解析与身份种子仍由宿主做，本模块只看"解析成功的规范名"这一事实，不自己推断谁是用户；没有这份显式证据的消息在活跃运行下一律 UnknownOriginWhileActive 或按活跃档案续接，不会升格为根（CUT-09-a）。
+
 # SPEC
 
 1. [本模块 LEMMA 1, 2] `resolveOrigin` 按固定优先级：已接受的 continuation 物理消息 → 已 claim 的 PromptKey 自身来源 → Host 内部压缩/合成 → 带 PromptKey 且活跃根为 AgentOwnerRoot → UnknownOrigin。没有任何输入组合会得到未经 claim 的 HumanRoot。
@@ -34,6 +37,9 @@
 
 4. 畸形输入（缺字段、非字符串标识、未知种类、非布尔标志）抛 ArgumentException，不猜测。标识只做逐字比较，空串也是一个合法的（不同的）值，不在本模块里另行解释。
     - 证明：`tests/001.test.mjs` SPEC[authority-004]。
+
+5. [本模块 LEMMA 5] `admit` 对 57,344 组输入与按 interaction-authority [005][007][009]、dispatch-protocol-006 独立写成的 oracle 逐一相同，18 种结论都出现；`external-root` 只在显式 participant 根上解析成功且无活跃运行时出现；畸形输入抛错。
+    - 证明：`tests/002.test.mjs` SPEC[authority-005]。
 
 # TODO
 

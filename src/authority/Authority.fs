@@ -69,6 +69,97 @@ module internal Wire =
         | Origin.HostInternal -> createObj [ "kind" ==> "HostInternal" ]
         | Origin.UnknownOrigin -> createObj [ "kind" ==> "UnknownOrigin" ]
 
+    let optionalText (what: string) (value: obj) : string option =
+        if isAbsent value then None else Some(text what value)
+
+    let optionalOrigin (value: obj) : Origin option =
+        if isAbsent value then None else Some(origin value)
+
+    let activeFacts (value: obj) : ActiveFacts =
+        if not (isObject value) then malformed "active"
+        else
+            { Kind = rootKind (field value "kind")
+              SelectedAgent = text "active.selectedAgent" (field value "selectedAgent") }
+
+    let pendingClaim (value: obj) : PendingClaimFacts =
+        if not (isObject value) then malformed "pendingClaim"
+        else
+            { SessionId = text "pendingClaim.sessionId" (field value "sessionId")
+              Origin = origin (field value "origin")
+              SelectedAgent = text "pendingClaim.selectedAgent" (field value "selectedAgent") }
+
+    let acceptedFacts (value: obj) : AcceptedFacts =
+        if not (isObject value) then malformed "acceptedEvidence"
+        else
+            { SessionId = text "acceptedEvidence.sessionId" (field value "sessionId")
+              PhysicalId = text "acceptedEvidence.physicalId" (field value "physicalId")
+              Origin = origin (field value "origin")
+              SelectedAgent = text "acceptedEvidence.selectedAgent" (field value "selectedAgent") }
+
+    /// authority: null/undefined = 快照不可用；{ active: null } = 有快照无活跃运行。
+    let authoritySnapshot (value: obj) : ActiveFacts option option =
+        if isAbsent value then None
+        elif not (isObject value) then malformed "authority"
+        else
+            let active = field value "active"
+            Some(if isAbsent active then None else Some(activeFacts active))
+
+    let admissionInput (value: obj) : AdmissionInput =
+        if not (isObject value) then malformed "admission input"
+        else
+            let carrier = optionalText "invalidCarrier" (field value "invalidCarrier")
+
+            match carrier with
+            | Some "SessionId"
+            | Some "agent"
+            | Some "PromptKey"
+            | None -> ()
+            | Some _ -> malformed "invalidCarrier"
+
+            { InvalidCarrier = carrier
+              SessionId = optionalText "sessionId" (field value "sessionId")
+              PhysicalId = optionalText "physicalId" (field value "physicalId")
+              PromptKey = optionalText "promptKey" (field value "promptKey")
+              ExplicitAgent = optionalText "explicitAgent" (field value "explicitAgent")
+              ExplicitRootAgent = optionalText "explicitRootAgent" (field value "explicitRootAgent")
+              HostInternal = flag "hostInternal" (field value "hostInternal")
+              Authority = authoritySnapshot (field value "authority")
+              AcceptedContinuation = optionalText "acceptedContinuation" (field value "acceptedContinuation")
+              LandedOrigin = optionalOrigin (field value "landedOrigin")
+              PendingClaim =
+                (if isAbsent (field value "pendingClaim") then None
+                 else Some(pendingClaim (field value "pendingClaim")))
+              AcceptedEvidence =
+                (if isAbsent (field value "acceptedEvidence") then None
+                 else Some(acceptedFacts (field value "acceptedEvidence"))) }
+
+    let rejectionLabel (rejection: AdmissionRejection) : string =
+        match rejection with
+        | AdmissionRejection.MalformedCarrier _ -> "malformed-carrier"
+        | AdmissionRejection.MissingSession -> "missing-session"
+        | AdmissionRejection.MissingPhysical -> "missing-physical"
+        | AdmissionRejection.AuthorityUnavailable -> "authority-unavailable"
+        | AdmissionRejection.InvalidExplicitAgent -> "invalid-explicit-agent"
+        | AdmissionRejection.AcceptedParticipantConflict -> "accepted-participant-conflict"
+        | AdmissionRejection.PromptKeyNotClaimed -> "prompt-key-not-claimed"
+        | AdmissionRejection.AgentOwnerRootPromptNotClaimed -> "agent-owner-root-prompt-not-claimed"
+        | AdmissionRejection.ClaimSessionMismatch -> "claim-session-mismatch"
+        | AdmissionRejection.ClaimOriginNotAdmissible -> "claim-origin-not-admissible"
+        | AdmissionRejection.UnknownOriginWhileActive -> "unknown-origin-while-active"
+
+    let admissionView (admission: Admission) : obj =
+        match admission with
+        | Admission.Unmanaged -> createObj [ "kind" ==> "unmanaged" ]
+        | Admission.AlreadyAccepted origin -> createObj [ "kind" ==> "already-accepted"; "origin" ==> originView origin ]
+        | Admission.HostInternal -> createObj [ "kind" ==> "host-internal" ]
+        | Admission.AcceptedRootReplay -> createObj [ "kind" ==> "accepted-root-replay" ]
+        | Admission.ExternalRoot -> createObj [ "kind" ==> "external-root" ]
+        | Admission.ActiveHumanContinuation -> createObj [ "kind" ==> "active-human-continuation" ]
+        | Admission.PendingPrompt -> createObj [ "kind" ==> "pending-prompt" ]
+        | Admission.Reject(AdmissionRejection.MalformedCarrier carrier) ->
+            createObj [ "kind" ==> "reject"; "reason" ==> "malformed-carrier"; "carrier" ==> carrier ]
+        | Admission.Reject rejection -> createObj [ "kind" ==> "reject"; "reason" ==> rejectionLabel rejection ]
+
 /// wanxiangli/authority 公开入口：逻辑根注册、精确关闭与来源解析优先级的纯决议。
 /// 无状态；投影记录、事实编解码与 durable 写入归宿主。JS 边界只收发 plain data，
 /// 畸形输入是调用方缺陷，直接抛 ArgumentException，不猜测。
@@ -114,6 +205,10 @@ type Authority() =
                 (Wire.flag "hostCompaction" (Wire.field input "hostCompaction"))
                 (if Wire.isAbsent (Wire.field input "activeKind") then None else Some(Wire.rootKind (Wire.field input "activeKind")))
             |> Wire.originView
+
+    /// 入口准入（CUT-09-a）：见 index.d.ts 的 AdmissionInput / Admission。
+    member _.admit(input: obj) : obj =
+        AdmissionLaw.admit (Wire.admissionInput input) |> Wire.admissionView
 
     static member private closureLabel(closure: Closure) : string =
         match closure with
