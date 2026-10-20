@@ -23,17 +23,20 @@
 
 # SPEC
 
-1. [本模块 LEMMA 1] 名字到能力的映射、能力到工具的映射，各只有一个写入口。
-    - 证明：[TODO]
+1. [本模块 LEMMA 1] 角色到能力的映射只有一个写入口（`OfficeMatrix.permissions`）；`permissions` 与 `isAllowed` 读同一份集合。能力到工具的映射仍在宿主（CUT-25/34 接手）。
+    - 证明：`tests/001.test.mjs` SPEC[capability-001] 对六个活跃角色逐能力比对 permissions 与 isAllowed。
 
 2. [本模块 LEMMA 1] 角色无法解析时，工具面置空，且运行时拒绝一切调用。
-    - 证明：[TODO]
+    - 证明：`tests/001.test.mjs` SPEC[capability-002]：历史角色、内部槽位、大小写错误、非字符串一律空集与 false；未知能力标签 false。
+
+4. [本模块 LEMMA 1] Manager 门禁只读精确生命周期事实：无在任者、只有确认无评审 → 空集；清理阻塞 → Join+Finality；最终在任者 → 收尾面；已评审 → 收回只读面；否则完整集合。事实字段只有布尔 true 才成立。
+    - 证明：`tests/001.test.mjs` SPEC[capability-003] 的逐分支正反例与畸形事实反例。
 
 3. [本模块 LEMMA 4] 基类成员、工具描述、示例与运行时门禁由同一份能力生成；缺一项能力，四处一致缺失。
     - 证明：[TODO] 生成物一致性测试。
 
 # TODO
 
-- 角色集合与能力矩阵待定。
+- 角色集合与能力矩阵已由宿主 Foundation/OfficeCapability 迁入（CUT-08，2026-10-20）；宿主保留能力 DU 与标签编解码投影。
 - 生成的具体形态（编程面还是逐个工具）待 canary 证明后再定。
 - 旧系统的 12 角色 / 23 能力 / 四层同构 / JS 编程面：只保留"可见即可做"这一条，其余不传承。

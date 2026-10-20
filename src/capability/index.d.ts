@@ -1,0 +1,30 @@
+/**
+ * wanxiangli/capability — 角色 × 能力的唯一事实。
+ *
+ * 可见工具面与运行时门禁读同一份结果；角色以规范小写标签进入，
+ * 矩阵之外的标签（历史角色、内部槽位、未知名）一律空集，失败关闭。
+ */
+
+export type PermissionLabel =
+  | 'Fork' | 'Resume' | 'Join' | 'Horizon' | 'Fission' | 'Read' | 'Write' | 'Edit'
+  | 'Glob' | 'Grep' | 'Move' | 'Remove' | 'Exec' | 'Pty' | 'ReviewAssessment' | 'Fetch'
+  | 'Finality' | 'BashHoneypot' | 'JsPlan' | 'Ask' | 'Deliver' | 'Review'
+  | 'DevOpsConsultation' | 'Advisor'
+
+export interface ManagerFacts {
+  hasActiveIncumbency: boolean
+  hasAssessment: boolean
+  hasConfirmation: boolean
+  isFinalIncumbent: boolean
+  hasCleanupBlocker: boolean
+}
+
+export declare class Capability {
+  permissionLabels(): PermissionLabel[]
+  /** 排序后的能力标签；非规范角色一律 []。 */
+  permissions(role: unknown): PermissionLabel[]
+  isAllowed(role: unknown, permission: unknown): boolean
+  managerReviewReadOnlyPermissions(): PermissionLabel[]
+  managerFinishPermissions(): PermissionLabel[]
+  permissionsForManagerFacts(facts: ManagerFacts): PermissionLabel[]
+}
