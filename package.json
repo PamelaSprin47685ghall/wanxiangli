@@ -67,6 +67,10 @@
     "./degeneration": {
       "types": "./src/degeneration/index.d.ts",
       "import": "./dist/degeneration/Degeneration.js"
+    },
+    "./spool": {
+      "types": "./src/spool/index.d.ts",
+      "import": "./dist/spool/OutputSpool.js"
     }
   },
   "files": [
@@ -87,6 +91,7 @@
     "src/delivery/index.d.ts",
     "src/prefix/index.d.ts",
     "src/degeneration/index.d.ts",
+    "src/spool/index.d.ts",
     "README.md",
     "PROCESS.md",
     "TRACE.md",
@@ -96,7 +101,7 @@
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "npm run build && node --test src/lifecycle/tests/*.test.mjs src/eventstore/tests/*.test.mjs src/assembly/tests/*.test.mjs src/process/tests/*.test.mjs src/trace/tests/*.test.mjs src/session/tests/*.test.mjs src/resources/tests/*.test.mjs src/identity/tests/*.test.mjs src/events/tests/*.test.mjs src/fs/tests/*.test.mjs src/time/tests/*.test.mjs src/wait/tests/*.test.mjs src/prefix/tests/*.test.mjs src/delivery/tests/*.test.mjs src/degeneration/tests/*.test.mjs scripts/tests/*.test.mjs",
+    "test": "npm run build && node --test src/lifecycle/tests/*.test.mjs src/eventstore/tests/*.test.mjs src/assembly/tests/*.test.mjs src/process/tests/*.test.mjs src/trace/tests/*.test.mjs src/session/tests/*.test.mjs src/resources/tests/*.test.mjs src/identity/tests/*.test.mjs src/events/tests/*.test.mjs src/fs/tests/*.test.mjs src/time/tests/*.test.mjs src/wait/tests/*.test.mjs src/prefix/tests/*.test.mjs src/delivery/tests/*.test.mjs src/degeneration/tests/*.test.mjs src/spool/tests/*.test.mjs scripts/tests/*.test.mjs",
     "prepack": "npm run build"
   },
   "devDependencies": {
