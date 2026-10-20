@@ -44,6 +44,30 @@ export type Plan =
   | { readonly ok: false; readonly conflict: 'ConflictingMessageBase' }
   | { readonly ok: false; readonly conflict: 'ConflictingMessageRows'; readonly key: string }
 
+/** 退休 attempt 判定的一条请求消息（宿主线格式顺序）。 */
+export interface RetiredRequestMessage {
+  /** 宿主角色；按不区分大小写的 "user" 识别用户消息；未知时为 null。 */
+  readonly role: string | null
+  /** 宿主稳定消息 id；没有时为 null。 */
+  readonly id: string | null
+  /** 该消息是否带退休切点那次工具调用的 call 或 result。没有投影切点时恒为 false。 */
+  readonly cut: boolean
+  /** 以该消息为物理用户消息的 ChatExecution 接纳证据的权威根 id；没有时为 null。 */
+  readonly accepted: string | null
+}
+
+export interface RetiredRequest {
+  /** 当前 work 是否有一次 Relayed 且带投影切点的退休。 */
+  readonly relayed: boolean
+  /** 本次请求是否已被 ChatExecution 接纳。 */
+  readonly acceptedRequest: boolean
+  /** 会话当前逻辑运行的权威根 user 消息 id；没有时为 null。 */
+  readonly activeRoot: string | null
+  /** 该退休的管理者门控 nudge 被接纳的物理 user 消息 id；没有时为 null。 */
+  readonly gatePhysical: string | null
+  readonly messages: readonly RetiredRequestMessage[]
+}
+
 export interface ProjectionMessages {
   /**
    * 当前任期可见的物理消息：非合成 user 原样保留；assistant/tool 只在首次观测 `>= openingCursor`
@@ -58,6 +82,12 @@ export interface ProjectionMessages {
   layout(intents: readonly LayoutIntent[], baseLength: number): Layout
   /** 只规划（与 layout 的 order/冲突相同），不校验锚点是否落在基底之内。 */
   plan(intents: readonly LayoutIntent[]): Plan
+  /**
+   * 这次请求是否仍属于已被 Relayed 退休的 attempt（宿主应中断并清空请求）。
+   * 归属后任的证据：最后一条 user 消息（须有 id）在切点之后且是当前逻辑运行的根、或是门控 nudge
+   * 的接纳物理消息、或在切点之后且请求已被接纳；或切点已不在线格式中且其接纳证据的根正是当前根。
+   */
+  retired(request: RetiredRequest): boolean
 }
 
 export function Projection(): ProjectionMessages

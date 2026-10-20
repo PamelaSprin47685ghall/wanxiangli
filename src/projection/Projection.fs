@@ -13,6 +13,8 @@ type ProjectionMessages =
     abstract layout: intents: obj * baseLength: obj -> obj
     /// 只规划：去重、冲突裁决、规范顺序；不校验锚点范围。
     abstract plan: intents: obj -> obj
+    /// 退休 attempt 判定：一次请求是否仍属于已被 Relayed 退休、带投影切点的 attempt。
+    abstract retired: request: obj -> obj
 
 let private fail (message: string) : 'a = raise (ArgumentException message)
 
@@ -317,9 +319,86 @@ let private layoutOf (intents: obj) (baseLength: obj) : obj =
                   "rows" ==> freeze (box output) ]
         )
 
+// ── 退休 attempt 的请求归属 ─────────────────────────────────────────────
+
+type private RequestMessage =
+    { User: bool
+      Id: string option
+      Cut: bool
+      Accepted: string option }
+
+let private optionalText (what: string) (value: obj) (name: string) : string option =
+    let item = field what value name
+
+    if isAbsent item then None
+    elif jsTypeof item = "string" && not (String.IsNullOrEmpty(unbox<string> item)) then Some(unbox<string> item)
+    else fail (what + "." + name + " must be a non-empty string or null")
+
+let private requestMessageOf (index: int) (value: obj) : RequestMessage =
+    let what = "messages[" + string index + "]"
+
+    if not (isRecord value) then
+        fail (what + " must be an object")
+
+    let role = field what value "role"
+
+    let user =
+        if isAbsent role then false
+        elif jsTypeof role = "string" then (unbox<string> role).ToLowerInvariant() = "user"
+        else fail (what + ".role must be a string or null")
+
+    { User = user
+      Id = optionalText what value "id"
+      Cut = flag what value "cut"
+      Accepted = optionalText what value "accepted" }
+
+/// 只有 Relayed 退休且带投影切点时才可能过时。请求归属后任（不过时）当且仅当：
+/// 最后一条 user 消息有宿主 id，并且（它在切点之后且是会话当前逻辑运行的根；或它是该退休的
+/// 门控 nudge 被接纳的物理消息；或它在切点之后且本请求已被接纳），或者切点已不在线格式中、
+/// 它带有的 ChatExecution 接纳证据的根正是当前逻辑运行的根。切点 = 第一条带切点工具调用/结果的消息。
+let private retiredOf (request: obj) : obj =
+    if not (isRecord request) then
+        fail "request must be an object"
+
+    let relayed = flag "request" request "relayed"
+    let acceptedRequest = flag "request" request "acceptedRequest"
+    let activeRoot = optionalText "request" request "activeRoot"
+    let gatePhysical = optionalText "request" request "gatePhysical"
+
+    let messages =
+        snapshot "request.messages" (field "request" request "messages")
+        |> Array.mapi requestMessageOf
+
+    let lastUser = messages |> Array.tryFindIndexBack (fun message -> message.User)
+    let cutIndex = messages |> Array.tryFindIndex (fun message -> message.Cut)
+    let last = lastUser |> Option.map (fun index -> messages[index])
+    let physical = last |> Option.bind (fun message -> message.Id)
+
+    let afterCut =
+        match lastUser, cutIndex with
+        | Some user, Some cut -> user > cut
+        | _ -> false
+
+    let freshRoot = if afterCut then activeRoot else None
+
+    let successor =
+        match physical with
+        | Some current -> freshRoot = Some current || gatePhysical = Some current || (afterCut && acceptedRequest)
+        | None -> false
+
+    let acceptedRun =
+        cutIndex.IsNone
+        && physical.IsSome
+        && (match last |> Option.bind (fun message -> message.Accepted), activeRoot with
+            | Some accepted, Some active -> accepted = active
+            | _ -> false)
+
+    box (relayed && not (successor || acceptedRun))
+
 /// 请求投影的纯规则。每条消息独立、无状态：先完整校验输入，再给出冻结的回答。
 let Projection () : ProjectionMessages =
     { new ProjectionMessages with
         member _.tenure(messages, openingCursor) = tenureKept messages openingCursor
         member _.layout(intents, baseLength) = layoutOf intents baseLength
-        member _.plan(intents) = planOf intents }
+        member _.plan(intents) = planOf intents
+        member _.retired(request) = retiredOf request }
