@@ -162,6 +162,43 @@ type Dispatch() =
             (Wire.optionalText "landedOrigin" (Wire.field value "landedOrigin"))
             (Wire.text "origin" (Wire.field value "origin"))
 
+    /// 运行边界重置。input = { sessionId, claims: [{ key, logicalRunId? }], counters: [{ scope, sessionId, logicalRunId? }] }
+    /// → 冻结的 { keepClaims, keepCounters, clearContinuations, clearQuestions }（保持输入顺序）。
+    member _.reset(value: obj) : obj =
+        let value = Wire.input "reset input" value
+        let claims = Wire.field value "claims"
+        let counters = Wire.field value "counters"
+
+        if not (Wire.isArray claims) then
+            Wire.malformed "claims"
+
+        if not (Wire.isArray counters) then
+            Wire.malformed "counters"
+
+        let claim (item: obj) =
+            let item = Wire.input "claim" item
+            Wire.text "claim.key" (Wire.field item "key"), Wire.optionalText "claim.logicalRunId" (Wire.field item "logicalRunId")
+
+        let counter (item: obj) =
+            let item = Wire.input "counter" item
+
+            Wire.text "counter.scope" (Wire.field item "scope"),
+            Wire.text "counter.sessionId" (Wire.field item "sessionId"),
+            Wire.optionalText "counter.logicalRunId" (Wire.field item "logicalRunId")
+
+        let verdict =
+            ClaimLaw.reset
+                (Wire.text "sessionId" (Wire.field value "sessionId"))
+                (unbox<obj array> claims |> Array.map claim |> Array.toList)
+                (unbox<obj array> counters |> Array.map counter |> Array.toList)
+
+        createObj
+            [ "keepClaims" ==> Wire.freeze (box (List.toArray verdict.KeepClaims))
+              "keepCounters" ==> Wire.freeze (box (List.toArray verdict.KeepCounters))
+              "clearContinuations" ==> verdict.ClearContinuations
+              "clearQuestions" ==> verdict.ClearQuestions ]
+        |> Wire.freeze
+
     /// Host 的发送回答（'AdmittedWithReceipt' | 'AdmittedWithPhysicalMessage' | 'Retryable' | 'Fatal' |
     /// 'AcceptanceUnknown'）→ 冻结的 { ledger, definitelyNotSent, detached }。
     member _.answer(sent: obj) : obj =

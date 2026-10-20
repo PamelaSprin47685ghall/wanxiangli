@@ -23,6 +23,9 @@
 6. [本模块 AXIOM 1] Host 的发送回答只决定一次认领账动作：回执 → Submitted；真实物理 id → Submitted 再 PhysicalAccepted；物理承接前的确定拒绝 → 显式放弃且只有它算"确定未发送"；结局未知 → 不写任何事实、保持待决。Detached 不凭 SDK 返回值写 PhysicalAccepted。
     - 推理：dispatch-protocol [002][003][007][009]，effect-accounting [002][006]。
 
+7. [本模块 AXIOM 1] 运行边界（新根登记或精确关闭）上，运行作用域的待决认领、序号计数、continuation 映射与提问随运行结束；还没有逻辑运行的根认领和本会话的根计数属于会话，保留。
+    - 推理：旧运行的认领不能在新运行里落地；根计数若随运行重置，同会话下一次同载荷根认领会派生出与被放弃的那次相同的 PromptKey（dispatch-protocol [006]）。
+
 # SPEC
 
 1. [LEMMA 1] 原文确定、任一要素变动即迁移、缺席标记与空串不相撞、序号必须 ≥ 1。
@@ -37,3 +40,5 @@
     - 证明：`tests/001.test.mjs`。
 6. [LEMMA 6] 五种回答的 ledger/definitelyNotSent/detached 与独立 oracle 一致；未知回答形状抛错。
     - 证明：`tests/002.test.mjs`。
+7. [LEMMA 7] 留下的认领与计数与独立 oracle 一致（含他会话根计数、空串运行 id 不算缺席）；保持输入顺序；畸形输入抛错。
+    - 证明：`tests/003.test.mjs`。

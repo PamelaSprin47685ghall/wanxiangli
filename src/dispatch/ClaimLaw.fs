@@ -64,6 +64,16 @@ type SendVerdict =
       DefinitelyNotSent: bool
       Detached: DetachedVerdict }
 
+/// 运行开始或关闭时的派发资源重置裁决（CUT-09 §6 移交）。
+type RunReset =
+    { /// 留下的待决认领 key：只有还没有逻辑运行的根认领（它们属于会话，不随运行死亡）。
+      KeepClaims: string list
+      /// 留下的序号计数作用域：本会话、无逻辑运行的根作用域；否则同会话的根 PromptKey 会重复。
+      KeepCounters: string list
+      /// continuation 映射与提问都是运行作用域，整体清空。
+      ClearContinuations: bool
+      ClearQuestions: bool }
+
 type RecoveryMessage =
     { Role: string
       PromptKey: string option
@@ -150,6 +160,21 @@ module ClaimLaw =
             { Ledger = SendLedger.KeepPending
               DefinitelyNotSent = false
               Detached = DetachedVerdict.OutcomeUnknown }
+
+    /// 运行边界（新根登记或精确关闭）上的重置：运行作用域的认领、计数、continuation 映射和提问随运行结束；
+    /// 会话作用域的根认领与根计数保留。claims: (key, logicalRunId?)；counters: (scope, sessionId, logicalRunId?)。
+    let reset
+        (sessionId: string)
+        (claims: (string * string option) list)
+        (counters: (string * string * string option) list)
+        : RunReset =
+        { KeepClaims = claims |> List.filter (fun (_, run) -> run.IsNone) |> List.map fst
+          KeepCounters =
+            counters
+            |> List.filter (fun (_, session, run) -> session = sessionId && run.IsNone)
+            |> List.map (fun (scope, _, _) -> scope)
+          ClearContinuations = true
+          ClearQuestions = true }
 
     /// 恢复核对：只看最近 recoveryTailWindow 条，只认 role=user 且 PromptKey 完全一致的消息。
     let recover (promptKey: string) (hasReceipt: bool) (messages: RecoveryMessage list) =

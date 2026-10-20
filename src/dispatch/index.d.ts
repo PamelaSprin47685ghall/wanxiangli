@@ -65,6 +65,12 @@ export declare class Dispatch {
   settle(input: { event: ClaimEvent; pending: boolean; continuation: boolean }): readonly LedgerEdit[]
   occasionAdmitted(input: { pendingSameOccasion: boolean; landedOrigin?: string | null; origin: string }): boolean
   answer(sent: SendAnswer): SendVerdict
+  /** 运行边界（新根登记或精确关闭）的重置：只留无逻辑运行的根认领与本会话的根计数。 */
+  reset(input: {
+    sessionId: string
+    claims: readonly { key: string; logicalRunId?: string | null }[]
+    counters: readonly { scope: string; sessionId: string; logicalRunId?: string | null }[]
+  }): { readonly keepClaims: readonly string[]; readonly keepCounters: readonly string[]; readonly clearContinuations: true; readonly clearQuestions: true }
   /** messages 按时间先后；只看最后 recoveryTailWindow 条、role=user、PromptKey 完全一致。 */
   recover(input: { promptKey: string; hasReceipt: boolean; messages: readonly RecoveryMessage[] }): RecoveryVerdict
 }
