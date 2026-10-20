@@ -33,6 +33,24 @@ module Persona =
         | Persona.Curator -> "Curator"
         | Persona.Planner -> "Planner"
 
+    /// 规范 persona 标签解码。`DirectorV1` 是历史日志里 Director 的旧拼写，只作解码别名。
+    let tryParse (label: string): Persona option =
+        match label with
+        | "Director"
+        | "DirectorV1" -> Some Persona.Director
+        | "Lead" -> Some Persona.Lead
+        | "Engineer" -> Some Persona.Engineer
+        | "Coder" -> Some Persona.Coder
+        | "Investigator" -> Some Persona.Investigator
+        | "Operator" -> Some Persona.Operator
+        | "Researcher" -> Some Persona.Researcher
+        | "Analyst" -> Some Persona.Analyst
+        | "Auditor" -> Some Persona.Auditor
+        | "Distiller" -> Some Persona.Distiller
+        | "Curator" -> Some Persona.Curator
+        | "Planner" -> Some Persona.Planner
+        | _ -> None
+
 [<RequireQualifiedAccess>]
 module PersonaCatalog =
 
@@ -51,6 +69,7 @@ module PersonaCatalog =
         | Role.DevOps -> Persona.Operator
         | Role.Distiller -> Persona.Distiller
         | Role.Plan -> Persona.Planner
+        | Role.Advisor -> Persona.Auditor
 
     /// Bookkeeper 的目录人格（内部槽位，非活跃角色）。
     let bookkeeperPersona: Persona = Persona.Curator

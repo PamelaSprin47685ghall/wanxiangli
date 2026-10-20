@@ -34,18 +34,23 @@ test('WHAT[participant-identity-005] owner persona mismatch between witness and 
   const owner = identity.resolveAtRoot('manager')
   const child = identity.inheritFromOwner('engineer', owner.evidence)
   const forged = { ...child.evidence, persona: 'Engineer' }
-  assert.equal(identity.rehydrate(owner.evidence, forged).error, 'PersonaMismatch')
+  assert.deepEqual(identity.rehydrate(owner.evidence, forged), { error: 'OwnerPersonaMismatch', expected: 'Lead', actual: 'Engineer' })
 
   const wrongOwner = identity.resolveAtRoot('engineer')
-  assert.equal(identity.rehydrate(wrongOwner.evidence, child.evidence).error, 'PersonaMismatch')
+  assert.equal(identity.rehydrate(wrongOwner.evidence, child.evidence).error, 'OwnerPersonaMismatch')
+  assert.deepEqual(
+    identity.rehydrate(owner.evidence, owner.evidence),
+    { error: 'OriginMismatch', expected: 'InheritedFromOwner', actual: 'ResolvedAtRoot' },
+  )
 
   const staleChild = { ...child.evidence, catalogVersion: 2 }
   assert.equal(
     identity.rehydrate(owner.evidence, staleChild).error,
     'UnsupportedPersonaCatalogVersion'
   )
+  // 无效的 owner 视图按自身错误拒绝，不会被静默丢弃成"无 owner"。
   const invalidOwnerView = { ...owner.evidence, catalogVersion: 2 }
-  assert.equal(identity.rehydrate(invalidOwnerView, child.evidence).error, 'OwnerRequired')
+  assert.equal(identity.rehydrate(invalidOwnerView, child.evidence).error, 'UnsupportedPersonaCatalogVersion')
 })
 
 test('WHAT[participant-identity-005] agent-owner-root origin proof and inherited identity compose', () => {

@@ -14,7 +14,7 @@
 
 1. [AXIOM 1] 身份证据（name、role、persona、catalogVersion、origin）在构造点一次证明；`ParticipantIdentityEvidence` 只能经 `resolveAtRoot`/`inheritFromOwner`/`rehydrate` 产生，plain 视图在消费点必须整体重验。
    - 推理：可绕过构造点的证据等于没有证据。
-2. [AXIOM 1] 活跃角色词汇闭合（五个）：orchestrator、manager、engineer、devops、plan。历史角色（coder 等）只供历史事件解码，活跃解析一律拒绝；内部槽位（bookkeeper）显式映射，不冒充角色。
+2. [AXIOM 1] 活跃角色词汇闭合（六个）：orchestrator、manager、engineer、devops、plan、advisor（advisor 活跃但内部，不进公开 fork 词汇）。历史角色（coder 等）只供历史事件解码，活跃解析一律拒绝；内部槽位（bookkeeper）显式映射，不冒充角色。规范名必须全小写且不含连字符，否则按畸形名拒绝。
    - 推理：词汇开放会把已废弃的参与者悄悄复活。
 3. [AXIOM 2] 来源鉴别只认四类已验证来源：human-root（必须携带 participant 证明）、agent-owner-root（必须携带 owner/child 的 logical run 与 child 参与者）、host-internal、continuation（闭合词汇）。其余一律 `UnknownPromptOrigin`。
    - 推理：拒绝分支必须闭合，否则"未知"会退化成"默认"。
@@ -23,20 +23,23 @@
 
 ## SPEC
 
-1. [LEMMA 1, 2] 活跃解析接受且仅接受五个活跃角色；历史、内部槽位名、已退役槽位名、非字符串输入一律 None；历史解码接受 10 个角色。
-   - 证明：`tests/001.test.mjs` 的活跃/历史/畸形三组反例与正例。
-2. [LEMMA 1] 根选定产出规范证据投影；legacy、malformed、unknown 名分别给出对应错误，无回退；bookkeeper 的 role 投影为 null；rehydrate 对每个字段错配（RoleMismatch、PersonaMismatch、UnsupportedPersonaCatalogVersion、OriginMismatch、OwnerRequired、LegacyParticipantName、BlankParticipantName）逐一拒绝；已退役的内部槽位名不再解析，根选定与继承都给出 unknown 名错误，不回退到任何活跃角色。
+1. [LEMMA 1, 2] 活跃解析接受且仅接受六个活跃角色；历史、内部槽位名、已退役槽位名、非字符串输入一律 None；历史解码接受 11 个角色；内部角色判定、历史名单与 persona 标签解码各有一个出口。
+   - 证明：`tests/001.test.mjs` 的活跃/历史/畸形三组反例与正例、目录顺序与内部角色、历史名单与 persona 别名。
+2. [LEMMA 1] 根选定产出规范证据投影；legacy、malformed（大写或连字符）、unknown 名分别给出对应错误，无回退；错配类错误携带 expected/actual；bookkeeper 的 role 投影为 null；rehydrate 对每个字段错配（RoleMismatch、PersonaMismatch、UnsupportedPersonaCatalogVersion、OriginMismatch、OwnerRequired、LegacyParticipantName、BlankParticipantName）逐一拒绝；已退役的内部槽位名不再解析，根选定与继承都给出 unknown 名错误，不回退到任何活跃角色。
    - 证明：`tests/002.test.mjs` 的正控、round-trip、逐字段反例与已退役槽位名的 fail-closed 反例。
 3. [LEMMA 3] classifyOrigin 对 human-root 缺 participant、agent-owner-root 缺任一字段、未知 kind、未知 continuationKind、非 plain-object 输入一律 `UnknownPromptOrigin`；不存在任何产出 human 的回退分支。
    - 证明：`tests/003.test.mjs` 的四类正控与 D-01 无回退断言（失败结果不含 participant/origin 字段）。
 4. [LEMMA 4] bindExecution 要求全部字段、活跃角色、证据与绑定角色一致；rebindTarget 只改物理目标，evidence 深比较不变；篡改证据的视图在重建时被拒；已退役的内部槽位名不产生可绑定证据，以其作绑定角色一律 RoleNotActive。
    - 证明：`tests/004.test.mjs` 的字段缺失、RoleNotActive、RoleMismatch、重绑不变量、篡改反例与已退役槽位名的 fail-closed 反例。
-5. [LEMMA 1] 继承身份沿用 owner 的 persona 与目录版本；无 owner 见证时 InheritedFromOwner 输入被拒（OwnerRequired）；owner 与输入的 persona 错配被拒。
+5. [LEMMA 1] 继承身份沿用 owner 的 persona 与目录版本；无 owner 见证时 InheritedFromOwner 输入被拒（OwnerRequired）；owner 与输入的 persona 错配被拒（OwnerPersonaMismatch）；无效 owner 视图按其自身错误拒绝，不被静默当成"无 owner"。
    - 证明：`tests/005.test.mjs` 的继承正控、round-trip、OwnerRequired、persona 错配与来源/身份组合。
+6. [LEMMA 1, 2] 历史解码只对继承身份开放：InheritedFromOwner 证据可携带已退役角色名（如 inspector）并保留原角色，绝不升级；新继承与根选定一律拒绝历史名。已记录证据经 restoreRecorded 恢复：根证据完整重验，继承证据重验名/角色/版本/非空 persona，不再要求 owner 见证（见证在记录时已校验）。
+   - 证明：`tests/006.test.mjs` 的历史继承正控、角色升级反例、restoreRecorded 逐字段反例与 bookkeeper 继承。
 
 ## 边界
 
 - 本包不验证"owner 委派句柄是否存活"或"logical run 是否真实存在"：那是宿主组合层的事实。classifyOrigin 只做词汇与证明形状的 fail-closed 判定。
 - `OwnerCatalogVersionMismatch` 在单版本目录（V1）下不可达，是目录演进时的防御分支；出现第二版本目录时须补对应测试。
-- 宿主仓（wanxiangshu）调用方切换被 vendor tarball 0.5.2（无 identity 导出）阻塞，归 CUT-33 发布 0.6.0 后的集成队列处理。
+- 宿主仓（wanxiangshu）的 `Foundation/Roles`、`Participant/Persona`（目录、身份校验）经 `[<Import("Identity", "wanxiangli/identity")>]` 消费本包（CUT-07 主仓切换）；宿主保留 F# 类型投影与旧 V1 日志适配，不再自持规则。
+- `classifyOrigin` 的 continuation 词汇与宿主 `Interaction/Authority/Origin.fs` 尚不一致，来源鉴别的宿主切换归 CUT-09（D-01）；`ExecutionBinding` 的宿主接线归 CUT-10/12。
 - Process、Trace、Ownership 边界不在本包内。

@@ -57,7 +57,7 @@ module ExecutionBinding =
                                 Error(ExecutionBindingError.MissingBindingField "evidence")
                             else
                                 // 身份证据必须重新完整校验：外部传入的 plain 视图不可信任。
-                                match ParticipantIdentity.rehydrate None rawEvidence with
+                                match ParticipantIdentity.decodeInput rawEvidence |> Result.bind ParticipantIdentity.restoreRecorded with
                                 | Error identityError -> Error(ExecutionBindingError.IdentityMismatch identityError)
                                 | Ok evidence ->
                                     match ParticipantIdentity.roleOf evidence with
@@ -76,7 +76,7 @@ module ExecutionBinding =
                                                       ModelTarget = modelTarget
                                                       CapacityFence = capacityFence }
                                     | _ ->
-                                        Error(ExecutionBindingError.IdentityMismatch(ParticipantIdentityError.RoleMismatch(expected = Some role, actual = ParticipantIdentity.roleOf evidence)))
+                                        Error(ExecutionBindingError.IdentityMismatch(ParticipantIdentityError.RoleMismatch(Some role, ParticipantIdentity.roleOf evidence)))
 
     /// 模型目标重绑：只改 ModelTarget 与 CapacityFence，身份证据逐字段保持原值。
     let rebindTarget (binding: ExecutionBinding) (target: obj): Result<ExecutionBinding, ExecutionBindingError> =
