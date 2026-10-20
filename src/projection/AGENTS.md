@@ -1,6 +1,6 @@
 # projection — 请求投影的信息边界
 
-层：内核。npm 入口 `wanxiangli/projection`，导出工厂 `Projection()`。不得 import 任何宿主 SDK、Trace 或存储；不持有状态、不读文件或环境变量、不渲染宿主线格式。
+层：内核。npm 入口 `wanxiangli/projection`，导出工厂 `Projection()`。不得 import 任何宿主 SDK、Trace 或存储；不持有状态、不读文件或环境变量、不渲染宿主线格式（`wire`/`semantic` 给出的是 provider 投影的规范字节，不是宿主请求对象）。
 
 来源：宿主仓 `proposals/extraction-kanban/cards/CUT-17.md`；现行需求 `requirements/work/WHAT.md` [034]、`requirements/participant-horizon/WHAT.md`、`requirements/provider-projection/WHAT.md` [004]–[006]。消息解码、XTrace 游标观测、重锚事实写入与保留消息怎样写回宿主请求，都留在宿主组合者。
 
@@ -16,6 +16,9 @@
 4. [使用者] 已被 Relayed 退休的 attempt 不能再借一次请求继续说话；后任的请求不能被误杀。
     - 理由：退休后宿主仍可能重放旧 attempt 的消息集，放行会让旧 attempt 越过交接继续行动；反过来把后任的请求当成旧 attempt 清空，会让交接后的工作凭空停住。
 
+5. [使用者] 实际发出的内容要能逐字节复核；跨会话比较不得被每次都不同的机器 id 污染。
+    - 理由：封印与前缀缓存只认真实字节；夹具与截止证明需要去掉 callId 后仍稳定的语义字节。一份对象兼作两用，就会长出各自的私有规范化。
+
 # LEMMA
 
 1. [AXIOM 1] 非合成 user 消息无条件保留，保持原顺序；合成行与 user/assistant/tool 之外的角色一律剥离。
@@ -26,6 +29,8 @@
 6. [AXIOM 3] 锚点指向（替换后或原始）基底的下标，插在该行之前；同一锚点按 key 序紧邻；append 在全部锚定行之后按 key 序；锚点超出基底长度整次拒绝。
 
 7. [AXIOM 4, 2] 只有 Relayed 且带投影切点的退休才可能过时。切点 = 第一条带切点工具 call/result 的消息；请求的物理消息 = 最后一条 user（不区分大小写）消息的宿主 id，没有 id 永远证明不了归属。归属后任当且仅当：物理消息在切点之后且是当前逻辑运行的根；或是该退休门控 nudge 的接纳物理消息；或在切点之后且请求已被接纳；或切点已不在线格式中且该消息的接纳证据之根等于当前根。否则过时。
+8. [AXIOM 5] 规范字节手写固定：字段顺序 provider/model/variant/tools/system/messages，消息 role/parts，部件 kind 在先；缺省与 null 同为 `null`，空串照写；字符串只转义 `\\` `"` `\n` `\r` `\t`，其余字符（含其他控制字符与孤立代理）原样保留（历史封印格式，不改成标准 JSON 转义）。
+9. [AXIOM 5, 2] `wire` 的 tool-call/tool-result 必须带 callId；`semantic` 的部件带 callId 即拒绝（不静默丢弃）。`wireMessage` 恰是 `wire` 中对应的消息元素。未知 kind、非字符串、稀疏与 accessor 一律拒绝。
 
 # SPEC
 
@@ -37,3 +42,5 @@
     - 证明：`tests/003.test.mjs`；与宿主原 `ProjectionPlanner`/`ProjectionRenderer` 的双算见宿主 CUT-17 证据。
 4. [LEMMA 7, 4] `retired`：无退休不过时、切点仍在且无证据过时、切点前后的新根/已接纳、门控 nudge、切点消失后的接纳根、无 id 的 user、首个切点与大小写、非法输入与 accessor。
     - 证明：`tests/004.test.mjs`；与宿主原 `RelayNarrativeTransform.staleRetirement` 的双算见宿主 CUT-17 证据。
+5. [LEMMA 8, 9, 4] `wire`/`wireMessage`/`semantic`：逐字节期望输出、五种转义与其余字符原样、缺省与 null 等价、wireMessage 与 wire 内元素相同、语义拒绝 callId、线格式要求 callId、非法输入与 accessor。
+    - 证明：`tests/005.test.mjs`；与宿主原 `ProviderProjection.renderWire`/`renderSemantic` 的双算见宿主 CUT-17 证据。

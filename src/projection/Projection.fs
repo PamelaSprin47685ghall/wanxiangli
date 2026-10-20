@@ -15,6 +15,12 @@ type ProjectionMessages =
     abstract plan: intents: obj -> obj
     /// 退休 attempt 判定：一次请求是否仍属于已被 Relayed 退休、带投影切点的 attempt。
     abstract retired: request: obj -> obj
+    /// provider 线格式投影的规范字节（含 callId，同一会话内逐字节比较、封印摘要的原文）。
+    abstract wire: projection: obj -> obj
+    /// 一条线格式消息的规范字节（追加律逐条比较的单位）。
+    abstract wireMessage: message: obj -> obj
+    /// 语义投影的规范字节（不含任何 callId，跨会话比较、截止摘要的原文）。
+    abstract semantic: projection: obj -> obj
 
 let private fail (message: string) : 'a = raise (ArgumentException message)
 
@@ -395,10 +401,121 @@ let private retiredOf (request: obj) : obj =
 
     box (relayed && not (successor || acceptedRun))
 
+// ── provider 投影的规范字节 ────────────────────────────────────────────────
+//
+// 手写而非反射序列化：线格式字节会成为持久封印的摘要原文，语义字节会成为夹具键，
+// 依赖升级不得改变其中任何一个。转义只处理 \\ " \n \r \t 五种（历史格式，逐字节保持）。
+
+let private quote (text: string) =
+    let escaped =
+        text
+            .Replace("\\", "\\\\")
+            .Replace("\"", "\\\"")
+            .Replace("\n", "\\n")
+            .Replace("\r", "\\r")
+            .Replace("\t", "\\t")
+
+    "\"" + escaped + "\""
+
+let private jsonArray (items: string seq) = "[" + String.Join(",", items) + "]"
+let private member' name value = quote name + ":" + value
+let private jsonObject (fields: string list) = "{" + String.Join(",", fields) + "}"
+
+let private text (what: string) (value: obj) (name: string) : string =
+    let item = field what value name
+
+    if jsTypeof item <> "string" then
+        fail (what + "." + name + " must be a string")
+
+    unbox<string> item
+
+/// 缺省或 null 渲染为 null；字符串（含空串）原样渲染。
+let private nullableText (what: string) (value: obj) (name: string) : string =
+    let item = field what value name
+
+    if isAbsent item then "null"
+    elif jsTypeof item = "string" then quote (unbox<string> item)
+    else fail (what + "." + name + " must be a string or null")
+
+let private texts (what: string) (value: obj) (name: string) : string =
+    let path = what + "." + name
+
+    snapshot path (field what value name)
+    |> Array.mapi (fun index item ->
+        if jsTypeof item <> "string" then
+            fail (path + "[" + string index + "] must be a string")
+
+        quote (unbox<string> item))
+    |> jsonArray
+
+let private record (what: string) (value: obj) =
+    if not (isRecord value) then
+        fail (what + " must be an object")
+
+/// 线格式部件必须带 callId；语义部件不得带 callId（两种投影不可混用）。
+let private partBytes (identified: bool) (what: string) (part: obj) : string =
+    record what part
+    let kind = text what part "kind"
+    let kindField = member' "kind" (quote kind)
+
+    let callId () =
+        if identified then
+            [ member' "callId" (quote (text what part "callId")) ]
+        elif not (isAbsent (field what part "callId")) then
+            fail (what + " is a semantic part and must not carry a callId")
+        else
+            []
+
+    match kind with
+    | "text"
+    | "reasoning" -> jsonObject [ kindField; member' "text" (quote (text what part "text")) ]
+    | "tool-call" ->
+        jsonObject (
+            [ kindField ]
+            @ callId ()
+            @ [ member' "name" (quote (text what part "name"))
+                member' "args" (quote (text what part "args")) ]
+        )
+    | "tool-result" -> jsonObject ([ kindField ] @ callId () @ [ member' "result" (quote (text what part "result")) ])
+    | "media" ->
+        jsonObject
+            [ kindField
+              member' "mediaType" (nullableText what part "mediaType")
+              member' "contentDigest" (quote (text what part "contentDigest")) ]
+    | other -> fail (what + ".kind is not a provider part kind: " + other)
+
+let private messageBytes (identified: bool) (what: string) (message: obj) : string =
+    record what message
+
+    let parts =
+        snapshot (what + ".parts") (field what message "parts")
+        |> Array.mapi (fun index part -> partBytes identified (what + ".parts[" + string index + "]") part)
+
+    jsonObject [ member' "role" (quote (text what message "role")); member' "parts" (jsonArray parts) ]
+
+let private projectionBytes (identified: bool) (projection: obj) : string =
+    let what = "projection"
+    record what projection
+
+    let messages =
+        snapshot "projection.messages" (field what projection "messages")
+        |> Array.mapi (fun index message -> messageBytes identified ("projection.messages[" + string index + "]") message)
+
+    jsonObject
+        [ member' "provider" (nullableText what projection "provider")
+          member' "model" (nullableText what projection "model")
+          member' "variant" (nullableText what projection "variant")
+          member' "tools" (texts what projection "tools")
+          member' "system" (texts what projection "system")
+          member' "messages" (jsonArray messages) ]
+
 /// 请求投影的纯规则。每条消息独立、无状态：先完整校验输入，再给出冻结的回答。
 let Projection () : ProjectionMessages =
     { new ProjectionMessages with
         member _.tenure(messages, openingCursor) = tenureKept messages openingCursor
         member _.layout(intents, baseLength) = layoutOf intents baseLength
         member _.plan(intents) = planOf intents
-        member _.retired(request) = retiredOf request }
+        member _.retired(request) = retiredOf request
+        member _.wire(projection) = box (projectionBytes true projection)
+        member _.wireMessage(message) = box (messageBytes true "message" message)
+        member _.semantic(projection) = box (projectionBytes false projection) }

@@ -68,6 +68,27 @@ export interface RetiredRequest {
   readonly messages: readonly RetiredRequestMessage[]
 }
 
+/** provider 投影的一个部件。线格式视图的 tool-call/tool-result 必须带 callId，语义视图不得带。 */
+export type ProviderPart =
+  | { readonly kind: 'text' | 'reasoning'; readonly text: string }
+  | { readonly kind: 'tool-call'; readonly callId?: string; readonly name: string; readonly args: string }
+  | { readonly kind: 'tool-result'; readonly callId?: string; readonly result: string }
+  | { readonly kind: 'media'; readonly mediaType: string | null; readonly contentDigest: string }
+
+export interface ProviderMessage {
+  readonly role: string
+  readonly parts: readonly ProviderPart[]
+}
+
+export interface ProviderProjectionView {
+  readonly provider?: string | null
+  readonly model?: string | null
+  readonly variant?: string | null
+  readonly tools: readonly string[]
+  readonly system: readonly string[]
+  readonly messages: readonly ProviderMessage[]
+}
+
 export interface ProjectionMessages {
   /**
    * 当前任期可见的物理消息：非合成 user 原样保留；assistant/tool 只在首次观测 `>= openingCursor`
@@ -88,6 +109,12 @@ export interface ProjectionMessages {
    * 的接纳物理消息、或在切点之后且请求已被接纳；或切点已不在线格式中且其接纳证据的根正是当前根。
    */
   retired(request: RetiredRequest): boolean
+  /** 线格式投影的规范字节（含 callId；同一会话内逐字节比较与封印摘要的原文）。 */
+  wire(projection: ProviderProjectionView): string
+  /** 一条线格式消息的规范字节，恰是 wire 输出中对应的消息元素。 */
+  wireMessage(message: ProviderMessage): string
+  /** 语义投影的规范字节；部件带 callId 即拒绝。 */
+  semantic(projection: ProviderProjectionView): string
 }
 
 export function Projection(): ProjectionMessages
