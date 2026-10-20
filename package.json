@@ -115,6 +115,10 @@
     "./routing": {
       "types": "./src/routing/index.d.ts",
       "import": "./dist/routing/RoutingProtocol.js"
+    },
+    "./authority": {
+      "types": "./src/authority/index.d.ts",
+      "import": "./dist/authority/Authority.js"
     }
   },
   "files": [
@@ -145,6 +149,7 @@
     "src/compression/index.d.ts",
     "src/projection/index.d.ts",
     "src/capability/index.d.ts",
+    "src/authority/index.d.ts",
     "src/sandbox/index.d.ts",
     "src/routing/index.d.ts",
     "README.md",

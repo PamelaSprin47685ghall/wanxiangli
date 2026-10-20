@@ -4,37 +4,38 @@
 
 # AXIOM
 
-1. [使用者] 用户写下的原文不能丢，机器写的文本可以重述。因此系统必须分得清当下这句话是谁说的。
-    - 理由：用户原文不可逆——改了就再也问不回去（总规则 LEMMA 4）。机器文本丢了可以重查。
+1. [使用者] 用户写下的原文不能丢，也不能被机器文本冒充。因此系统必须分得清当下这句话是谁说的，以及它延续的是哪一次委托。
+    - 理由：把插件或旧运行的话当成用户的新委托，会凭空开一条新的逻辑运行、重置失败预算、扩大权威；这些后果不可撤回。
 
 # LEMMA
 
-1. [本模块 AXIOM 1; 总规则 LEMMA 1] 来源只有三值：human、plugin、host-internal。打一个标记就够，围栏不是。
-    - 推理：总规则 LEMMA 1 说只有用户原文与真实外部效果不可逆。误判来源最坏情况是把插件的话当用户的话，下一轮就能纠正。为它配一套账本，是拿守不可逆的代价去守一个可撤销的动作。
+1. [本模块 AXIOM 1] 来源是闭集合：AuthorityRoot（HumanRoot、AgentOwnerRoot）、Continuation、HostInternal、UnknownOrigin。无法证明的来源是 UnknownOrigin，失败关闭。
+    - 推理：D-01 裁定（CUT-09，2026-10-21）。早期草稿"缺标记回退 human、只记诊断"与现行 interaction-authority [005][007][009] 冲突：回退 human 正是让未证明的消息获得根独占权。现行要求优先。
 
-2. [本模块 AXIOM 1] 没有标记、且宿主没把它标成合成消息时，当作 human 处理，记一条诊断，不阻断。
-    - 推理：在一个只有两三个生产者的系统里，"认不出来的消息"只意味着解析器坏了。为此拒绝服务，等于把解析器的正确性设成用户可用性的前提。宁可偶尔认错，不可让整个插件停止工作。
+2. [本模块 AXIOM 1] 纯计算从不推断新的 HumanRoot。HumanRoot 只由入口边界凭显式 participant 授予。
+    - 推理：本模块看不到外部接受证据；能返回 HumanRoot 的纯函数等于替入口签发权威。
 
-3. [本模块 AXIOM 1] "是不是新的根"不看标记，看当前会话有没有活跃的 provider 执行。
-    - 推理：用户新开一句话与插件注入一句话的差别，在于前者要开一条新的逻辑运行、重置失败预算。这件事由"有没有人在跑"回答，不需要第二套身份证据。
+3. [本模块 AXIOM 1] 一个会话同时只有一个活跃逻辑根。精确同一根的重放沿用它；任何别的根都要等它精确关闭。
+    - 推理：两个同时活跃的根会让 continuation 不知道挂靠谁，旧根的回执可能结算新根。
 
-4. [总规则 LEMMA 1] 重发会不会做两遍，归产生效果的那个包回答。
-    - 推理：只有产生真实外部效果的包知道自己能不能安全重发。把这个问题搬到本包，就会长出跨包的第二套账本。
+4. [本模块 AXIOM 1] 关闭只命中精确命名的运行。旧运行的关闭不能关掉新运行；重复关闭幂等。
+    - 推理：按"当前有人在跑"去关，会让迟到的旧证据结束一个无关的新委托。
 
 # SPEC
 
-1. [本模块 LEMMA 1] 标记以宿主消息的字段承载；宿主快照里可读，进程重启后仍在。
-    - 证明：[TODO] 落盘后由恢复测试证明。
+1. [本模块 LEMMA 1, 2] `resolveOrigin` 按固定优先级：已接受的 continuation 物理消息 → 已 claim 的 PromptKey 自身来源 → Host 内部压缩/合成 → 带 PromptKey 且活跃根为 AgentOwnerRoot → UnknownOrigin。没有任何输入组合会得到未经 claim 的 HumanRoot。
+    - 证明：`tests/001.test.mjs` SPEC[authority-001] 穷举 2×(5)×2×2×3 组输入。
 
-2. [本模块 LEMMA 1] 投影给模型之前剥掉标记；机器拓扑不进模型视野。
-    - 证明：[TODO]
+2. [本模块 LEMMA 3] `register`：没有活跃根 → admit；与活跃根精确相同，或会话、根消息、根种类、身份种子相同（持久重放）→ replay；其余 → conflict。
+    - 证明：`tests/001.test.mjs` SPEC[authority-002]，逐字段改动各给一个 conflict 反例。
 
-3. [本模块 LEMMA 2] 无标记且宿主未标合成 → human；诊断一条；不抛错、不拒绝、不阻断。
-    - 证明：[TODO]
+3. [本模块 LEMMA 4] `close`：活跃运行正是 (LogicalRunId, RootId) → close；活跃运行是别的 → mismatch；无活跃运行而最后一个根正是它 → already-closed；否则 no-authority。`closeChildWork` 另要求活跃根为非 Manager 的 AgentOwnerRoot，否则 not-child-work。
+    - 证明：`tests/001.test.mjs` SPEC[authority-003]。
+
+4. 畸形输入（缺字段、非字符串标识、未知种类、非布尔标志）抛 ArgumentException，不猜测。标识只做逐字比较，空串也是一个合法的（不同的）值，不在本模块里另行解释。
+    - 证明：`tests/001.test.mjs` SPEC[authority-004]。
 
 # TODO
 
-- 标记的宿主字段名待定；写入点见 host-omp。
-- host-internal 的判定来源（宿主是否自带合成消息标记）待 canary 证明（总规则 SPEC 3）。
-- 三值是否需要第四值（例如"系统自身重试"）：出现真实反例再加。
-- 旧系统的 provenance 代数、claim 四态、物理落地证据、权威闭包五案，按总规则 LEMMA 1 全部删除，不传承。
+- 五类 ExpectedClosureKind 与 source witness 的精确匹配（interaction-authority-018）在宿主尚未实现（宿主当前只有 retirement witness 字符串）；先在宿主补齐事实，再迁入本模块。
+- 投影重置（清空 run-scoped claims、continuation 映射、序列号、提问）与 durable fold 仍归宿主；是否迁入取决于 CUT-11 对 claim 账的处置。
