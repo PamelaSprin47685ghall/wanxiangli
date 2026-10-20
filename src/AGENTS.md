@@ -82,7 +82,7 @@
 
   | 层 | 目录 |
   |---|---|
-  | 内核 | `lifecycle` `authority` `delegation` `events` `eventstore` `failure` `capability` `trace` `delivery` `degeneration` `session` `identity` `time` `prefix` `compression` `resources` |
+  | 内核 | `lifecycle` `authority` `delegation` `events` `eventstore` `failure` `capability` `trace` `delivery` `degeneration` `ablation` `session` `identity` `time` `prefix` `compression` `resources` |
   | 物理能力 | `process` |
   | GAP | `host-omp` |
   | 组装 | `assembly` |
