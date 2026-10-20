@@ -3,6 +3,7 @@ import { WriterRetention } from 'wanxiangli/retention'
 import { CanonicalEventCodec } from 'wanxiangli/events'
 import { WriterSegments } from 'wanxiangli/segments'
 import { CasebookIndexLaw } from 'wanxiangli/casebook'
+import { CasebookMaintenanceLaw } from 'wanxiangli/casebook-maintenance'
 
 const event = (id, parents = []) => ({ id, stream: 'job/main', type: 'JobRequested', parents, payload: {}, payloadRefs: [] })
 const root = event('a'.repeat(40))
@@ -25,6 +26,7 @@ process.stdout.write(JSON.stringify({
   coexistence: [segments.coexistence(lineOf(left), lineOf(root)), segments.coexistence(lineOf(root), lineOf(root))],
   stream: segments.decodeStream('w', codec.encode(root) + codec.encode(left)).events.length,
   shelfmark: new CasebookIndexLaw().shelfmarkFor('private-session-a', '## Restart behavior\nfull canonical question').startsWith('Restart behavior · '),
+  maintenance: new CasebookMaintenanceLaw().summarize([new CasebookMaintenanceLaw().fileDiff('a.txt', 'old\n', 'new\n')]).refresh,
   activity: new WriterRetention().lastActivity(tail) === now,
   closure: new CanonicalEventCodec().checkClosure([orphan], () => true).error.code,
   kept: kept.map(item => item.id),

@@ -2,6 +2,7 @@ import { KWayMerge, type ConvergenceResult } from 'wanxiangli/convergence'
 import { CanonicalEventCodec, type ClosureResult, type EventInput } from 'wanxiangli/events'
 import { WriterRetention } from 'wanxiangli/retention'
 import { CasebookIndexLaw, type IndexEntry } from 'wanxiangli/casebook'
+import { CasebookMaintenanceLaw, type MaintenanceSummary } from 'wanxiangli/casebook-maintenance'
 import { WriterSegments, type Coexistence, type StreamDecodeResult, type StreamLayout, type WriterFiles } from 'wanxiangli/segments'
 
 const groups: WriterFiles[] = new WriterSegments().groupWriterFiles(['w-0000.ndjson'])
@@ -41,3 +42,8 @@ const entries: IndexEntry[] = new CasebookIndexLaw().entries([{ sessionId: 's', 
 const victims: string[] = new CasebookIndexLaw().evictionVictims(1, [{ sessionId: 's', accessOrder: 1n }])
 void entries
 void victims
+
+const maintenance: MaintenanceSummary = new CasebookMaintenanceLaw().summarize([new CasebookMaintenanceLaw().fileDiff('a.txt', null, 'x')])
+const readVerdict: 'missing' | 'fault' = new CasebookMaintenanceLaw().readFailure('ENOENT')
+void maintenance
+void readVerdict
