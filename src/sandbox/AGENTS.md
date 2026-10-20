@@ -14,15 +14,18 @@
 # LEMMA
 
 1. [AXIOM 1] 上下文用 `DONT_CONTEXTIFY` 创建；宿主对象不挂到全局；凡进入程序的宿主值（返回值、Error、Promise、函数、Callable 实例）都复制或包装成 sandbox-realm 值。
-2. [AXIOM 1] 期限检查用宿主时钟，不读可被程序改写的 sandbox `Date.now`。
-3. [AXIOM 2] 宿主侧驱动循环在每次 `runInContext('void 0')` 上施加剩余 timeout，使 await 之后的同步死循环同样以超时结束。
+2. [AXIOM 1] membrane 与模型程序同 realm：membrane 用到的内建方法（WeakMap/Reflect/数组拷贝）在模型代码运行前捕获引用，经捕获的 Reflect.apply 调用；模型改写原型不影响 membrane。
+3. [AXIOM 1] 期限检查用宿主时钟，不读可被程序改写的 sandbox `Date.now`。
+4. [AXIOM 2] 宿主侧驱动循环在每次 `runInContext('void 0')` 上施加剩余 timeout，使 await 之后的同步死循环同样以超时结束。
 
 # SPEC
 
 1. [LEMMA 1] 下列逃逸在 membrane 下均拿不到宿主 `process`，且不能在 workspace 外写文件；在 naive 实现上会成功（base-red）。
     - 全局 `api` / `__deadlineRef` / `globalThis.constructor` / `this.ls` 返回值的 `constructor.constructor`
     - 证明：`tests/001.test.mjs`
-2. [LEMMA 3] 同步死循环与 await 之后的死循环都在 deadlineMs 量级内以超时结束。
+2. [LEMMA 4] 同步死循环与 await 之后的死循环都在 deadlineMs 量级内以超时结束。
     - 证明：`tests/002.test.mjs`（await 路径在子进程中跑，避免 node:test async_hooks 与 afterEvaluate 冲突）
 3. 正常 api 往返仍返回 sandbox 数据（例如 `ls` 的 entries 数组）。
     - 证明：`tests/001.test.mjs` normal ls
+4. [LEMMA 2] 模型改写 `WeakMap.prototype.has` / `.set` 不能观察到 membrane 传入的宿主值（0.23.1 上会泄漏宿主对象并拿到 `process`）。
+    - 证明：`tests/003.test.mjs`

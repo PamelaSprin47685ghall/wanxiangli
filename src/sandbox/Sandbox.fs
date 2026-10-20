@@ -34,6 +34,22 @@ let private installSource =
   var JSON = globalThis.JSON;
   var isArray = Array.isArray;
   var getOwnNames = Object.getOwnPropertyNames;
+  // Capture intrinsic methods before any model code runs, and invoke them via
+  // the captured Reflect.apply. The membrane shares its realm with the model
+  // program (DONT_CONTEXTIFY), so a model that monkeypatches e.g.
+  // WeakMap.prototype.has would otherwise see the raw host value the membrane
+  // passes to that method. Holding direct references defeats later tampering.
+  var ReflectApply = Reflect.apply;
+  var ReflectGet = Reflect.get;
+  var ReflectConstruct = Reflect.construct;
+  var WeakMapHas = WeakMap.prototype.has;
+  var WeakMapGet = WeakMap.prototype.get;
+  var WeakMapSet = WeakMap.prototype.set;
+  function mapHas(m, k) { return ReflectApply(WeakMapHas, m, [k]); }
+  function mapGet(m, k) { return ReflectApply(WeakMapGet, m, [k]); }
+  function mapSet(m, k, v) { ReflectApply(WeakMapSet, m, [k, v]); }
+  function argsToArray(a) { var out = []; for (var i = 0; i < a.length; i++) out[i] = a[i]; return out; }
+  function mapArray(arr, fn) { var out = []; for (var i = 0; i < arr.length; i++) out[i] = fn(arr[i]); return out; }
   var slot = null;
   globalThis.__put = function (v) { slot = v; };
   globalThis.__take = function () { var s = slot; slot = null; return s; };
@@ -65,20 +81,20 @@ let private installSource =
       );
     }
     function bridgeInstance(guestInst) {
-      if (guestToHost.has(guestInst)) return guestToHost.get(guestInst);
+      if (mapHas(guestToHost, guestInst)) return mapGet(guestToHost, guestInst);
       var proxy = new Proxy(guestInst, {
         get: function (target, prop) {
           if (prop === "constructor") return undefined;
-          var v = Reflect.get(target, prop, target);
+          var v = ReflectGet(target, prop, target);
           if (typeof v !== "function") {
             if (isPrimitive(v)) return v;
             return unwrap(v);
           }
           return function () {
-            var hostArgs = Array.prototype.slice.call(arguments);
-            var guestArgs = hostArgs.map(wrap);
+            var hostArgs = argsToArray(arguments);
+            var guestArgs = mapArray(hostArgs, wrap);
             try {
-              return unwrap(Reflect.apply(v, target, guestArgs));
+              return unwrap(ReflectApply(v, target, guestArgs));
             } catch (e) {
               throw unwrap(e);
             }
@@ -89,17 +105,17 @@ let private installSource =
         deleteProperty: function () { return false; },
         getPrototypeOf: function () { return null; },
       });
-      guestToHost.set(guestInst, proxy);
-      hostToGuest.set(proxy, guestInst);
+      mapSet(guestToHost, guestInst, proxy);
+      mapSet(hostToGuest, proxy, guestInst);
       return proxy;
     }
     function wrap(hostValue) {
       if (isPrimitive(hostValue)) return hostValue;
-      if (hostToGuest.has(hostValue)) return hostToGuest.get(hostValue);
+      if (mapHas(hostToGuest, hostValue)) return mapGet(hostToGuest, hostValue);
       if (looksLikeError(hostValue)) {
         var ge = copyError(hostValue);
-        hostToGuest.set(hostValue, ge);
-        guestToHost.set(ge, hostValue);
+        mapSet(hostToGuest, hostValue, ge);
+        mapSet(guestToHost, ge, hostValue);
         return ge;
       }
       if (typeof hostValue.then === "function") {
@@ -109,8 +125,8 @@ let private installSource =
             function (e) { reject(wrap(e)); }
           );
         });
-        hostToGuest.set(hostValue, gp);
-        guestToHost.set(gp, hostValue);
+        mapSet(hostToGuest, hostValue, gp);
+        mapSet(guestToHost, gp, hostValue);
         return gp;
       }
       if (typeof hostValue === "function") {
@@ -120,28 +136,28 @@ let private installSource =
             err.__jsFailure = { code: "PROGRAM_TIMEOUT", reason: "program exceeded its deadline" };
             throw err;
           }
-          var guestArgs = Array.prototype.slice.call(arguments);
-          var hostArgs = guestArgs.map(unwrap);
+          var guestArgs = argsToArray(arguments);
+          var hostArgs = mapArray(guestArgs, unwrap);
           try {
-            return wrap(Reflect.apply(hostValue, unwrap(this), hostArgs));
+            return wrap(ReflectApply(hostValue, unwrap(this), hostArgs));
           } catch (e) {
             throw wrap(e);
           }
         };
-        hostToGuest.set(hostValue, guestFn);
-        guestToHost.set(guestFn, hostValue);
+        mapSet(hostToGuest, hostValue, guestFn);
+        mapSet(guestToHost, guestFn, hostValue);
         return guestFn;
       }
       if (isArray(hostValue)) {
         var ga = [];
-        hostToGuest.set(hostValue, ga);
-        guestToHost.set(ga, hostValue);
+        mapSet(hostToGuest, hostValue, ga);
+        mapSet(guestToHost, ga, hostValue);
         for (var i = 0; i < hostValue.length; i++) ga[i] = wrap(hostValue[i]);
         return ga;
       }
       var go = {};
-      hostToGuest.set(hostValue, go);
-      guestToHost.set(go, hostValue);
+      mapSet(hostToGuest, hostValue, go);
+      mapSet(guestToHost, go, hostValue);
       var names = getOwnNames(hostValue);
       for (var j = 0; j < names.length; j++) {
         var k = names[j];
@@ -151,23 +167,23 @@ let private installSource =
     }
     function unwrap(guestValue) {
       if (isPrimitive(guestValue)) return guestValue;
-      if (guestToHost.has(guestValue)) return guestToHost.get(guestValue);
+      if (mapHas(guestToHost, guestValue)) return mapGet(guestToHost, guestValue);
       if (typeof guestValue === "function") {
         var hostFn = function () {
-          var hostArgs = Array.prototype.slice.call(arguments);
-          var guestArgs = hostArgs.map(wrap);
+          var hostArgs = argsToArray(arguments);
+          var guestArgs = mapArray(hostArgs, wrap);
           try {
             if (new.target) {
-              var inst = Reflect.construct(guestValue, guestArgs, guestValue);
+              var inst = ReflectConstruct(guestValue, guestArgs, guestValue);
               return bridgeInstance(inst);
             }
-            return unwrap(Reflect.apply(guestValue, wrap(this), guestArgs));
+            return unwrap(ReflectApply(guestValue, wrap(this), guestArgs));
           } catch (e) {
             throw unwrap(e);
           }
         };
-        guestToHost.set(guestValue, hostFn);
-        hostToGuest.set(hostFn, guestValue);
+        mapSet(guestToHost, guestValue, hostFn);
+        mapSet(hostToGuest, hostFn, guestValue);
         return hostFn;
       }
       if (typeof guestValue.then === "function") {
@@ -177,20 +193,20 @@ let private installSource =
             function (e) { reject(unwrap(e)); }
           );
         });
-        guestToHost.set(guestValue, hp);
-        hostToGuest.set(hp, guestValue);
+        mapSet(guestToHost, guestValue, hp);
+        mapSet(hostToGuest, hp, guestValue);
         return hp;
       }
       if (isArray(guestValue)) {
         var ha = [];
-        guestToHost.set(guestValue, ha);
-        hostToGuest.set(ha, guestValue);
+        mapSet(guestToHost, guestValue, ha);
+        mapSet(hostToGuest, ha, guestValue);
         for (var i2 = 0; i2 < guestValue.length; i2++) ha[i2] = unwrap(guestValue[i2]);
         return ha;
       }
       var ho = {};
-      guestToHost.set(guestValue, ho);
-      hostToGuest.set(ho, guestValue);
+      mapSet(guestToHost, guestValue, ho);
+      mapSet(hostToGuest, ho, guestValue);
       var gnames = getOwnNames(guestValue);
       for (var j2 = 0; j2 < gnames.length; j2++) {
         var gk = gnames[j2];
