@@ -20,6 +20,8 @@ Casebook 索引入口是 `wanxiangli/casebook` / `CasebookIndexLaw`：公开索�
 
 Casebook 维护入口是 `wanxiangli/casebook-maintenance` / `CasebookMaintenanceLaw`：fetch 按差异维护的纯决策（B→T 零上下文 diff、是否请求 CaseRefresh、读取故障不冒充 Missing、预算截断）。不读文件、不读写 payload、不调 Bookkeeper。见 `src/casebook-maintenance/AGENTS.md`。
 
+Casebook 访问入口是 `wanxiangli/casebook-access` / `CasebookAccessLaw`：实质访问的纯分类（哪些访问计入 relatedPaths、工具结果的路径、规范形、执行器单文件读取）。不读文件、不持有会话状态。见 `src/casebook-access/AGENTS.md`。
+
 调度协议入口是 `wanxiangli/routing` / `RoutingProtocol`：用户 `wanxiangshu.mjs` 的协议 2 ABI owner——模块导出形状与版本、同步调用 `route(role, running, previous)`（冻结副本）、target 严格解码、理论容量查询只认布尔。不读文件、不加载模块、不持有容量；选择策略全部属于用户 MJS。见 `src/routing/AGENTS.md`。
 
 ## 第一刀：两个独立个体，一个组合者

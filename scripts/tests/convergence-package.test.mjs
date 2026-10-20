@@ -26,6 +26,7 @@ test('SPEC[convergence-package] installed convergence and retention merge a real
   assert.ok(packed.files.some(file => file.path === 'dist/segments/WriterSegments.js'))
   assert.ok(packed.files.some(file => file.path === 'dist/casebook/CasebookIndexLaw.js'))
   assert.ok(packed.files.some(file => file.path === 'dist/casebook-maintenance/CasebookMaintenanceLaw.js'))
+  assert.ok(packed.files.some(file => file.path === 'dist/casebook-access/CasebookAccessLaw.js'))
   for (const file of packed.files) assert.doesNotMatch(file.path, /\.fs(?:proj|i)?$|^scripts\/|^node_modules\//)
   const consumer = path.join(directory, 'consumer')
   mkdirSync(consumer)
@@ -39,6 +40,6 @@ test('SPEC[convergence-package] installed convergence and retention merge a real
   else t.diagnostic('Bun is absent; its convergence consumer is not verified.')
   for (const [runtime, executable] of runtimes) {
     const output = succeed(spawnSync(executable, [path.join(consumer, 'convergence-consumer.mjs')], { cwd: consumer, env, encoding: 'utf8', timeout: 30000 }))
-    assert.deepEqual(JSON.parse(output), { groups: ['coexisting', 'legacy'], coexistence: ['continuation', 'series'], stream: 2, shelfmark: true, maintenance: true, activity: true, closure: 'UnreferencedPayload', kept: ['today'], fork: ['a', 'b', 'c'], duplicate: 'NonCanonical', retained: 1 }, runtime)
+    assert.deepEqual(JSON.parse(output), { groups: ['coexisting', 'legacy'], coexistence: ['continuation', 'series'], stream: 2, shelfmark: true, maintenance: true, access: ['a', 'b'], activity: true, closure: 'UnreferencedPayload', kept: ['today'], fork: ['a', 'b', 'c'], duplicate: 'NonCanonical', retained: 1 }, runtime)
   }
 })

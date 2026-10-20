@@ -3,6 +3,7 @@ import { CanonicalEventCodec, type ClosureResult, type EventInput } from 'wanxia
 import { WriterRetention } from 'wanxiangli/retention'
 import { CasebookIndexLaw, type IndexEntry } from 'wanxiangli/casebook'
 import { CasebookMaintenanceLaw, type MaintenanceSummary } from 'wanxiangli/casebook-maintenance'
+import { CasebookAccessLaw, type Access } from 'wanxiangli/casebook-access'
 import { WriterSegments, type Coexistence, type StreamDecodeResult, type StreamLayout, type WriterFiles } from 'wanxiangli/segments'
 
 const groups: WriterFiles[] = new WriterSegments().groupWriterFiles(['w-0000.ndjson'])
@@ -47,3 +48,8 @@ const maintenance: MaintenanceSummary = new CasebookMaintenanceLaw().summarize([
 const readVerdict: 'missing' | 'fault' = new CasebookMaintenanceLaw().readFailure('ENOENT')
 void maintenance
 void readVerdict
+const access: Access = { kind: 'move', source: 'a', destination: 'b' }
+const accessed: string[] = new CasebookAccessLaw().accessPaths(access)
+const execRead: string | null = new CasebookAccessLaw().execRead('cat a')
+void accessed
+void execRead
