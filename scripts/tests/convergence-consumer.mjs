@@ -1,6 +1,7 @@
 import { KWayMerge } from 'wanxiangli/convergence'
 import { WriterRetention } from 'wanxiangli/retention'
 import { CanonicalEventCodec } from 'wanxiangli/events'
+import { WriterSegments } from 'wanxiangli/segments'
 
 const event = (id, parents = []) => ({ id, stream: 'job/main', type: 'JobRequested', parents, payload: {}, payloadRefs: [] })
 const root = event('a'.repeat(40))
@@ -15,7 +16,9 @@ const day = 86400000
 const kept = new WriterRetention().retain(now, [{ id: 'today', lastActivityMs: now }, { id: 'old', lastActivityMs: now - 3 * day }])
 const tail = [JSON.stringify({ event_type: 'ProjectionCutTail' }), JSON.stringify({ event_type: 'JournalEnvelope', payload: { ObservedAt: new Date(now).toISOString() } })]
 const orphan = { ...root, payloads: { ['0'.repeat(64)]: new Uint8Array([1]) } }
+const segments = new WriterSegments()
 process.stdout.write(JSON.stringify({
+  groups: segments.groupWriterFiles(['w-0001.ndjson', 'w-0000.ndjson', 'w.ndjson', 'x-٠٠٠٠.ndjson']).map(group => segments.streamLayout(group).kind),
   activity: new WriterRetention().lastActivity(tail) === now,
   closure: new CanonicalEventCodec().checkClosure([orphan], () => true).error.code,
   kept: kept.map(item => item.id),

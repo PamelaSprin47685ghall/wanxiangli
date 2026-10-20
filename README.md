@@ -14,6 +14,8 @@
 
 保留入口是 `wanxiangli/retention` / `WriterRetention`：整条 writer 的 UTC 日期分组保留规则（今天与昨天保留，更早整条过期）。截止时刻与活动时刻由调用方给出，非有限时间拒绝而非判过期；不读时钟、不读文件、不删除。见 `src/retention/AGENTS.md`。
 
+段名入口是 `wanxiangli/segments` / `WriterSegments`：writer 段文件的命名与分组律（`<writerId>-dddd.ndjson`，恰好四位 ASCII 数字，序号 0..9999 越界拒绝；连续段系列并组、断续名降为旧式 stem；旧式与段共存的形态命名）。只算名字，不读目录、不读写字节、不加锁；共存的字节裁决归调用方。见 `src/segments/AGENTS.md`。
+
 ## 第一刀：两个独立个体，一个组合者
 
 | 入口 | 对象 | 职责 |

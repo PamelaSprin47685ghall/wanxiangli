@@ -1,6 +1,12 @@
 import { KWayMerge, type ConvergenceResult } from 'wanxiangli/convergence'
 import { CanonicalEventCodec, type ClosureResult, type EventInput } from 'wanxiangli/events'
 import { WriterRetention } from 'wanxiangli/retention'
+import { WriterSegments, type StreamLayout, type WriterFiles } from 'wanxiangli/segments'
+
+const groups: WriterFiles[] = new WriterSegments().groupWriterFiles(['w-0000.ndjson'])
+const layout: StreamLayout = new WriterSegments().streamLayout(groups[0]!)
+const legacyName: string | undefined = layout.kind === 'coexisting' ? layout.legacy : undefined
+void legacyName
 
 const kept: { id: string; lastActivityMs: number }[] = new WriterRetention().retain(0, [{ id: 'w', lastActivityMs: 0 }])
 void kept
