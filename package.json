@@ -176,6 +176,10 @@
       "types": "./src/failure/index.d.ts",
       "import": "./dist/failure/ExecutionFailurePolicy.js"
     },
+    "./failure-budget": {
+      "types": "./src/failure-budget/index.d.ts",
+      "import": "./dist/failure-budget/ProviderFailureBudget.js"
+    },
     "./attachment-lease": {
       "types": "./src/attachment-lease/index.d.ts",
       "import": "./dist/attachment-lease/AttachmentLeaseLaw.js"
@@ -242,11 +246,12 @@
     "MIGRATION.md",
     "THIRD_PARTY_NOTICES",
     "src/programming/index.d.ts",
-    "src/failure/index.d.ts"
+    "src/failure/index.d.ts",
+    "src/failure-budget/index.d.ts"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "npm run build && node --test src/lifecycle/tests/*.test.mjs src/eventstore/tests/*.test.mjs src/assembly/tests/*.test.mjs src/process/tests/*.test.mjs src/trace/tests/*.test.mjs src/session/tests/*.test.mjs src/resources/tests/*.test.mjs src/identity/tests/*.test.mjs src/events/tests/*.test.mjs src/fs/tests/*.test.mjs src/time/tests/*.test.mjs src/wait/tests/*.test.mjs src/prefix/tests/*.test.mjs src/delivery/tests/*.test.mjs src/degeneration/tests/*.test.mjs src/spool/tests/*.test.mjs src/convergence/tests/*.test.mjs src/retention/tests/*.test.mjs src/segments/tests/*.test.mjs src/casebook/tests/*.test.mjs src/casebook-maintenance/tests/*.test.mjs src/casebook-access/tests/*.test.mjs src/quarantine/tests/*.test.mjs src/pty/tests/*.test.mjs src/ablation/tests/*.test.mjs src/capability/tests/*.test.mjs src/authority/tests/*.test.mjs src/compression/tests/*.test.mjs src/projection/tests/*.test.mjs src/sandbox/tests/*.test.mjs src/routing/tests/*.test.mjs src/permit/tests/*.test.mjs src/capacity/tests/*.test.mjs src/admission-queue/tests/*.test.mjs src/dispatch/tests/*.test.mjs src/borrowing/tests/*.test.mjs src/chat-execution/tests/*.test.mjs src/association/tests/*.test.mjs src/programming/tests/*.test.mjs src/run-witness/tests/*.test.mjs src/git-porcelain/tests/*.test.mjs src/failure/tests/*.test.mjs src/attachment-lease/tests/*.test.mjs src/warm-start/tests/*.test.mjs src/handle-lifecycle/tests/*.test.mjs scripts/tests/*.test.mjs",
+    "test": "npm run build && node --test src/lifecycle/tests/*.test.mjs src/eventstore/tests/*.test.mjs src/assembly/tests/*.test.mjs src/process/tests/*.test.mjs src/trace/tests/*.test.mjs src/session/tests/*.test.mjs src/resources/tests/*.test.mjs src/identity/tests/*.test.mjs src/events/tests/*.test.mjs src/fs/tests/*.test.mjs src/time/tests/*.test.mjs src/wait/tests/*.test.mjs src/prefix/tests/*.test.mjs src/delivery/tests/*.test.mjs src/degeneration/tests/*.test.mjs src/spool/tests/*.test.mjs src/convergence/tests/*.test.mjs src/retention/tests/*.test.mjs src/segments/tests/*.test.mjs src/casebook/tests/*.test.mjs src/casebook-maintenance/tests/*.test.mjs src/casebook-access/tests/*.test.mjs src/quarantine/tests/*.test.mjs src/pty/tests/*.test.mjs src/ablation/tests/*.test.mjs src/capability/tests/*.test.mjs src/authority/tests/*.test.mjs src/compression/tests/*.test.mjs src/projection/tests/*.test.mjs src/sandbox/tests/*.test.mjs src/routing/tests/*.test.mjs src/permit/tests/*.test.mjs src/capacity/tests/*.test.mjs src/admission-queue/tests/*.test.mjs src/dispatch/tests/*.test.mjs src/borrowing/tests/*.test.mjs src/chat-execution/tests/*.test.mjs src/association/tests/*.test.mjs src/programming/tests/*.test.mjs src/run-witness/tests/*.test.mjs src/git-porcelain/tests/*.test.mjs src/failure/tests/*.test.mjs src/failure-budget/tests/*.test.mjs src/attachment-lease/tests/*.test.mjs src/warm-start/tests/*.test.mjs src/handle-lifecycle/tests/*.test.mjs scripts/tests/*.test.mjs",
     "prepack": "npm run build"
   },
   "devDependencies": {
