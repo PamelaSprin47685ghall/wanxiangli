@@ -10,6 +10,8 @@
 
 归属入口是 `wanxiangli/ownership` / `Ownership`：作用域森林、唯一资源预留、取消与排空、带实例身份的终态和递归 blocker。Reserved、Unknown、信号与超时都不会释放归属；固定父范围资源不随子任期关闭。本库不调用前三刀，C 分别组合归属、物理观察、持久提交和 Work 退休。完整协议和限制见 `OWNERSHIP.md`。
 
+收敛入口是 `wanxiangli/convergence` / `KWayMerge`：多 writer 事实流的结构归并。各 writer 内追加顺序不变，parent 先于 child，就绪 head 之间按 EventId 文本序；同 id 同字节去重、异字节为身份碰撞（裁决委托 `wanxiangli/events`），同名 writer 流拒绝而不静默折叠；`mergeRetained` 把整个保留集合之外的 parent 视为 retention 窗口边界。纯计算，不读文件、不加锁、不解释业务事件；段聚合、retention 截止与业务折叠归调用方。规则与证明见 `src/convergence/AGENTS.md`。
+
 ## 第一刀：两个独立个体，一个组合者
 
 | 入口 | 对象 | 职责 |
