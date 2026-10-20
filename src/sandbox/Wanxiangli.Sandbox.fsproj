@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <!-- Fable-only compilation unit. No dotnet build; see AGENTS.md. -->
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Sandbox.fs" />
+  </ItemGroup>
+</Project>

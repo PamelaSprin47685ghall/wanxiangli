@@ -99,6 +99,10 @@
     "./capability": {
       "types": "./src/capability/index.d.ts",
       "import": "./dist/capability/Capability.js"
+    },
+    "./sandbox": {
+      "types": "./src/sandbox/index.d.ts",
+      "import": "./dist/sandbox/Sandbox.js"
     }
   },
   "files": [
@@ -127,6 +131,7 @@
     "src/ablation/index.d.ts",
     "src/compression/index.d.ts",
     "src/capability/index.d.ts",
+    "src/sandbox/index.d.ts",
     "README.md",
     "PROCESS.md",
     "TRACE.md",
