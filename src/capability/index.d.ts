@@ -33,4 +33,8 @@ export declare class Capability {
   permissionOfToolName(role: unknown, name: unknown): PermissionLabel | null | undefined
   /** 可见即可做：角色持有该名字映射到的能力。 */
   admitsToolForRole(role: unknown, name: unknown): boolean
+  /** 宿主实用工具名（不是办公能力）：['skill', 'assume']。 */
+  utilityToolNames(): string[]
+  /** 实用工具准入：现行角色持有；历史/内部/未知角色与非实用工具名一律 false。 */
+  admitsUtility(role: unknown, name: unknown): boolean
 }

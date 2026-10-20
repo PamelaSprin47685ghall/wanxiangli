@@ -75,3 +75,10 @@ type Capability() =
     /// 该角色是否持有此工具名映射到的能力（可见即可做）。
     member _.admitsToolForRole(role: obj, name: obj): bool =
         Wire.isString name && ToolSurface.admitsToolForRole (roleOf role) (unbox<string> name)
+
+    /// 宿主实用工具名（skill、assume），不是办公能力。
+    member _.utilityToolNames(): string array = ToolSurface.utilityToolNames |> List.toArray
+
+    /// 该角色是否可见且可调用此实用工具；矩阵之外的角色与非实用工具名一律 false。
+    member _.admitsUtility(role: obj, name: obj): bool =
+        Wire.isString name && ToolSurface.admitsUtility (roleOf role) (unbox<string> name)

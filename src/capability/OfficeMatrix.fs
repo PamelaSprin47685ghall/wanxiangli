@@ -98,6 +98,9 @@ module OfficeMatrix =
             [ Permission.Fork; Permission.Resume; Permission.Join; Permission.Horizon; Permission.Advisor
               Permission.ReviewAssessment; Permission.Finality; Permission.Read; Permission.Glob; Permission.Grep ]
 
+    /// 矩阵认得的角色标签（现行角色）。其余标签（历史角色、内部槽位、未知名）失败关闭。
+    let roles: string list = [ "advisor"; "manager"; "orchestrator"; "engineer"; "devops"; "plan" ]
+
     /// 角色标签 → 能力集合。advisor 是评审者而非行动者，故为空集。
     let permissions (roleLabel: string): Set<Permission> =
         match roleLabel with
@@ -177,3 +180,11 @@ module ToolSurface =
         match permissionOfToolName roleLabel name with
         | Some permission -> OfficeMatrix.permissions roleLabel |> Set.contains permission
         | None -> false
+
+    /// 宿主实用工具（不是办公能力）：skill 与认知承诺 assume。它们不进能力矩阵，
+    /// 但仍是"可见即可做"的一份事实：schema 投影、请求工具表与执行准入读同一个判定。
+    let utilityToolNames: string list = [ "skill"; "assume" ]
+
+    /// 现行角色都持有实用工具；矩阵之外的角色标签（含已退役的 distiller）一律拒绝。
+    let admitsUtility (roleLabel: string) (name: string) : bool =
+        List.contains name utilityToolNames && List.contains roleLabel OfficeMatrix.roles

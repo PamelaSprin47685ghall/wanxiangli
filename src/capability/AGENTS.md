@@ -32,6 +32,9 @@
 4. [本模块 LEMMA 1] Manager 门禁只读精确生命周期事实：无在任者、只有确认无评审 → 空集；清理阻塞 → Join+Finality；最终在任者 → 收尾面；已评审 → 收回只读面；否则完整集合。事实字段只有布尔 true 才成立。
     - 证明：`tests/001.test.mjs` SPEC[capability-003] 的逐分支正反例与畸形事实反例。
 
+5. [本模块 LEMMA 1] 宿主实用工具（`skill`、`assume`）不是办公能力，不进矩阵；它们的准入也只有一个写入口（`ToolSurface.admitsUtility`），schema 投影、请求工具表与执行准入读同一判定。现行角色持有，矩阵之外的角色标签（历史、内部 distiller、未知、大小写错误、非字符串）失败关闭（CUT-08 第 4 段）。
+    - 证明：`tests/003.test.mjs` SPEC[capability-005]。
+
 3. [本模块 LEMMA 4] 基类成员、工具描述、示例与运行时门禁由同一份能力生成；缺一项能力，四处一致缺失。
     - 证明：[TODO] 生成物一致性测试。
 
