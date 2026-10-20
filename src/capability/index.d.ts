@@ -27,4 +27,10 @@ export declare class Capability {
   managerReviewReadOnlyPermissions(): PermissionLabel[]
   managerFinishPermissions(): PermissionLabel[]
   permissionsForManagerFacts(facts: ManagerFacts): PermissionLabel[]
+  /** 能力 → 宿主工具名；空数组表示只在编程面上。未知能力 []。 */
+  toolNames(permission: unknown): string[]
+  /** 工具名 → 该角色视角下的能力；共名时取角色持有的一项，无法唯一确定时 null/undefined。 */
+  permissionOfToolName(role: unknown, name: unknown): PermissionLabel | null | undefined
+  /** 可见即可做：角色持有该名字映射到的能力。 */
+  admitsToolForRole(role: unknown, name: unknown): boolean
 }

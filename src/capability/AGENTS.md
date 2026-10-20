@@ -23,8 +23,8 @@
 
 # SPEC
 
-1. [本模块 LEMMA 1] 角色到能力的映射只有一个写入口（`OfficeMatrix.permissions`）；`permissions` 与 `isAllowed` 读同一份集合。能力到工具的映射仍在宿主（CUT-25/34 接手）。
-    - 证明：`tests/001.test.mjs` SPEC[capability-001] 对六个活跃角色逐能力比对 permissions 与 isAllowed。
+1. [本模块 LEMMA 1] 角色到能力的映射只有一个写入口（`OfficeMatrix.permissions`）；`permissions` 与 `isAllowed` 读同一份集合。能力到宿主工具名的映射也只有一个写入口（`ToolSurface.toolNames`），名字→能力反查 `permissionOfToolName` 与 `admitsToolForRole` 读同一份映射与矩阵（CUT-08 第 2 段）。
+    - 证明：`tests/001.test.mjs` SPEC[capability-001] 对六个活跃角色逐能力比对 permissions 与 isAllowed；`tests/002.test.mjs` SPEC[capability-004] 对每个名字、每个角色比对反查与矩阵。
 
 2. [本模块 LEMMA 1] 角色无法解析时，工具面置空，且运行时拒绝一切调用。
     - 证明：`tests/001.test.mjs` SPEC[capability-002]：历史角色、内部槽位、大小写错误、非字符串一律空集与 false；未知能力标签 false。

@@ -128,3 +128,52 @@ module OfficeMatrix =
         elif facts.IsFinalIncumbent then managerFinish
         elif facts.HasAssessment then Set.difference manager managerReviewReadOnly
         else manager
+
+/// 能力 ↔ 宿主工具名的唯一映射（capability-enforcement-012）。schema 投影、派发映射与
+/// 执行门禁都读这一份，不再各自维护名字表。一项能力可展开为多个名字，也可为空：
+/// 空表示该职责只在编程面上（如 this.devops），不是宿主工具。
+[<RequireQualifiedAccess>]
+module ToolSurface =
+
+    let toolNames (permission: Permission) : string list =
+        match permission with
+        | Permission.Fork -> [ "fork" ]
+        | Permission.Resume -> [ "resume" ]
+        | Permission.Join -> [ "join" ]
+        | Permission.Horizon -> [ "horizon" ]
+        | Permission.Fission -> [ "fission" ]
+        | Permission.BashHoneypot -> [ "bash-honeypot" ]
+        | Permission.ReviewAssessment -> [ "review" ]
+        | Permission.Fetch -> [ "fetch" ]
+        | Permission.Finality -> [ "deliver" ]
+        | Permission.JsPlan -> [ "todowrite-for-plan" ]
+        | Permission.Deliver -> [ "deliver" ]
+        | Permission.Review -> [ "review" ]
+        | Permission.Read
+        | Permission.Write
+        | Permission.Edit
+        | Permission.Glob
+        | Permission.Grep
+        | Permission.Move
+        | Permission.Remove
+        | Permission.Exec
+        | Permission.Pty
+        | Permission.Ask
+        | Permission.DevOpsConsultation
+        | Permission.Advisor -> []
+
+    /// 名字 → 能力的唯一反查。两项能力共用一个名字时，取该角色持有的那一项；
+    /// 目录顺序不是裁决。只属于一项能力的名字对所有角色都映射到它。
+    let permissionOfToolName (roleLabel: string) (name: string) : Permission option =
+        let named = Permission.all |> List.filter (fun permission -> toolNames permission |> List.contains name)
+        let owned = OfficeMatrix.permissions roleLabel
+        match named |> List.filter (fun permission -> Set.contains permission owned), named with
+        | [ permission ], _ -> Some permission
+        | _, [ permission ] -> Some permission
+        | _ -> None
+
+    /// 可见即可做：只有角色持有该名字所映射的那项能力时为真。
+    let admitsToolForRole (roleLabel: string) (name: string) : bool =
+        match permissionOfToolName roleLabel name with
+        | Some permission -> OfficeMatrix.permissions roleLabel |> Set.contains permission
+        | None -> false

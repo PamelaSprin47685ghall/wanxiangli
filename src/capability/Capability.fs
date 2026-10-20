@@ -58,3 +58,20 @@ type Capability() =
         match factsOf facts with
         | Some value -> labels (OfficeMatrix.permissionsForManagerFacts value)
         | None -> [||]
+
+    /// 能力标签 → 宿主工具名（可为空）。未知能力标签一律空。
+    member _.toolNames(permission: obj): string array =
+        if not (Wire.isString permission) then [||]
+        else
+            match Permission.tryParse (unbox<string> permission) with
+            | Some value -> ToolSurface.toolNames value |> List.toArray
+            | None -> [||]
+
+    /// 宿主工具名 → 该角色视角下的能力标签；无法唯一确定时为 null。
+    member _.permissionOfToolName(role: obj, name: obj): string option =
+        if not (Wire.isString name) then None
+        else ToolSurface.permissionOfToolName (roleOf role) (unbox<string> name) |> Option.map Permission.label
+
+    /// 该角色是否持有此工具名映射到的能力（可见即可做）。
+    member _.admitsToolForRole(role: obj, name: obj): bool =
+        Wire.isString name && ToolSurface.admitsToolForRole (roleOf role) (unbox<string> name)
