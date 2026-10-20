@@ -31,7 +31,7 @@ function succeed(result) {
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
 }
 
-for (const name of ['lifecycle', 'eventstore', 'process', 'trace', 'session', 'delivery', 'degeneration', 'spool', 'pty', 'ablation', 'compression', 'sandbox', 'routing', 'projection', 'authority', 'permit', 'capacity', 'admission-queue', 'dispatch', 'borrowing', 'run-witness', 'git-porcelain']) {
+for (const name of ['lifecycle', 'eventstore', 'process', 'trace', 'session', 'delivery', 'degeneration', 'spool', 'pty', 'ablation', 'compression', 'sandbox', 'routing', 'projection', 'authority', 'permit', 'capacity', 'admission-queue', 'dispatch', 'borrowing', 'run-witness', 'git-porcelain', 'failure']) {
   test(`SPEC[build-001] ${name} compiles and runs its own tests without any sibling source`, { timeout: 90000 }, t => {
     const directory = fixture(t, [name])
     assert.deepEqual(readdirSync(path.join(directory, 'src')), [name])
@@ -63,12 +63,12 @@ test('SPEC[build-001] a selected build leaves another module output untouched', 
 
 test('SPEC[build-001] the second cut builds without replacing any first-cut artifact', { timeout: 60000 }, t => {
   const directory = fixture(t, ['process'])
-  for (const name of ['lifecycle', 'eventstore', 'assembly']) {
+  for (const name of ['lifecycle', 'eventstore', 'assembly', 'failure']) {
     mkdirSync(path.join(directory, 'dist', name), { recursive: true })
     writeFileSync(path.join(directory, 'dist', name, 'keep.txt'), name)
   }
   succeed(run(directory, ['scripts/build.mjs', 'process']))
-  for (const name of ['lifecycle', 'eventstore', 'assembly']) {
+  for (const name of ['lifecycle', 'eventstore', 'assembly', 'failure']) {
     assert.equal(readFileSync(path.join(directory, 'dist', name, 'keep.txt'), 'utf8'), name)
     assert.deepEqual(readdirSync(path.join(directory, 'dist', name)), ['keep.txt'])
   }
@@ -89,12 +89,12 @@ test('SPEC[build-001] a real compiler error fails without replacing a previous a
 
 test('SPEC[build-001] the third cut leaves both earlier cuts untouched and has no sibling imports', { timeout: 60000 }, t => {
   const directory = fixture(t, ['trace'])
-  for (const name of ['lifecycle', 'eventstore', 'assembly', 'process']) {
+  for (const name of ['lifecycle', 'eventstore', 'assembly', 'process', 'failure']) {
     mkdirSync(path.join(directory, 'dist', name), { recursive: true })
     writeFileSync(path.join(directory, 'dist', name, 'keep'), `unchanged-${name}`)
   }
   succeed(run(directory, ['scripts/build.mjs', 'trace']))
-  for (const name of ['lifecycle', 'eventstore', 'assembly', 'process']) {
+  for (const name of ['lifecycle', 'eventstore', 'assembly', 'process', 'failure']) {
     assert.equal(readFileSync(path.join(directory, 'dist', name, 'keep'), 'utf8'), `unchanged-${name}`)
     assert.deepEqual(readdirSync(path.join(directory, 'dist', name)), ['keep'])
   }
@@ -113,12 +113,12 @@ test('SPEC[build-001] cross-project references are rejected by the same build en
 
 test('SPEC[build-001] ownership builds without the three earlier cuts and cannot import their services', { timeout: 60000 }, t => {
   const directory = fixture(t, ['session'])
-  for (const name of ['lifecycle', 'eventstore', 'assembly', 'process', 'trace']) {
+  for (const name of ['lifecycle', 'eventstore', 'assembly', 'process', 'trace', 'failure']) {
     mkdirSync(path.join(directory, 'dist', name), { recursive: true })
     writeFileSync(path.join(directory, 'dist', name, 'keep'), `original-${name}`)
   }
   succeed(run(directory, ['scripts/build.mjs', 'session']))
-  for (const name of ['lifecycle', 'eventstore', 'assembly', 'process', 'trace']) {
+  for (const name of ['lifecycle', 'eventstore', 'assembly', 'process', 'trace', 'failure']) {
     assert.equal(readFileSync(path.join(directory, 'dist', name, 'keep'), 'utf8'), `original-${name}`)
     assert.deepEqual(readdirSync(path.join(directory, 'dist', name)), ['keep'])
   }
@@ -129,7 +129,7 @@ test('SPEC[build-001] ownership builds without the three earlier cuts and cannot
 
 test('SPEC[build-001] composition compiles without sibling sources and runs against their artifacts', { timeout: 90000 }, t => {
   const directory = fixture(t, ['assembly'])
-  for (const name of ['lifecycle', 'eventstore']) {
+  for (const name of ['lifecycle', 'eventstore', 'failure']) {
     cpSync(path.join(root, 'dist', name), path.join(directory, 'dist', name), { recursive: true })
   }
   const before = readFileSync(path.join(directory, 'dist/lifecycle/Work.js'), 'utf8')

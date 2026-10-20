@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Wanxiangli.Failure</RootNamespace>
+    <!-- Fable-only compilation unit. No dotnet build; see AGENTS.md. -->
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="ExecutionFailurePolicy.fs" />
+  </ItemGroup>
+</Project>
