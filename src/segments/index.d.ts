@@ -1,9 +1,12 @@
 /**
  * wanxiangli/segments — writer 段文件的命名与分组律（CUT-19，durable-events-005/014）。
  *
- * 纯计算：只算名字。不读目录、不读写字节、不加锁、不 fsync、不 rename；
- * 共存形态的字节裁决（字节前缀 / 行续接）与一切物理读写归调用方。
+ * 纯计算：名字的律，以及调用方读出的字节上的成帧与共存裁决（CUT-19-a）。
+ * 不读目录、不读写文件、不删除、不加锁、不 fsync、不 rename；一切物理读写与按裁决执行的收敛归调用方。
+ * 逐行规范解码来自 wanxiangli/events。
  */
+import type { CodecError, EventOutput } from 'wanxiangli/events'
+
 export type WriterIdFault = 'required' | 'pathSegment' | 'segmentSuffix'
 
 export interface SegmentName {
@@ -21,6 +24,13 @@ export type StreamLayout =
   | { kind: 'legacy'; legacy: string }
   | { kind: 'coexisting'; legacy: string; segments: string[] }
   | { kind: 'multipleLegacy'; legacy: string[] }
+
+export type StreamDecodeResult =
+  | { ok: true; events: EventOutput[] }
+  | { ok: false; error: CodecError }
+
+/** 共存裁决：`series` 段系列为准；`legacy` 旧式为准；`continuation` 段系列后接旧式行；`diverged` 不成立。 */
+export type Coexistence = 'series' | 'legacy' | 'continuation' | 'diverged'
 
 export declare class WriterSegments {
   /** 四位段号的上界（9999）。 */
@@ -45,4 +55,14 @@ export declare class WriterSegments {
   groupWriterFiles(names: readonly string[]): WriterFiles[]
   /** 一组文件的逻辑流形态；`coexisting` 由调用方按字节裁决，`multipleLegacy` 不成立。 */
   streamLayout(writerFiles: WriterFiles): StreamLayout
+  /**
+   * 一条 writer 流文本：空文本是空流；非空须以 LF 结尾，内行不得为空，逐行交 wanxiangli/events 规范解码。
+   * 成帧错误为 `NonCanonical`，消息带 label；首个失败即止。
+   */
+  decodeStream(label: string, text: string): StreamDecodeResult
+  /**
+   * 旧式文件字节与段系列（按序拼接）字节的共存裁决：旧式是段系列前缀（含相等）→ `series`；
+   * 段系列是旧式前缀 → `legacy`；双方都是完整规范 NDJSON 且 EventId 不相交 → `continuation`；否则 `diverged`。
+   */
+  coexistence(legacyBytes: Uint8Array, seriesBytes: Uint8Array): Coexistence
 }

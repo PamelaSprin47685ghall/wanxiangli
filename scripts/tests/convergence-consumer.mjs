@@ -17,8 +17,12 @@ const kept = new WriterRetention().retain(now, [{ id: 'today', lastActivityMs: n
 const tail = [JSON.stringify({ event_type: 'ProjectionCutTail' }), JSON.stringify({ event_type: 'JournalEnvelope', payload: { ObservedAt: new Date(now).toISOString() } })]
 const orphan = { ...root, payloads: { ['0'.repeat(64)]: new Uint8Array([1]) } }
 const segments = new WriterSegments()
+const codec = new CanonicalEventCodec()
+const lineOf = item => new TextEncoder().encode(codec.encode(item))
 process.stdout.write(JSON.stringify({
   groups: segments.groupWriterFiles(['w-0001.ndjson', 'w-0000.ndjson', 'w.ndjson', 'x-٠٠٠٠.ndjson']).map(group => segments.streamLayout(group).kind),
+  coexistence: [segments.coexistence(lineOf(left), lineOf(root)), segments.coexistence(lineOf(root), lineOf(root))],
+  stream: segments.decodeStream('w', codec.encode(root) + codec.encode(left)).events.length,
   activity: new WriterRetention().lastActivity(tail) === now,
   closure: new CanonicalEventCodec().checkClosure([orphan], () => true).error.code,
   kept: kept.map(item => item.id),
