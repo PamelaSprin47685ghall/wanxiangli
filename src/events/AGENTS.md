@@ -32,9 +32,13 @@
 3. [本模块 LEMMA 2, 3; 本模块 LEMMA 3] 读取遇到未知事件类型、缺父、成环、载荷缺失或哈希失配时拒绝整份快照，不跳过；合法分叉（多个 head）不是错误。
     - 证明：`tests/007.test.mjs`（缺父、成环、fail-closed）、`tests/008.test.mjs`（合法分叉两 head、裁决事件归拢、部分裁决留 head）、`tests/012.test.mjs`（载荷闭包）、`tests/027.test.mjs`（退役词汇拒绝）。[TODO] 运行验证由 DevOps 执行。
 
+4. [本模块 LEMMA 2, 3] 已落盘的本地行（追加批与保留窗口重放）用 `checkClosure`：先对整个集合查词汇，再逐行严格载荷闭包——任何 ref（不论是否内容地址形态）都必须内联且 sha256 吻合，任何内联载荷都必须被 ref 指名；缺失、失配、无主分别报 `MissingPayload`、`PayloadDigestMismatch`、`UnreferencedPayload`。不查父闭包（保留窗口合法地指向已过期的父）、不做身份合并（归 convergence）。
+    - 推理：解码只约束内容地址 ref，是因为外部名由外层承载；本地行没有外层。重放会把每个内联载荷按键收进内容寻址索引，无主且字节不符的载荷会被当作该地址的内容交出去。
+    - 证明：`tests/012.test.mjs`（checkClosure 五例）。
+
 # 边界
 
-- 公开面见 `src/events/index.d.ts`：`CanonicalEventCodec` 的 canonicalJson、encode、tryDecode、tryDecodeUtf8Text、tryDecodeUtf8、checkIdentity、mergeByIdentity、validate 八个纯操作。
+- 公开面见 `src/events/index.d.ts`：`CanonicalEventCodec` 的 canonicalJson、encode、tryDecode、tryDecodeUtf8Text、tryDecodeUtf8、checkIdentity、mergeByIdentity、validate、checkClosure 九个纯操作。
 - 事件类型词汇表归业务调用方；本包只做校验路由。
 - 载荷内联（base64）与 eventstore 的外置 blob 是同一闭包规则的两个承载面；本包只校验内联面。
 - 旧系统的 EventStore 信封、Journal 信封、Composition 折叠三层合并为本包一层；旧的三层命名不传承。

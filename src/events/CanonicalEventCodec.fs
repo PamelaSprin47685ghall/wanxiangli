@@ -274,6 +274,41 @@ let private validateEnvelopes (events: Envelope list) (isKnownEventType: string 
                             |> List.sort
                         Ok(merged, heads))
 
+/// Strict local closure of one stored line (durable-events-012): every
+/// PayloadRef — content-address shaped or not — has inline bytes whose sha256
+/// is that ref, and every inline payload is named by a PayloadRef. Decode only
+/// constrains content-address refs (external names are carried by an outer
+/// layer); a stored local line has no outer layer, so nothing is exempt.
+let private strictPayloadError (envelope: Envelope) : obj option =
+    let unresolved =
+        envelope.PayloadRefs
+        |> List.tryFind (fun payloadRef ->
+            match Map.tryFind payloadRef envelope.Payloads with
+            | None -> true
+            | Some content -> sha256Hex content <> payloadRef)
+
+    match unresolved with
+    | Some payloadRef when Map.containsKey payloadRef envelope.Payloads ->
+        Some(createObj [ "code", box "PayloadDigestMismatch"; "payloadRef", box payloadRef ])
+    | Some payloadRef -> Some(createObj [ "code", box "MissingPayload"; "payloadRef", box payloadRef ])
+    | None ->
+        envelope.Payloads
+        |> Map.toList
+        |> List.map fst
+        |> List.tryFind (fun payloadRef -> not (List.contains payloadRef envelope.PayloadRefs))
+        |> Option.map (fun payloadRef -> createObj [ "code", box "UnreferencedPayload"; "payloadRef", box payloadRef ])
+
+/// Vocabulary over the whole set first, then strict payload closure line by
+/// line. No parent closure: a retained window legitimately names parents that
+/// aged out, and ordering/identity belong to wanxiangli/convergence.
+let private checkClosureOf (events: Envelope list) (isKnownEventType: string -> bool) : Result<unit, obj> =
+    match events |> List.tryFind (fun envelope -> not (isKnownEventType envelope.EventType)) with
+    | Some envelope -> Error(createObj [ "code", box "UnknownEventType"; "eventType", box envelope.EventType ])
+    | None ->
+        match events |> List.tryPick strictPayloadError with
+        | Some error -> Error error
+        | None -> Ok()
+
 let private succeeded (valueName: string) (value: obj) : obj =
     createObj [ "ok", box true; valueName, value ]
 
@@ -331,4 +366,12 @@ type CanonicalEventCodec() =
                 [ "ok", box true
                   "events", box (merged |> List.map envelopeToJs |> Array.ofList)
                   "heads", box (heads |> Array.ofList) ]
+        | Error error -> failed error
+
+    /// Closure of stored local lines (append or retained replay): vocabulary
+    /// over the whole set, then strict inline payload closure per line. No
+    /// parent closure and no identity merge; see checkClosureOf.
+    member _.checkClosure(events: obj array, isKnownEventType: string -> bool) : obj =
+        match checkClosureOf (events |> Array.toList |> List.map envelopeOfJs) isKnownEventType with
+        | Ok() -> createObj [ "ok", box true ]
         | Error error -> failed error

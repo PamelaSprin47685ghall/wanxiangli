@@ -69,3 +69,66 @@ test('WHAT[durable-events-012] an empty payload ref set needs no payloads object
   assert.equal(decoded.ok, true)
   assert.deepEqual(decoded.event.payloads, {})
 })
+
+// checkClosure: the strict closure a stored local line must satisfy on append
+// and again on retained replay (CUT-19). Unlike decode, no ref is exempt and
+// inline bytes nobody references are a fault, because the replay folds every
+// inline payload into the content-addressed payload index.
+test('WHAT[durable-events-012] checkClosure accepts a self-contained line and a ref-free line', () => {
+  const bare = event({ payloadRefs: [], payload: {} })
+  delete bare.payloads
+  assert.deepEqual(codec.checkClosure([event(), bare], () => true), { ok: true })
+})
+
+test('WHAT[durable-events-012] checkClosure names a missing, a tampered and an unreferenced payload distinctly', () => {
+  const missing = { ...event() }
+  delete missing.payloads
+  assert.deepEqual(codec.checkClosure([missing], () => true), {
+    ok: false,
+    error: { code: 'MissingPayload', payloadRef: digest },
+  })
+
+  const tampered = Buffer.from(content)
+  tampered[2] ^= 0x01
+  assert.deepEqual(codec.checkClosure([event({ payloads: { [digest]: new Uint8Array(tampered) } })], () => true), {
+    ok: false,
+    error: { code: 'PayloadDigestMismatch', payloadRef: digest },
+  })
+
+  // Inline bytes stored under a content address they do not hash to, and named
+  // by no ref: decode accepts the line, but a replay that indexes inline
+  // payloads by key would serve these bytes for that address.
+  const forged = createHash('sha256').update('the bytes a reader asked for').digest('hex')
+  const orphan = event({ payloadRefs: [], payload: {}, payloads: { [forged]: new Uint8Array(content) } })
+  assert.equal(codec.tryDecode(codec.encode(orphan)).ok, true)
+  assert.deepEqual(codec.checkClosure([orphan], () => true), {
+    ok: false,
+    error: { code: 'UnreferencedPayload', payloadRef: forged },
+  })
+})
+
+test('WHAT[durable-events-012] checkClosure exempts no ref: a non-content-address ref still needs inline bytes', () => {
+  const external = event({ payloadRefs: ['journal-oid-1'], payload: {} })
+  delete external.payloads
+  assert.equal(codec.tryDecode(codec.encode(external)).ok, true)
+  assert.deepEqual(codec.checkClosure([external], () => true), {
+    ok: false,
+    error: { code: 'MissingPayload', payloadRef: 'journal-oid-1' },
+  })
+})
+
+test('WHAT[durable-events-027] checkClosure rejects vocabulary over the whole set before any payload fault', () => {
+  const missing = { ...event() }
+  delete missing.payloads
+  const retired = event({ id: 'b'.repeat(40), type: 'IncumbencyRetired', payloadRefs: [], payload: {} })
+  delete retired.payloads
+  assert.deepEqual(codec.checkClosure([missing, retired], type => type !== 'IncumbencyRetired'), {
+    ok: false,
+    error: { code: 'UnknownEventType', eventType: 'IncumbencyRetired' },
+  })
+})
+
+test('WHAT[durable-events-012] checkClosure leaves parents alone: an aged-out parent is not a closure fault', () => {
+  const child = event({ parents: ['f'.repeat(40)] })
+  assert.deepEqual(codec.checkClosure([child], () => true), { ok: true })
+})

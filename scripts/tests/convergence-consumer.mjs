@@ -1,5 +1,6 @@
 import { KWayMerge } from 'wanxiangli/convergence'
 import { WriterRetention } from 'wanxiangli/retention'
+import { CanonicalEventCodec } from 'wanxiangli/events'
 
 const event = (id, parents = []) => ({ id, stream: 'job/main', type: 'JobRequested', parents, payload: {}, payloadRefs: [] })
 const root = event('a'.repeat(40))
@@ -12,7 +13,11 @@ const retained = merger.mergeRetained([['writer-1', [left]]])
 const now = Date.UTC(2026, 9, 20, 12)
 const day = 86400000
 const kept = new WriterRetention().retain(now, [{ id: 'today', lastActivityMs: now }, { id: 'old', lastActivityMs: now - 3 * day }])
+const tail = [JSON.stringify({ event_type: 'ProjectionCutTail' }), JSON.stringify({ event_type: 'JournalEnvelope', payload: { ObservedAt: new Date(now).toISOString() } })]
+const orphan = { ...root, payloads: { ['0'.repeat(64)]: new Uint8Array([1]) } }
 process.stdout.write(JSON.stringify({
+  activity: new WriterRetention().lastActivity(tail) === now,
+  closure: new CanonicalEventCodec().checkClosure([orphan], () => true).error.code,
   kept: kept.map(item => item.id),
   fork: fork.ok ? fork.events.map(item => item.id[0]) : fork.error,
   duplicate: duplicate.ok ? 'accepted' : duplicate.error.code,

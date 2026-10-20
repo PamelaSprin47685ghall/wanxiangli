@@ -40,6 +40,10 @@ export type CodecError =
   | { code: 'CyclicParents' }
   | { code: 'MissingPayload'; payloadRef: string }
   | { code: 'UnknownEventType'; eventType: string }
+  /** Only from `checkClosure`: inline bytes present but their sha256 is not the ref. */
+  | { code: 'PayloadDigestMismatch'; payloadRef: string }
+  /** Only from `checkClosure`: inline bytes that no PayloadRef names. */
+  | { code: 'UnreferencedPayload'; payloadRef: string }
 
 export type DecodeResult =
   | { ok: true; event: EventOutput }
@@ -54,6 +58,10 @@ export type MergeResult =
   | { ok: false; error: CodecError }
 
 export type IdentityResult =
+  | { ok: true }
+  | { ok: false; error: CodecError }
+
+export type ClosureResult =
   | { ok: true }
   | { ok: false; error: CodecError }
 
@@ -81,4 +89,12 @@ export declare class CanonicalEventCodec {
    * identity dedupe, parent closure, acyclicity. Returns merged events and heads.
    */
   validate(events: EventInput[], isKnownEventType: (eventType: string) => boolean): ValidateResult
+  /**
+   * Closure of stored local lines (append batch or retained replay set):
+   * vocabulary over the whole set first, then per line strict inline payload
+   * closure — every ref (content-address shaped or not) has inline bytes whose
+   * sha256 is the ref, and every inline payload is referenced. No parent
+   * closure (retained windows name aged-out parents) and no identity merge.
+   */
+  checkClosure(events: EventInput[], isKnownEventType: (eventType: string) => boolean): ClosureResult
 }
