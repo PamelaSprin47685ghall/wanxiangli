@@ -55,6 +55,10 @@
     "./wait": {
       "types": "./src/wait/index.d.ts",
       "import": "./dist/wait/Wait.js"
+    },
+    "./delivery": {
+      "types": "./src/delivery/index.d.ts",
+      "import": "./dist/delivery/Delivery.js"
     }
   },
   "files": [
@@ -72,6 +76,7 @@
     "src/fs/index.d.ts",
     "src/time/index.d.ts",
     "src/wait/index.d.ts",
+    "src/delivery/index.d.ts",
     "README.md",
     "PROCESS.md",
     "TRACE.md",
@@ -81,7 +86,7 @@
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "npm run build && node --test src/lifecycle/tests/*.test.mjs src/eventstore/tests/*.test.mjs src/assembly/tests/*.test.mjs src/process/tests/*.test.mjs src/trace/tests/*.test.mjs src/session/tests/*.test.mjs src/resources/tests/*.test.mjs src/identity/tests/*.test.mjs src/events/tests/*.test.mjs src/fs/tests/*.test.mjs src/time/tests/*.test.mjs src/wait/tests/*.test.mjs scripts/tests/*.test.mjs",
+    "test": "npm run build && node --test src/lifecycle/tests/*.test.mjs src/eventstore/tests/*.test.mjs src/assembly/tests/*.test.mjs src/process/tests/*.test.mjs src/trace/tests/*.test.mjs src/session/tests/*.test.mjs src/resources/tests/*.test.mjs src/identity/tests/*.test.mjs src/events/tests/*.test.mjs src/fs/tests/*.test.mjs src/time/tests/*.test.mjs src/wait/tests/*.test.mjs src/delivery/tests/*.test.mjs scripts/tests/*.test.mjs",
     "prepack": "npm run build"
   },
   "devDependencies": {

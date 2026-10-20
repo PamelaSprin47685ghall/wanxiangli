@@ -38,6 +38,6 @@
 # TODO
 
 - 首提示的指令面与数据面划分待定；表示层见 provider 投影，可能并入 trace。
-- 工作记录的读取范围与 workrecord 的边界待定。
+- 子工作交付的读取经 `delivery`（交付视图格）；三段式工作记录已退役。
 - 执行者的物理身份如何跨重启保留，见 session 与 host-omp。
 - 旧系统的 handle 四态、Handoff 四态结算、permission permit，按总规则 LEMMA 1 大部分不传承；只保留"完成单实例认领"这一条。

@@ -35,5 +35,5 @@
 # TODO
 
 - 字节上限与切块规则的数值待定。
-- 与 workrecord、prefix、trace 的接口待定。
+- 与 prefix、trace 的接口待定（三段式 workrecord 已退役，交付视图格见 `delivery`）。
 - 旧系统的 `todowrite` 检查点窗口、squash、辅助注入退休、200 KiB 合同：只保留"输入字节上限 + 用户原文不可覆盖"，其余待真实需要时再加。
