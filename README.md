@@ -22,6 +22,8 @@ Casebook 维护入口是 `wanxiangli/casebook-maintenance` / `CasebookMaintenanc
 
 Casebook 访问入口是 `wanxiangli/casebook-access` / `CasebookAccessLaw`：实质访问的纯分类（哪些访问计入 relatedPaths、工具结果的路径、规范形、执行器单文件读取）。不读文件、不持有会话状态。见 `src/casebook-access/AGENTS.md`。
 
+规则隔离入口是 `wanxiangli/quarantine` / `RuleQuarantine`：Integrator 业务规则的 (rule, scope) 隔离账（失败登记、隔离期跳过、解除）与 `ProjectionCutTail` 截尾载荷编解码、截尾何时生效。不持有 Current、不做全量重放、不写事件；规则本体与重放预算归调用方。见 `src/quarantine/AGENTS.md`。
+
 调度协议入口是 `wanxiangli/routing` / `RoutingProtocol`：用户 `wanxiangshu.mjs` 的协议 2 ABI owner——模块导出形状与版本、同步调用 `route(role, running, previous)`（冻结副本）、target 严格解码、理论容量查询只认布尔。不读文件、不加载模块、不持有容量；选择策略全部属于用户 MJS。见 `src/routing/AGENTS.md`。
 
 ## 第一刀：两个独立个体，一个组合者
