@@ -42,6 +42,32 @@ export type PreProviderVerdict =
   | { readonly verdict: 'append' | 'existing' | 'invalidDisposition' | 'missingAccepted' | 'evidenceConflict' | 'providerAlreadyStarted' }
   | { readonly verdict: 'terminalConflict'; readonly established: Disposition }
 
+export interface RecoveryInput {
+  readonly current: Phase
+  readonly provider: 'ReceiptMissing' | 'ReceiptAmbiguous' | 'Absent' | 'Alive' | 'Terminal'
+  readonly resource: 'Absent' | 'Held' | 'Released' | 'Unknown'
+  readonly persistence: 'Unknown' | 'NoNewWrite' | 'Committed' | 'NotCommitted'
+  /** The provider observation names the execution's exact key (true when it names none). */
+  readonly providerKeySame: boolean
+  /** The resource observation names the execution's exact key. */
+  readonly resourceKeySame: boolean
+  /** An Alive/Terminal provider observation carries the execution's accepted evidence (true otherwise). */
+  readonly providerAcceptedSame: boolean
+  /** An Alive/Terminal provider observation carries exactly the execution's started evidence. */
+  readonly providerSameAsStarted: boolean
+  /** The failure-policy resolution and whether it authorizes exactly this execution / provider run; null when none. */
+  readonly policy: null | {
+    readonly resolution: 'RetryFreshAttempt' | 'TerminalizeProviderStarted' | 'PreserveCurrentFact' | 'AwaitAcceptanceReconciliation' | 'TerminalizeAcceptedPreProvider'
+    readonly matches: boolean
+  }
+}
+
+export type RecoveryDecision =
+  | { readonly decision: 'ignore'; readonly reason: 'DurableTerminalAlreadySettled' | 'ProviderStillAlive' | 'RecoveryAlreadyCommitted' | 'ProviderRecoveryOwned' | 'StalePhysicalEvidence' | 'StalePolicyEvidence' }
+  | { readonly decision: 'releaseTerminalResource' | 'persistProviderStarted' | 'persistProviderStartedAndTerminal' | 'resumePreProvider' }
+  | { readonly decision: 'finalize'; readonly from: 'observation' | 'policy' }
+  | { readonly decision: 'manual'; readonly reason: 'MissingExternalReceipt' | 'AmbiguousExternalReceipt' | 'PhysicalOutcomeUnknown' | 'PersistenceOutcomeUnknown' | 'NoAuthorizedProviderDisposition' }
+
 export declare class ChatExecutionLaw {
   readonly contractVersion: 1
   readonly schemaVersion: 1
@@ -55,4 +81,6 @@ export declare class ChatExecutionLaw {
   decideTerminal(current: Phase, sameStarted: boolean, disposition: Disposition): TerminalVerdict
   /** Settle an execution that never reached its provider. */
   settlePreProvider(current: Phase | null, sameAccepted: boolean, disposition: Disposition): PreProviderVerdict
+  /** Restart recovery: the single next step authorized for one exact execution. */
+  recover(input: RecoveryInput): RecoveryDecision
 }

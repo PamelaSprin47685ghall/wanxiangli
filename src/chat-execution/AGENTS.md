@@ -16,7 +16,10 @@
 3. [AXIOM 1] 启动决策（`decideStart`）：Accepted 追加；同一 provider run 的重放返回既有；另一 run 冲突；终态之后不得启动。
 4. [AXIOM 1, 2] 终态决策（`decideTerminal`、`settlePreProvider`）：每次执行只有一个终态；精确重放幂等；不同 disposition 冲突并报告既有值；未启动不得走 after-provider 终态，已启动不得走 pre-provider 结算，pre-provider 不得 Completed。
 
+5. [AXIOM 1, 2] 重启恢复（`recover`）：观察不属于这次精确执行（键或证据对不上）一律忽略；已终结的执行只处理物理资源（持有则释放，未知交人工）；未终结的执行先看持久提交（未知或无新写交人工，已提交忽略）；未提交时按 provider 观察：回执缺失/歧义交人工，Accepted 下 provider 缺席则恢复到 pre-provider、存活或已终结则补记事实；Started 下同一 run 存活忽略、同一 run 终结则结算，缺席时只有精确授权的失败策略能决定（重试归 provider 恢复、终结则结算，授权不符为陈旧，其余交人工）。绝不凭猜结算未知结果。
+
 # SPEC
 
 1. [LEMMA 1, 2] 证明：`tests/001.test.mjs`。与 vibe-fs 旧 ChatExecutionFactFold 逐项对照见 vibe-fs `evidence/CUT-12/`。
 2. [LEMMA 3, 4] 证明：`tests/001.test.mjs`。
+3. [LEMMA 5] 证明：`tests/002.test.mjs`；与 vibe-fs 旧 `ChatExecutionRecovery.decide` 逐项对照见 vibe-fs `evidence/CUT-12/`。

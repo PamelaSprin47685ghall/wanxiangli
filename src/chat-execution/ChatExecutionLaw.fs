@@ -136,6 +136,94 @@ let private foldTerminal current afterStart sameAccepted sameStarted disposition
     | Some(EndedAfterStart _), _ ->
         reject "InvalidFact: Terminal conflicts with the execution's established evidence or disposition"
 
+let private decision (name: string) (extra: (string * obj) list) : obj =
+    freeze (createObj ([ "decision" ==> name ] @ extra))
+
+let private ignore' (reason: string) = decision "ignore" [ "reason" ==> reason ]
+let private manual (reason: string) = decision "manual" [ "reason" ==> reason ]
+
+let private flagOf (input: obj) (name: string) = flag ("recovery." + name) (field input name)
+
+/// Restart recovery of one exact execution (crash-reconciliation): which single
+/// next step the durable phase, the physical provider/resource observations,
+/// the persistence commitment and the failure-policy resolution authorize.
+let private recover (input: obj) : obj =
+    if not (isObject input) then malformed "recovery"
+    let phase =
+        match phaseOf (field input "current") with
+        | Some p -> p
+        | None -> malformed "recovery.current"
+    let provider = text (field input "provider")
+    let resource = text (field input "resource")
+    let persistence = text (field input "persistence")
+    let stale =
+        not (flagOf input "providerKeySame")
+        || not (flagOf input "resourceKeySame")
+        || not (flagOf input "providerAcceptedSame")
+    let providerResolution () =
+        let policy = field input "policy"
+        if isAbsent policy then
+            manual "NoAuthorizedProviderDisposition"
+        elif not (isObject policy) then
+            malformed "recovery.policy"
+        else
+            let matches = flag "recovery.policy.matches" (field policy "matches")
+            match text (field policy "resolution") with
+            | "RetryFreshAttempt" when matches -> ignore' "ProviderRecoveryOwned"
+            | "TerminalizeProviderStarted" when matches -> decision "finalize" [ "from" ==> "policy" ]
+            | "RetryFreshAttempt"
+            | "TerminalizeProviderStarted" -> ignore' "StalePolicyEvidence"
+            | "PreserveCurrentFact"
+            | "AwaitAcceptanceReconciliation"
+            | "TerminalizeAcceptedPreProvider" -> manual "NoAuthorizedProviderDisposition"
+            | _ -> malformed "recovery.policy.resolution"
+    let terminal () =
+        match resource with
+        | "Held" -> decision "releaseTerminalResource" []
+        | "Absent"
+        | "Released" -> ignore' "DurableTerminalAlreadySettled"
+        | "Unknown" -> manual "PhysicalOutcomeUnknown"
+        | _ -> malformed "recovery.resource"
+    let accepted () =
+        match provider with
+        | "ReceiptMissing" -> manual "MissingExternalReceipt"
+        | "ReceiptAmbiguous" -> manual "AmbiguousExternalReceipt"
+        | "Absent" -> decision "resumePreProvider" []
+        | "Alive" -> decision "persistProviderStarted" []
+        | "Terminal" -> decision "persistProviderStartedAndTerminal" []
+        | _ -> malformed "recovery.provider"
+    let started () =
+        let same () = flagOf input "providerSameAsStarted"
+        match provider with
+        | "ReceiptMissing" -> manual "MissingExternalReceipt"
+        | "ReceiptAmbiguous" -> manual "AmbiguousExternalReceipt"
+        | "Alive" when same () -> ignore' "ProviderStillAlive"
+        | "Terminal" when same () -> decision "finalize" [ "from" ==> "observation" ]
+        | "Absent" -> providerResolution ()
+        | "Alive"
+        | "Terminal" -> ignore' "StalePhysicalEvidence"
+        | _ -> malformed "recovery.provider"
+    match resource with
+    | "Absent" | "Held" | "Released" | "Unknown" -> ()
+    | _ -> malformed "recovery.resource"
+    if stale then
+        ignore' "StalePhysicalEvidence"
+    else
+        match phase with
+        | EndedBeforeStart _
+        | EndedAfterStart _ -> terminal ()
+        | Accepted
+        | Started ->
+            match persistence with
+            | "Unknown"
+            | "NoNewWrite" -> manual "PersistenceOutcomeUnknown"
+            | "Committed" -> ignore' "RecoveryAlreadyCommitted"
+            | "NotCommitted" ->
+                match phase with
+                | Accepted -> accepted ()
+                | _ -> started ()
+            | _ -> malformed "recovery.persistence"
+
 /// managed-chat-execution: the single-assignment law of one exact chat
 /// execution (Accepted → ProviderStarted → Terminal). Pure: the caller keeps
 /// the evidence and the durable projection, compares evidence by value and
@@ -227,3 +315,9 @@ type ChatExecutionLaw() =
             | Some(EndedBeforeStart d) when d = attempted -> verdict "existing"
             | Some p ->
                 verdictWith "terminalConflict" "established" (dispositionName (Option.get (establishedDisposition p)))
+
+    /// Restart recovery of one exact execution: the single next step the durable
+    /// phase, the physical observations, the persistence commitment and the
+    /// failure-policy resolution authorize. Unknown physical or persistence
+    /// outcomes are never settled by guess: they go to manual intervention.
+    member _.recover(input: obj) : obj = recover input
