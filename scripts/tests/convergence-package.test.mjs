@@ -15,12 +15,13 @@ const succeed = result => {
   return result.stdout
 }
 
-test('SPEC[convergence-package] installed convergence merges a real fork in a clean consumer on every available runtime', { timeout: 90000 }, async t => {
+test('SPEC[convergence-package] installed convergence and retention merge a real fork in a clean consumer on every available runtime', { timeout: 90000 }, async t => {
   const directory = mkdtempSync(path.join(tmpdir(), 'wanxiangli-convergence-package-'))
   t.after(() => rmSync(directory, { recursive: true, force: true }))
   const packed = packedPackage(succeed(spawnSync('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', directory], { cwd: root, env, encoding: 'utf8', timeout: 30000 })))
   assert.ok(packed.files.some(file => file.path === 'dist/convergence/KWayMerge.js'))
   assert.ok(packed.files.some(file => file.path === 'src/convergence/index.d.ts'))
+  assert.ok(packed.files.some(file => file.path === 'dist/retention/WriterRetention.js'))
   for (const file of packed.files) assert.doesNotMatch(file.path, /\.fs(?:proj|i)?$|^scripts\/|^node_modules\//)
   const consumer = path.join(directory, 'consumer')
   mkdirSync(consumer)
@@ -34,6 +35,6 @@ test('SPEC[convergence-package] installed convergence merges a real fork in a cl
   else t.diagnostic('Bun is absent; its convergence consumer is not verified.')
   for (const [runtime, executable] of runtimes) {
     const output = succeed(spawnSync(executable, [path.join(consumer, 'convergence-consumer.mjs')], { cwd: consumer, env, encoding: 'utf8', timeout: 30000 }))
-    assert.deepEqual(JSON.parse(output), { fork: ['a', 'b', 'c'], duplicate: 'NonCanonical', retained: 1 }, runtime)
+    assert.deepEqual(JSON.parse(output), { kept: ['today'], fork: ['a', 'b', 'c'], duplicate: 'NonCanonical', retained: 1 }, runtime)
   }
 })

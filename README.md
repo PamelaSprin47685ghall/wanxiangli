@@ -12,6 +12,8 @@
 
 收敛入口是 `wanxiangli/convergence` / `KWayMerge`：多 writer 事实流的结构归并。各 writer 内追加顺序不变，parent 先于 child，就绪 head 之间按 EventId 文本序；同 id 同字节去重、异字节为身份碰撞（裁决委托 `wanxiangli/events`），同名 writer 流拒绝而不静默折叠；`mergeRetained` 把整个保留集合之外的 parent 视为 retention 窗口边界。纯计算，不读文件、不加锁、不解释业务事件；段聚合、retention 截止与业务折叠归调用方。规则与证明见 `src/convergence/AGENTS.md`。
 
+保留入口是 `wanxiangli/retention` / `WriterRetention`：整条 writer 的 UTC 日期分组保留规则（今天与昨天保留，更早整条过期）。截止时刻与活动时刻由调用方给出，非有限时间拒绝而非判过期；不读时钟、不读文件、不删除。见 `src/retention/AGENTS.md`。
+
 ## 第一刀：两个独立个体，一个组合者
 
 | 入口 | 对象 | 职责 |
