@@ -145,3 +145,58 @@ test('SPEC[build-001] composition compiles without sibling sources and runs agai
   assert.match(composition, /from ["']wanxiangli\/work["']/)
   assert.doesNotMatch(composition, /WorkOpened|ConfirmationCommitted|DeliveryRequested|SELECT|PRAGMA/)
 })
+
+function snapshot(directory) {
+  const files = {}
+  const walk = (folder, prefix) => {
+    for (const entry of readdirSync(folder, { withFileTypes: true })) {
+      const relative = prefix ? `${prefix}/${entry.name}` : entry.name
+      if (entry.isDirectory()) walk(path.join(folder, entry.name), relative)
+      else files[relative] = readFileSync(path.join(folder, entry.name), 'utf8')
+    }
+  }
+  walk(directory, '')
+  return files
+}
+
+test('SPEC[build-002] incremental build skips unchanged modules and rebuilds changed, tampered or forced ones', { timeout: 120000 }, t => {
+  const directory = fixture(t, ['ordinal', 'bayes'])
+  const build = (...args) => {
+    const result = run(directory, ['scripts/build.mjs', ...args])
+    succeed(result)
+    return result.stdout
+  }
+  const status = (output, name) => output.match(new RegExp(`\\[build\\] ${name}: (cached|\\d+ ms)`))?.[1]
+  let output = build()
+  assert.match(status(output, 'ordinal'), /ms$/)
+  assert.match(status(output, 'bayes'), /ms$/)
+  const cold = snapshot(path.join(directory, 'dist'))
+
+  output = build()
+  assert.equal(status(output, 'ordinal'), 'cached')
+  assert.equal(status(output, 'bayes'), 'cached')
+
+  const source = path.join(directory, 'src/ordinal', readdirSync(path.join(directory, 'src/ordinal')).filter(file => file.endsWith('.fs'))[0])
+  const original = readFileSync(source, 'utf8')
+  writeFileSync(source, `${original}\n// incremental probe\n`)
+  output = build()
+  assert.match(status(output, 'ordinal'), /ms$/)
+  assert.equal(status(output, 'bayes'), 'cached')
+  writeFileSync(source, original)
+  output = build()
+  assert.match(status(output, 'ordinal'), /ms$/)
+
+  const artifact = path.join(directory, 'dist/bayes', readdirSync(path.join(directory, 'dist/bayes')).find(file => file.endsWith('.js')))
+  writeFileSync(artifact, `${readFileSync(artifact, 'utf8')}// tampered\n`)
+  output = build()
+  assert.equal(status(output, 'ordinal'), 'cached')
+  assert.match(status(output, 'bayes'), /ms$/)
+  const cached = snapshot(path.join(directory, 'dist'))
+
+  output = build('--force')
+  assert.match(status(output, 'ordinal'), /ms$/)
+  assert.match(status(output, 'bayes'), /ms$/)
+  const forced = snapshot(path.join(directory, 'dist'))
+  assert.deepEqual(cached, forced)
+  assert.deepEqual(cold, forced)
+})
