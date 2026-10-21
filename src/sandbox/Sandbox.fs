@@ -10,14 +10,8 @@ open Fable.Core.JsInterop
 /// programPromise drains afterEvaluate microtasks under the vm timeout, so a
 /// sync infinite loop after await still dies as PROGRAM_TIMEOUT.
 
-[<Import("createContext", "node:vm")>]
-let private createContext (sandbox: obj) (options: obj) : obj = jsNative
-
-[<Import("runInContext", "node:vm")>]
-let private runInContext (code: string) (context: obj) (options: obj) : obj = jsNative
-
-[<Import("constants", "node:vm")>]
-let private vmConstants: obj = jsNative
+[<ImportAll("node:vm")>]
+let private vm: obj = jsNative
 
 let private installSource =
     """
@@ -259,9 +253,12 @@ let private launch
     (modelSource: string)
     : obj =
     emitJsExpr
-        (vmConstants, createContext, runInContext, installSource, api, deadlineMs, deadlineEpochMs, baseClassSource, modelSource)
+        (vm, installSource, api, deadlineMs, deadlineEpochMs, baseClassSource, modelSource)
         """
-(function(vmConstants, createContext, runInContext, INSTALL, api, deadlineMs, deadlineEpochMs, baseClass, model) {
+(function(vm, INSTALL, api, deadlineMs, deadlineEpochMs, baseClass, model) {
+  var vmConstants = vm.constants;
+  var createContext = vm.createContext;
+  var runInContext = vm.runInContext;
   var ctx = createContext(vmConstants.DONT_CONTEXTIFY, { microtaskMode: "afterEvaluate" });
   runInContext(INSTALL, ctx, { timeout: 5000 });
   var deadlineRef = { current: Number(deadlineEpochMs) };
@@ -307,7 +304,7 @@ let private launch
     return box.value;
   })();
   return { deadlineRef: deadlineRef, programPromise: driven };
-})($0, $1, $2, $3, $4, $5, $6, $7, $8)
+})($0, $1, $2, $3, $4, $5, $6)
 """
 
 /// Naive pre-membrane runner used only by library base-red tests.
@@ -318,9 +315,11 @@ let private launchNaive
     (modelSource: string)
     : obj =
     emitJsExpr
-        (createContext, runInContext, api, deadlineMs, baseClassSource, modelSource)
+        (vm, api, deadlineMs, baseClassSource, modelSource)
         """
-(function(createContext, runInContext, api, deadlineMs, baseClass, model) {
+(function(vm, api, deadlineMs, baseClass, model) {
+  var createContext = vm.createContext;
+  var runInContext = vm.runInContext;
   var deadlineRef = { current: Date.now() + 60000 };
   var ctx = createContext({ api: api, __deadlineRef: deadlineRef });
   var code =
@@ -337,7 +336,7 @@ let private launchNaive
   } catch (e) {
     return { programPromise: Promise.reject(e), deadlineRef: deadlineRef };
   }
-})($0, $1, $2, $3, $4, $5)
+})($0, $1, $2, $3, $4)
 """
 
 type SandboxMessages =
@@ -355,4 +354,4 @@ let Sandbox () : SandboxMessages =
             launchNaive api deadlineMs baseClassSource modelSource
 
         member _.resetDeadline(deadlineRef, epochMs) =
-            emitJsExpr (deadlineRef, epochMs) "$0.current = Number($1)" |> ignore }
+            (emitJsExpr (deadlineRef, epochMs) "$0.current = Number($1)": unit) }
