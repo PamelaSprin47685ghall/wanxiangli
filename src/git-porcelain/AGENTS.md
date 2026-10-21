@@ -18,6 +18,9 @@
 4. [AXIOM 2] rev-parse 成功且路径非空的探针才进入待检目录。
 5. [AXIOM 3] `-z` 输出的第一条记录含 `bare` 即裸仓；首字段不是 `worktree ` 即无法识别。
 
+6. [AXIOM 1] 工作树回收：只有 manager 分支且短名不属于任何活跃 job 的工作树才算陈旧；主工作树与 detached 工作树永不陈旧。归属按短名整体比较，不从分支名里反解 job id。陈旧分支原样返回待删。
+
 # SPEC
 
 1. [LEMMA 1–5] 证明：`tests/001.test.mjs`。
+2. [LEMMA 6] 证明：`tests/001.test.mjs` `SPEC[git-porcelain-2]`。

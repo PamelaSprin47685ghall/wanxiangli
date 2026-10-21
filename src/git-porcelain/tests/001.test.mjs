@@ -81,3 +81,15 @@ test('SPEC[git-porcelain] non-string input is refused, not coerced', () => {
   assert.throws(() => g.worktrees(undefined), /requires string output/)
   assert.throws(() => g.branches(42), /requires string output/)
 })
+
+test('SPEC[git-porcelain-2] worktree cleanup: only unowned manager branches are stale; primary and detached never are', () => {
+  const entries = g.worktrees(LISTING + 'worktree /repo/.wt/j2\nHEAD 4444444444444444444444444444444444444444\nbranch refs/heads/manager/j2\n')
+  assert.deepEqual([...g.staleWorktrees(entries, ['manager/j1'])], ['/repo/.wt/j2'])
+  assert.deepEqual([...g.staleWorktrees(entries, ['manager/j1', 'manager/j2'])], [])
+  // the main working tree is on refs/heads/main: never classified stale even with nothing owned
+  assert.deepEqual([...g.staleWorktrees(entries, [])], ['/repo/.wt/j1', '/repo/.wt/j2'])
+  // ownership compares the whole short name; a job id prefix is not ownership
+  assert.deepEqual([...g.staleWorktrees(entries, ['manager/j'])], ['/repo/.wt/j1', '/repo/.wt/j2'])
+  assert.deepEqual([...g.staleBranches(['manager/j1', 'refs/heads/manager/j2', 'manager/j3'], ['manager/j2'])], ['manager/j1', 'manager/j3'])
+  assert.throws(() => g.staleBranches('manager/j1', []), /string array/)
+})

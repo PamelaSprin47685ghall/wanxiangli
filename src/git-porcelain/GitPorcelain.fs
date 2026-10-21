@@ -14,6 +14,9 @@ module internal Wire =
     [<Emit("typeof $0 === 'number'")>]
     let isNumber (_: obj) : bool = jsNative
 
+    [<Emit("Array.isArray($0)")>]
+    let isArray (_: obj) : bool = jsNative
+
     [<Emit("Object.freeze($0)")>]
     let freeze (_: obj) : obj = jsNative
 
@@ -106,6 +109,22 @@ module internal Law =
             else
                 None)
 
+    /// Worktree cleanup (CUT-23 ②): of `worktree list` records, only manager
+    /// branches no active job owns are stale. The primary working tree and
+    /// detached worktrees are never ours to remove. Ownership is compared on the
+    /// short branch name, whole: the job id is never parsed back out.
+    let staleWorktrees (entries: (string * string option) list) (owned: Set<string>) : string list =
+        entries
+        |> List.choose (fun (path, branch) ->
+            match branch with
+            | Some reference when isManagerBranch reference && not (Set.contains (shortBranch reference) owned) ->
+                Some path
+            | _ -> None)
+
+    /// Of the listed manager branches, the ones no active job owns, as listed.
+    let staleBranches (branches: string list) (owned: Set<string>) : string list =
+        branches |> List.filter (fun reference -> not (Set.contains (shortBranch reference) owned))
+
 type GitPorcelainMessages =
     abstract worktrees: output: obj -> obj array
     abstract primaryWorktree: outputZ: obj -> obj
@@ -114,6 +133,8 @@ type GitPorcelainMessages =
     abstract isManagerBranch: reference: obj -> bool
     abstract managerBranchOf: jobId: obj -> string
     abstract rebaseStatePaths: merge: obj * apply: obj -> string array
+    abstract staleWorktrees: entries: obj * owned: obj -> string array
+    abstract staleBranches: branches: obj * owned: obj -> string array
 
 let private probe (owner: string) (value: obj) : int * string =
     if isNull value then
@@ -124,6 +145,27 @@ let private probe (owner: string) (value: obj) : int * string =
         let c = if Wire.isNumber code then unbox<int> code else -1
         let p = if Wire.isString path then unbox<string> path else ""
         c, p
+
+let private textArray (owner: string) (name: string) (value: obj) : string list =
+    if Wire.isArray value then
+        unbox<obj array> value |> Array.map (Wire.text owner name) |> Array.toList
+    else
+        raise (ArgumentException(sprintf "git-porcelain: %s requires string array %s" owner name))
+
+let private entriesOf (owner: string) (value: obj) : (string * string option) list =
+    if not (Wire.isArray value) then
+        raise (ArgumentException(sprintf "git-porcelain: %s requires an entries array" owner))
+    else
+        unbox<obj array> value
+        |> Array.map (fun entry ->
+            if isNull entry then
+                raise (ArgumentException(sprintf "git-porcelain: %s requires { path, branch } entries" owner))
+            else
+                let path: obj = entry?path
+                let branch: obj = entry?branch
+                Wire.text owner "entry.path" path,
+                (if isNull branch then None else Some(Wire.text owner "entry.branch" branch)))
+        |> Array.toList
 
 let GitPorcelain () : GitPorcelainMessages =
     { new GitPorcelainMessages with
@@ -160,4 +202,12 @@ let GitPorcelain () : GitPorcelainMessages =
 
         member _.rebaseStatePaths(merge, apply) =
             Law.rebaseStatePaths [ probe "rebaseStatePaths" merge; probe "rebaseStatePaths" apply ]
+            |> List.toArray
+
+        member _.staleWorktrees(entries, owned) =
+            Law.staleWorktrees (entriesOf "staleWorktrees" entries) (Set.ofList (textArray "staleWorktrees" "owned" owned))
+            |> List.toArray
+
+        member _.staleBranches(branches, owned) =
+            Law.staleBranches (textArray "staleBranches" "branches" branches) (Set.ofList (textArray "staleBranches" "owned" owned))
             |> List.toArray }

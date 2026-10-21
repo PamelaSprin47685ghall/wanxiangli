@@ -36,6 +36,13 @@ export interface GitPorcelainMessages {
   managerBranchOf(jobId: string): string
   /** Trimmed rebase state directories to probe; a rebase is in progress iff one exists. */
   rebaseStatePaths(merge: GitPathProbe, apply: GitPathProbe): readonly string[]
+  /**
+   * Worktree cleanup: paths of `worktree list` records on a manager branch whose short name no
+   * active job owns. Primary and detached worktrees are never stale.
+   */
+  staleWorktrees(entries: readonly WorktreeEntry[], owned: readonly string[]): readonly string[]
+  /** The listed manager branches whose short name no active job owns, as listed. */
+  staleBranches(branches: readonly string[], owned: readonly string[]): readonly string[]
 }
 
 export declare function GitPorcelain(): GitPorcelainMessages
