@@ -76,8 +76,81 @@ let private ready (laneCount: int) (progress: obj) =
     && unbox<obj array> deliveries
        |> Array.forall (fun delivered -> List.sort (List.distinct (ints "progress.deliveries[]" delivered)) = all)
 
+let private intArray (items: int list) : obj = freeze (box (List.toArray items))
+
 [<AttachMembers>]
 type FissionGroupLaw() =
+
+    /// The canonical lane request: at least two lanes, none blank, lane i is the
+    /// i-th prompt. { lanes: n } or { rejection: "TooFewLanes" } or
+    /// { rejection: "EmptyLanePrompt", index }.
+    member _.parsePrompts(prompts: obj) : obj =
+        if not (isArrayValue prompts) then malformed "prompts"
+        let prompts = unbox<obj array> prompts |> Array.map (text "prompts[]") |> Array.toList
+
+        if List.length prompts < 2 then
+            freeze (createObj [ "rejection" ==> "TooFewLanes" ])
+        else
+            match prompts |> List.tryFindIndex System.String.IsNullOrWhiteSpace with
+            | Some index -> freeze (createObj [ "rejection" ==> "EmptyLanePrompt"; "index" ==> index ])
+            | None -> freeze (createObj [ "lanes" ==> List.length prompts ])
+
+    /// Which lanes a completion is routed to: a pre-Fission broadcast (`lane`
+    /// null) goes to every lane, a lane-affine one to its lane when in range.
+    member _.routeCompletion(input: obj) : obj =
+        if not (isObject input) then malformed "input"
+        let laneCount = int' "laneCount" (field input "laneCount")
+        let lane = field input "lane"
+
+        if isAbsent lane then
+            intArray [ 0 .. laneCount - 1 ]
+        else
+            let lane = int' "lane" lane
+            intArray (if lane >= 0 && lane < laneCount then [ lane ] else [])
+
+    /// Canonical ring fold order: a property of the topology, never of arrival.
+    member _.mergeOrder(laneCount: obj) : obj =
+        let laneCount = int' "laneCount" laneCount
+        intArray (if laneCount < 2 then [] else [ 0 .. laneCount - 1 ])
+
+    /// The one lane that may receive the final takeover (N-1), or null.
+    member _.finalLane(laneCount: obj) : obj =
+        let laneCount = int' "laneCount" laneCount
+        if laneCount < 2 then null else box (laneCount - 1)
+
+    /// The next live lane after `laneIndex` on the ring, skipping `closed`;
+    /// null when the index is invalid or every lane is closed.
+    member _.successor(input: obj) : obj =
+        if not (isObject input) then malformed "input"
+        let laneCount = int' "laneCount" (field input "laneCount")
+        let laneIndex = int' "laneIndex" (field input "laneIndex")
+        let closed = ints "closed" (field input "closed") |> Set.ofList
+
+        if laneCount < 2 || laneIndex < 0 || laneIndex >= laneCount then
+            null
+        else
+            [ 1..laneCount ]
+            |> List.map (fun offset -> (laneIndex + offset) % laneCount)
+            |> List.tryFind (fun candidate -> not (Set.contains candidate closed))
+            |> Option.map box
+            |> Option.defaultValue null
+
+    /// Fission/Turn boundary: what a lane (`stage` "lane") or the takeover
+    /// (`stage` "takeover") does with a settled turn observation. Fission never
+    /// runs the Turn's own successors; unsettled turns yield to the Turn workflow.
+    member _.settle(input: obj) : obj =
+        if not (isObject input) then malformed "input"
+        let stage = text "stage" (field input "stage")
+        if stage <> "lane" && stage <> "takeover" then malformed "stage"
+
+        match text "observation" (field input "observation") with
+        | "OngoingExecution"
+        | "NeedsContinuation"
+        | "ProviderFailed"
+        | "DegenerationInterrupted" -> freeze (createObj [ "decision" ==> "yield" ])
+        | "ExternalAbort" -> freeze (createObj [ "decision" ==> "fail" ])
+        | "Completed" -> freeze (createObj [ "decision" ==> (if stage = "lane" then "materialize" else "complete") ])
+        | _ -> malformed "observation"
 
     /// Whether the group's convergence preconditions hold (see `ready`).
     member _.convergenceReady(input: obj) : bool =

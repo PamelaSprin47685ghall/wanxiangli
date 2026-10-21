@@ -41,4 +41,11 @@ export declare class FissionGroupLaw {
   constructor()
   judge(input: FissionGroupEvent): FissionGroupVerdict
   convergenceReady(input: { laneCount: number; progress: FissionProgress }): boolean
+  parsePrompts(prompts: readonly string[]): { readonly lanes: number } | { readonly rejection: 'TooFewLanes' } | { readonly rejection: 'EmptyLanePrompt'; readonly index: number }
+  /** `lane` null = pre-Fission broadcast */
+  routeCompletion(input: { laneCount: number; lane: number | null }): readonly number[]
+  mergeOrder(laneCount: number): readonly number[]
+  finalLane(laneCount: number): number | null
+  successor(input: { laneCount: number; laneIndex: number; closed: readonly number[] }): number | null
+  settle(input: { stage: 'lane' | 'takeover'; observation: 'OngoingExecution' | 'NeedsContinuation' | 'ProviderFailed' | 'DegenerationInterrupted' | 'ExternalAbort' | 'Completed' }): { readonly decision: 'yield' | 'fail' | 'materialize' | 'complete' }
 }

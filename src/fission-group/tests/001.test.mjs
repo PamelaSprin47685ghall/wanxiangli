@@ -71,3 +71,40 @@ test('SPEC[fission-group] results are frozen and malformed input is refused', ()
   assert.throws(() => law.judge({ event: 'laneMaterialized', laneCount: 2, laneIndex: 0, laneSession: 'maybe', work: null }))
   assert.throws(() => law.judge({ event: 'takeover', laneCount: 2, laneIndex: 0, laneSession: 'match', progress: { workedLanes: 'x', deliveries: [] }, takeover: null }))
 })
+
+test('SPEC[fission-group-4] the lane request is canonical: two or more lanes, none blank, lane i is prompt i', () => {
+  const p = (xs) => JSON.parse(JSON.stringify(law.parsePrompts(xs)))
+  assert.deepEqual(p(['a']), { rejection: 'TooFewLanes' })
+  assert.deepEqual(p([]), { rejection: 'TooFewLanes' })
+  assert.deepEqual(p(['a', ' \t']), { rejection: 'EmptyLanePrompt', index: 1 })
+  assert.deepEqual(p(['', 'b', '']), { rejection: 'EmptyLanePrompt', index: 0 })
+  assert.deepEqual(p(['a', 'b', 'c']), { lanes: 3 })
+})
+
+test('SPEC[fission-group-5] routing, ring order and the final lane are topology, not arrival', () => {
+  const plain = (v) => JSON.parse(JSON.stringify(v))
+  assert.deepEqual(plain(law.routeCompletion({ laneCount: 3, lane: null })), [0, 1, 2])
+  assert.deepEqual(plain(law.routeCompletion({ laneCount: 3, lane: 2 })), [2])
+  assert.deepEqual(plain(law.routeCompletion({ laneCount: 3, lane: 3 })), [])
+  assert.deepEqual(plain(law.mergeOrder(3)), [0, 1, 2])
+  assert.deepEqual(plain(law.mergeOrder(1)), [])
+  assert.equal(law.finalLane(4), 3)
+  assert.equal(law.finalLane(1), null)
+  assert.equal(law.successor({ laneCount: 3, laneIndex: 2, closed: [] }), 0)
+  assert.equal(law.successor({ laneCount: 3, laneIndex: 0, closed: [1] }), 2)
+  assert.equal(law.successor({ laneCount: 3, laneIndex: 0, closed: [1, 2] }), 0)
+  assert.equal(law.successor({ laneCount: 3, laneIndex: 0, closed: [0, 1, 2] }), null)
+  assert.equal(law.successor({ laneCount: 3, laneIndex: 3, closed: [] }), null)
+})
+
+test('SPEC[fission-group-6] Fission consumes only settled turns; an external abort fails the group', () => {
+  const s = (stage, observation) => law.settle({ stage, observation }).decision
+  for (const o of ['OngoingExecution', 'NeedsContinuation', 'ProviderFailed', 'DegenerationInterrupted']) {
+    assert.equal(s('lane', o), 'yield'); assert.equal(s('takeover', o), 'yield')
+  }
+  assert.equal(s('lane', 'ExternalAbort'), 'fail')
+  assert.equal(s('takeover', 'ExternalAbort'), 'fail')
+  assert.equal(s('lane', 'Completed'), 'materialize')
+  assert.equal(s('takeover', 'Completed'), 'complete')
+  assert.throws(() => law.settle({ stage: 'owner', observation: 'Completed' }))
+})
