@@ -24,6 +24,9 @@
 5. [本模块 AXIOM 1] 入口准入只按已观察到的事实裁决，次序固定：畸形身份载体 → 已接受 HumanRoot 物理消息的重放 → 会话、durable 快照、物理 id 的缺失 → 已接受或已落地的物理消息 → 精确 pending claim → Host 内部 → 未接受消息。新的 HumanRoot 只在宿主给出根上解析成功的显式 participant、且没有活跃运行时授予；claim 自带的 HumanRoot 来源永远不可准入。
     - 推理：这是 LEMMA 2 所说的"入口边界"本身的规则。participant 解析与身份种子仍由宿主做，本模块只看"解析成功的规范名"这一事实，不自己推断谁是用户；没有这份显式证据的消息在活跃运行下一律 UnknownOriginWhileActive 或按活跃档案续接，不会升格为根（CUT-09-a）。
 
+6. [本模块 AXIOM 1, LEMMA 4] 每个被接受的根唯一归入五类预期关闭之一：HumanRoot × Manager → HumanRootManagerLife，其余 HumanRoot → HumanRootManagedRun；AgentOwnerRoot 按宿主给出的生命周期归属（child / attached / internal-leaf）归入后三类，InternalLeaf 不论物理 Ownership。无法唯一归类的根（AgentOwnerRoot 缺归属、HumanRoot 带归属）没有类别，不得被接受。关闭只凭本类唯一合法的 source witness，且其 owner、运行、life 与被关闭的根逐字相同；生命周期 terminal 本身、请求、信号、观察都不是 witness（interaction-authority-018，CUT-09-b）。
+    - 推理：按"有人结束了"去关，会让别类或别的运行的结束释放这个根的身份；witness 必须指名它关闭的正是哪一次。CUT-09-b 之前唯一的 writer 只为 HumanRoot × Manager life 写入裸 retirement id，durable 历史里存在这种记录，所以裸 id 只在该类下读作 LifeCompleted(life, id)，别类一律拒绝。
+
 # SPEC
 
 1. [本模块 LEMMA 1, 2] `resolveOrigin` 按固定优先级：已接受的 continuation 物理消息 → 已 claim 的 PromptKey 自身来源 → Host 内部压缩/合成 → 带 PromptKey 且活跃根为 AgentOwnerRoot → UnknownOrigin。没有任何输入组合会得到未经 claim 的 HumanRoot。
@@ -41,7 +44,16 @@
 5. [本模块 LEMMA 5] `admit` 对 57,344 组输入与按 interaction-authority [005][007][009]、dispatch-protocol-006 独立写成的 oracle 逐一相同，18 种结论都出现；`external-root` 只在显式 participant 根上解析成功且无活跃运行时出现；畸形输入抛错。
     - 证明：`tests/002.test.mjs` SPEC[authority-005]。
 
+6. [本模块 LEMMA 6] `expectedClosureKind` 把根映射到五类之一或 null。
+    - 证明：`tests/003.test.mjs` SPEC[authority-6]。
+
+7. [本模块 LEMMA 6] `encodeClosureWitness` 是 ClosureWitness 的唯一拼法（JSON 字符串数组，标签在前，按类定长）；`decodeClosureWitness` 与之互逆，别的文本一律 null。
+    - 证明：`tests/003.test.mjs` SPEC[authority-7]。
+
+8. [本模块 LEMMA 6] `admitClosure`：记录的 RootKind 与类别不一致 → root-kind-mismatch；别类 witness → witness-kind-mismatch；owner/运行/life 不同或任一字段为空 → witness-identity-mismatch；根缺 owner 运行或 life → closing-identity-missing；裸 id 只在 HumanRootManagerLife 下为 legacy，否则 malformed-witness。
+    - 证明：`tests/003.test.mjs` SPEC[authority-8]，五类 × 别类、每个身份字段改值或置空各给反例；去掉 owner 比较的变异会使其变红。
+
 # TODO
 
-- 五类 ExpectedClosureKind 与 source witness 的精确匹配（interaction-authority-018）在宿主尚未实现（宿主当前只有 retirement witness 字符串）；先在宿主补齐事实，再迁入本模块。
+- 宿主目前只对 HumanRootManagerLife 有 source witness（Manager 交付退役）；其余四类的 durable terminal 与 AgentOwnerRoot 的生命周期归属宿主尚未记录，届时直接用本模块的 expectedClosureKind / admitClosure。
 - 投影重置（清空 run-scoped claims、continuation 映射、序列号、提问）与 durable fold 仍归宿主；是否迁入取决于 CUT-11 对 claim 账的处置。

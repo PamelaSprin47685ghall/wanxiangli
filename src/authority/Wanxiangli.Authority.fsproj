@@ -8,6 +8,7 @@
   <ItemGroup>
     <Compile Include="RunLaw.fs" />
     <Compile Include="AdmissionLaw.fs" />
+    <Compile Include="ClosureLaw.fs" />
     <Compile Include="Authority.fs" />
   </ItemGroup>
 </Project>

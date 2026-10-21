@@ -160,6 +160,119 @@ module internal Wire =
             createObj [ "kind" ==> "reject"; "reason" ==> "malformed-carrier"; "carrier" ==> carrier ]
         | Admission.Reject rejection -> createObj [ "kind" ==> "reject"; "reason" ==> rejectionLabel rejection ]
 
+
+    // --- interaction-authority-018 closure (CUT-09-b) ---
+
+    [<Emit("JSON.stringify($0)")>]
+    let jsonStrings (_values: string array) : string = jsNative
+
+    [<Emit("(function(t){try{var v=JSON.parse(t);return Array.isArray(v)&&v.every(function(x){return typeof x==='string'})?v:null}catch(e){return null}})($0)")>]
+    let parseStrings (_text: string) : string array = jsNative
+
+    let closureKindLabel (kind: ClosureKind) : string =
+        match kind with
+        | ClosureKind.HumanRootManagerLife -> "HumanRootManagerLife"
+        | ClosureKind.HumanRootManagedRun -> "HumanRootManagedRun"
+        | ClosureKind.AgentOwnerChildWork -> "AgentOwnerChildWork"
+        | ClosureKind.AgentOwnerAttachedWork -> "AgentOwnerAttachedWork"
+        | ClosureKind.AgentOwnerInternalLeaf -> "AgentOwnerInternalLeaf"
+
+    let closureKind (value: obj) : ClosureKind =
+        match (if isString value then unbox<string> value else "") with
+        | "HumanRootManagerLife" -> ClosureKind.HumanRootManagerLife
+        | "HumanRootManagedRun" -> ClosureKind.HumanRootManagedRun
+        | "AgentOwnerChildWork" -> ClosureKind.AgentOwnerChildWork
+        | "AgentOwnerAttachedWork" -> ClosureKind.AgentOwnerAttachedWork
+        | "AgentOwnerInternalLeaf" -> ClosureKind.AgentOwnerInternalLeaf
+        | _ -> malformed "closure kind"
+
+    let agentOwnerLife (value: obj) : AgentOwnerLife option =
+        if isAbsent value then None
+        else
+            match (if isString value then unbox<string> value else "") with
+            | "child" -> Some AgentOwnerLife.Child
+            | "attached" -> Some AgentOwnerLife.Attached
+            | "internal-leaf" -> Some AgentOwnerLife.InternalLeaf
+            | _ -> malformed "agentOwnerLife"
+
+    let witnessView (witness: ClosureWitness) : obj =
+        match witness with
+        | ClosureWitness.LifeCompleted(life, fact) ->
+            createObj [ "kind" ==> "LifeCompleted"; "lifeId" ==> life; "factId" ==> fact ]
+        | ClosureWitness.ManagedLogicalRunTerminal(run, fact) ->
+            createObj [ "kind" ==> "ManagedLogicalRunTerminal"; "logicalRunId" ==> run; "factId" ==> fact ]
+        | ClosureWitness.ChildLogicalRunTerminal(owner, child, fact) ->
+            createObj
+                [ "kind" ==> "ChildLogicalRunTerminal"
+                  "ownerLogicalRunId" ==> owner
+                  "childLogicalRunId" ==> child
+                  "factId" ==> fact ]
+        | ClosureWitness.AttachedLogicalRunTerminal(owner, child, attachment, generation, fact) ->
+            createObj
+                [ "kind" ==> "AttachedLogicalRunTerminal"
+                  "ownerLogicalRunId" ==> owner
+                  "childLogicalRunId" ==> child
+                  "attachmentKind" ==> attachment
+                  "associationGeneration" ==> generation
+                  "factId" ==> fact ]
+        | ClosureWitness.InternalLeafTerminal(owner, leaf, decision, fact) ->
+            createObj
+                [ "kind" ==> "InternalLeafTerminal"
+                  "ownerLogicalRunId" ==> owner
+                  "leafLogicalRunId" ==> leaf
+                  "decisionOrTransactionId" ==> decision
+                  "factId" ==> fact ]
+
+    let witness (value: obj) : ClosureWitness =
+        if not (isObject value) then malformed "witness"
+        else
+            let t name = text ("witness." + name) (field value name)
+
+            match (if isString (field value "kind") then unbox<string> (field value "kind") else "") with
+            | "LifeCompleted" -> ClosureWitness.LifeCompleted(t "lifeId", t "factId")
+            | "ManagedLogicalRunTerminal" -> ClosureWitness.ManagedLogicalRunTerminal(t "logicalRunId", t "factId")
+            | "ChildLogicalRunTerminal" ->
+                ClosureWitness.ChildLogicalRunTerminal(t "ownerLogicalRunId", t "childLogicalRunId", t "factId")
+            | "AttachedLogicalRunTerminal" ->
+                ClosureWitness.AttachedLogicalRunTerminal(
+                    t "ownerLogicalRunId",
+                    t "childLogicalRunId",
+                    t "attachmentKind",
+                    t "associationGeneration",
+                    t "factId"
+                )
+            | "InternalLeafTerminal" ->
+                ClosureWitness.InternalLeafTerminal(
+                    t "ownerLogicalRunId",
+                    t "leafLogicalRunId",
+                    t "decisionOrTransactionId",
+                    t "factId"
+                )
+            | _ -> malformed "witness kind"
+
+    let decodeWitness (text: string) : ClosureWitness option =
+        match parseStrings text with
+        | null -> None
+        | values -> ClosureLaw.ofFields (List.ofArray values)
+
+    let closingRoot (value: obj) : ClosingRoot =
+        if not (isObject value) then malformed "closing"
+        else
+            { Kind = closureKind (field value "kind")
+              SessionId = text "closing.sessionId" (field value "sessionId")
+              LogicalRunId = text "closing.logicalRunId" (field value "logicalRunId")
+              RootId = text "closing.rootId" (field value "rootId")
+              OwnerLogicalRunId = optionalText "closing.ownerLogicalRunId" (field value "ownerLogicalRunId")
+              LifeId = optionalText "closing.lifeId" (field value "lifeId") }
+
+    let refusalLabel (refusal: ClosureRefusal) : string =
+        match refusal with
+        | ClosureRefusal.RootKindMismatch -> "root-kind-mismatch"
+        | ClosureRefusal.MalformedWitness -> "malformed-witness"
+        | ClosureRefusal.WitnessKindMismatch -> "witness-kind-mismatch"
+        | ClosureRefusal.WitnessIdentityMismatch -> "witness-identity-mismatch"
+        | ClosureRefusal.ClosingIdentityMissing -> "closing-identity-missing"
+
 /// wanxiangli/authority 公开入口：逻辑根注册、精确关闭与来源解析优先级的纯决议。
 /// 无状态；投影记录、事实编解码与 durable 写入归宿主。JS 边界只收发 plain data，
 /// 畸形输入是调用方缺陷，直接抛 ArgumentException，不猜测。
@@ -209,6 +322,36 @@ type Authority() =
     /// 入口准入（CUT-09-a）：见 index.d.ts 的 AdmissionInput / Admission。
     member _.admit(input: obj) : obj =
         AdmissionLaw.admit (Wire.admissionInput input) |> Wire.admissionView
+
+
+    /// interaction-authority-018：根的唯一预期关闭类别；无法唯一归类时为 null（该根不得被接受）。
+    /// agentOwnerLife: 'child' | 'attached' | 'internal-leaf' | null（HumanRoot 必须为 null）。
+    member _.expectedClosureKind(rootKind: obj, isManager: obj, agentOwnerLife: obj) : obj =
+        match
+            ClosureLaw.expectedKind (Wire.rootKind rootKind) (Wire.flag "isManager" isManager) (Wire.agentOwnerLife agentOwnerLife)
+        with
+        | Some kind -> box (Wire.closureKindLabel kind)
+        | None -> null
+
+    /// witness 的规范编码（写入 AuthorityLogicalRunClosed.ClosureWitness 的唯一拼法）。
+    member _.encodeClosureWitness(witness: obj) : string =
+        Wire.witness witness |> ClosureLaw.fields |> List.toArray |> Wire.jsonStrings
+
+    /// 规范编码的读回；不是五类之一的规范编码时为 null。
+    member _.decodeClosureWitness(text: obj) : obj =
+        match Wire.decodeWitness (Wire.text "witness text" text) with
+        | Some witness -> Wire.witnessView witness
+        | None -> null
+
+    /// 一条关闭（新写入或 durable 读回）是否精确命中被关闭的根：
+    /// { ok: true, witness, legacy } | { ok: false, reason }。
+    member _.admitClosure(closing: obj, recordedRootKind: obj, witnessText: obj) : obj =
+        let raw = Wire.text "witness text" witnessText
+
+        match ClosureLaw.admitRecorded (Wire.closingRoot closing) (Wire.rootKind recordedRootKind) (Wire.decodeWitness raw) raw with
+        | Ok(witness, legacy) ->
+            createObj [ "ok" ==> true; "witness" ==> Wire.witnessView witness; "legacy" ==> legacy ]
+        | Error refusal -> createObj [ "ok" ==> false; "reason" ==> Wire.refusalLabel refusal ]
 
     static member private closureLabel(closure: Closure) : string =
         match closure with
