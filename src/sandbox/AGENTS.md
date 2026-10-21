@@ -17,6 +17,7 @@
 2. [AXIOM 1] membrane 与模型程序同 realm：membrane 用到的内建方法（WeakMap/Reflect/数组拷贝）在模型代码运行前捕获引用，经捕获的 Reflect.apply 调用；模型改写原型不影响 membrane。
 3. [AXIOM 1] 期限检查用宿主时钟，不读可被程序改写的 sandbox `Date.now`。
 4. [AXIOM 2] 宿主侧驱动循环在每次 `runInContext('void 0')` 上施加剩余 timeout，使 await 之后的同步死循环同样以超时结束。
+5. [AXIOM 2] 驱动循环按唤醒推进，不空转：程序等待的宿主 Promise 用宿主 realm 的回调订阅（落在宿主微任务队列），结算或宿主回调进程序代码时唤醒驱动；两次唤醒之间睡到期限或慢轮询（unref 定时器）。空闲程序（park、等宿主 Promise）不占 CPU，也不单独让进程存活；期限过后在进程存活期间仍以超时结束。
 
 # SPEC
 
@@ -29,3 +30,5 @@
     - 证明：`tests/001.test.mjs` normal ls
 4. [LEMMA 2] 模型改写 `WeakMap.prototype.has` / `.set` 不能观察到 membrane 传入的宿主值（0.23.1 上会泄漏宿主对象并拿到 `process`）。
     - 证明：`tests/003.test.mjs`
+5. [LEMMA 5] 等一个不结算的宿主 Promise 的程序：1 s 内 CPU < 300 ms，进程 5 s 内自然退出（0.62.0 上空转到 60 s 期限）；迟到结算与宿主回调仍能推进程序；期限过后仍以超时结束。
+    - 证明：`tests/004.test.mjs`

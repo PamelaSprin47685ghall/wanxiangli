@@ -47,7 +47,7 @@ let private installSource =
   var slot = null;
   globalThis.__put = function (v) { slot = v; };
   globalThis.__take = function () { var s = slot; slot = null; return s; };
-  globalThis.__makeRunner = function (hostApi, hostDeadlineRef, hostNow, baseClassSource, modelSource) {
+  globalThis.__makeRunner = function (hostApi, hostDeadlineRef, hostNow, hostThen, hostKick, baseClassSource, modelSource) {
     var hostToGuest = new WeakMap();
     var guestToHost = new WeakMap();
     function isPrimitive(v) {
@@ -91,6 +91,8 @@ let private installSource =
               return unwrap(ReflectApply(v, target, guestArgs));
             } catch (e) {
               throw unwrap(e);
+            } finally {
+              hostKick();
             }
           };
         },
@@ -113,8 +115,12 @@ let private installSource =
         return ge;
       }
       if (typeof hostValue.then === "function") {
+        // hostThen subscribes with host-realm reactions, which run on the host
+        // microtask queue and wake the driver; a guest-realm reaction would sit
+        // in the afterEvaluate queue until something else drained it.
         var gp = new Promise(function (resolve, reject) {
-          hostValue.then(
+          hostThen(
+            hostValue,
             function (v) { resolve(wrap(v)); },
             function (e) { reject(wrap(e)); }
           );
@@ -174,6 +180,8 @@ let private installSource =
             return unwrap(ReflectApply(guestValue, wrap(this), guestArgs));
           } catch (e) {
             throw unwrap(e);
+          } finally {
+            hostKick();
           }
         };
         mapSet(guestToHost, guestValue, hostFn);
@@ -259,16 +267,36 @@ let private launch
   var vmConstants = vm.constants;
   var createContext = vm.createContext;
   var runInContext = vm.runInContext;
+  var IDLE_POLL_MS = 50;
   var ctx = createContext(vmConstants.DONT_CONTEXTIFY, { microtaskMode: "afterEvaluate" });
   runInContext(INSTALL, ctx, { timeout: 5000 });
   var deadlineRef = { current: Number(deadlineEpochMs) };
   var hostNow = function () { return Date.now(); };
+  // Wake protocol. With microtaskMode "afterEvaluate" the program's reactions
+  // only run inside runInContext, so the driver must re-enter the context
+  // after anything that can enqueue them: a host promise the program awaits
+  // settling (hostThen) or the host calling into program code (hostKick from
+  // the membrane). Between wakes the driver sleeps instead of spinning, so an
+  // idle program (parked, or awaiting a host promise) burns no CPU and does
+  // not by itself keep the process alive.
+  var kicked = false;
+  var wake = null;
+  var hostKick = function () {
+    kicked = true;
+    if (wake !== null) { var w = wake; wake = null; w(); }
+  };
+  var hostThen = function (p, onValue, onError) {
+    p.then(
+      function (v) { try { onValue(v); } finally { hostKick(); } },
+      function (e) { try { onError(e); } finally { hostKick(); } }
+    );
+  };
   var put = runInContext("__put", ctx);
-  put({ api: api, deadlineRef: deadlineRef, hostNow: hostNow, base: baseClass, model: model });
+  put({ api: api, deadlineRef: deadlineRef, hostNow: hostNow, hostThen: hostThen, hostKick: hostKick, base: baseClass, model: model });
   var progPromise;
   try {
     progPromise = runInContext(
-      "(function(){ var t = __take(); var make = __makeRunner; delete globalThis.__put; delete globalThis.__take; delete globalThis.__makeRunner; return make(t.api, t.deadlineRef, t.hostNow, t.base, t.model); })()",
+      "(function(){ var t = __take(); var make = __makeRunner; delete globalThis.__put; delete globalThis.__take; delete globalThis.__makeRunner; return make(t.api, t.deadlineRef, t.hostNow, t.hostThen, t.hostKick, t.base, t.model); })()",
       ctx,
       { timeout: Number(deadlineMs) }
     );
@@ -291,14 +319,22 @@ let private launch
         throw err;
       }
       var remaining = Math.max(1, Math.min(Number(deadlineMs), deadlineNow - now));
-      try {
-        runInContext("void 0", ctx, { timeout: remaining });
-      } catch (e2) {
-        if (e2 && e2.code === "ERR_SCRIPT_EXECUTION_TIMEOUT") throw e2;
-        throw e2;
-      }
+      kicked = false;
+      runInContext("void 0", ctx, { timeout: remaining });
       if (box.done) break;
-      await new Promise(function (r) { setImmediate(r); });
+      if (kicked) continue;
+      // Idle: sleep until a wake, the (possibly reset) deadline, or a slow
+      // re-poll for reactions no wake covers. The timer is unref'd: an idle
+      // program is not work the process must stay alive for (the pre-membrane
+      // runner did not keep it alive either); pending host work it awaits
+      // holds the loop on its own.
+      await new Promise(function (r) {
+        var timer = null;
+        wake = function () { if (timer !== null) clearTimeout(timer); r(); };
+        var untilDeadline = Number(deadlineRef.current) - Date.now();
+        timer = setTimeout(function () { wake = null; r(); }, Math.max(1, Math.min(IDLE_POLL_MS, untilDeadline + 1)));
+        if (typeof timer.unref === "function") timer.unref();
+      });
     }
     if (box.failed) throw box.error;
     return box.value;
