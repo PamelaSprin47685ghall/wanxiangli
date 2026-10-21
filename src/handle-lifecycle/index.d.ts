@@ -53,7 +53,7 @@ export type Verdict =
 export type ObservationKind =
   | 'AbortedObserved' | 'ParentCancelled' | 'DeadlineExceeded' | 'HostSessionGone' | 'RecoveryInFlight' | 'SessionActive'
 
-export type AbandonReason = 'ParentCancelled' | 'DeadlineExceeded' | 'HostSessionGone'
+export type AbandonReason = 'ParentCancelled' | 'DeadlineExceeded' | 'HostSessionGone' | 'Voided'
 
 export interface RecoverChildInput {
   readonly durable: 'Unknown' | 'Active' | 'CompletedAwaitingJoin' | 'Abandoned' | 'Retired'

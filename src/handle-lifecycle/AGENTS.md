@@ -20,7 +20,7 @@
 2. [AXIOM 3] rejectFalseCompletion：Active 幂等 keep；CompletedAwaitingJoin 且格匹配 → Active，否则 AlreadyCompleted。
 3. [AXIOM 1, 2] work：先无格 WorkNotAdmitted，再遗留 LegacyWorkAmbiguous；complete 需 Active 且 kind≠Cancelled、ref 与 digest 俱在；abandon/void 只从 Active（到 Abandoned/Retired）；consume 先拒空白 consumptionId，完成格等于期望或放弃格配空 Cancelled 期望 → Retired。
 
-4. [AXIOM 4] recoverChild 次序：持久 Abandoned → abandoned(durable)；持久 CompletedAwaitingJoin → terminal(durable)；持久 Retired → blocked；其余看快照：Terminal 证据成立 → terminal(snapshot)，不成立 → blocked(原因)；Unreadable → incomplete；Missing/Active 看观察：首个 ParentCancelled/DeadlineExceeded/HostSessionGone → abandoned(observation)，否则有 SessionActive → active，否则（含仅 abort、恢复进行中）→ incomplete。
+4. [AXIOM 4] recoverChild 次序：持久 Abandoned → abandoned(durable)，durableReason 只接受 ParentCancelled/DeadlineExceeded/HostSessionGone/Voided 之一（Voided = 作废：work 无法交付，以作废结清）；持久 CompletedAwaitingJoin → terminal(durable)；持久 Retired → blocked；其余看快照：Terminal 证据成立 → terminal(snapshot)，不成立 → blocked(原因)；Unreadable → incomplete；Missing/Active 看观察：首个 ParentCancelled/DeadlineExceeded/HostSessionGone → abandoned(observation)，否则有 SessionActive → active，否则（含仅 abort、恢复进行中）→ incomplete。
 
 # SPEC
 

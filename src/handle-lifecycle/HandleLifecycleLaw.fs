@@ -244,7 +244,8 @@ type HandleLifecycleLaw() =
             match text "durableReason" (field input "durableReason") with
             | "ParentCancelled"
             | "DeadlineExceeded"
-            | "HostSessionGone" as r -> r
+            | "HostSessionGone"
+            | "Voided" as r -> r
             | _ -> malformed "durableReason"
 
         match durable with

@@ -77,6 +77,10 @@ test('SPEC[handle-lifecycle-4] durable facts decide before any Host snapshot', (
   assert.deepEqual(r({ durable: 'Retired', snapshot: 'Terminal' }), { resolution: 'blocked', reason: 'handle already retired' })
 })
 
+test('SPEC[handle-lifecycle-4] a voided child is abandoned with its void reason', () => {
+  assert.deepEqual(r({ durable: 'Abandoned', durableReason: 'Voided', snapshot: 'Missing' }), { resolution: 'abandoned', reason: 'Voided', source: 'durable' })
+})
+
 test('SPEC[handle-lifecycle-4] counterexample: an abort observation is never a completion, an unreadable snapshot only waits', () => {
   assert.deepEqual(r({ observations: ['AbortedObserved'] }), { resolution: 'incomplete' })
   assert.deepEqual(r({ observations: ['RecoveryInFlight'] }), { resolution: 'incomplete' })
