@@ -27,13 +27,19 @@ let private malformed (what: string) : 'T =
     raise (ArgumentException(sprintf "wanxiangli/advisor: malformed %s" what))
 
 let private array (what: string) (value: obj) : obj array =
-    if isArray value then unbox<obj array> value else malformed what
+    if isArray value then
+        unbox<obj array> value
+    else
+        malformed what
 
 let private anchorOf (what: string) (value: obj) : int =
     if isAnchor value then unbox<int> value else malformed what
 
 let private textOf (what: string) (value: obj) : string =
-    if isString value then unbox<string> value else malformed what
+    if isString value then
+        unbox<string> value
+    else
+        malformed what
 
 let private callerOf (value: obj) : string =
     if isString value then
@@ -48,7 +54,10 @@ let private sourceOf (what: string) (value: obj) : int option =
 /// The exact text participates in both, so changed evidence remains new.
 let private keyOf (anchor: int option) (text: string) : string =
     (anchor |> Option.map string |> Option.defaultValue "literal")
-    + ":" + string text.Length + ":" + text
+    + ":"
+    + string text.Length
+    + ":"
+    + text
 
 let private materialKeyImpl (anchor: obj) (text: obj) : string =
     keyOf (sourceOf "anchor" anchor) (textOf "text" text)
@@ -64,18 +73,25 @@ let private planImpl (delivered: obj) (material: obj) : obj =
     let pieces =
         array "material" material
         |> Array.map (fun item ->
-            if isAbsent item then malformed "material entry"
+            if isAbsent item then
+                malformed "material entry"
+
             let anchor = sourceOf "material anchor" (field item "anchor")
             let text = textOf "material text" (field item "text")
             anchor, text, keyOf anchor text)
 
-    let delta =
-        pieces |> Array.filter (fun (_, _, key) -> not (seen.Contains key))
+    let delta = pieces |> Array.filter (fun (_, _, key) -> not (seen.Contains key))
 
     freeze (
         createObj
-            [ "delta" ==> (delta |> Array.map (fun (a, t, _) -> freeze (createObj [ "anchor" ==> (a |> Option.map box |> Option.defaultValue null); "text" ==> t ])))
-              "deliveredAnchors" ==> (pieces |> Array.choose (fun (a, _, _) -> a) |> Array.distinct)
+            [ "delta"
+              ==> (delta
+                   |> Array.map (fun (a, t, _) ->
+                       freeze (
+                           createObj [ "anchor" ==> (a |> Option.map box |> Option.defaultValue null); "text" ==> t ]
+                       )))
+              "deliveredAnchors"
+              ==> (pieces |> Array.choose (fun (a, _, _) -> a) |> Array.distinct)
               "deliveredMaterial" ==> (delta |> Array.map (fun (_, _, k) -> k))
               "hasNewMaterial" ==> (delta.Length > 0) ]
     )
@@ -93,10 +109,12 @@ let private answerImpl (messages: obj) : obj =
                 let role = field message "role"
                 let text = field message "text"
 
-                if isString role
-                   && String.Equals(unbox<string> role, "assistant", StringComparison.OrdinalIgnoreCase)
-                   && isString text
-                   && not (String.IsNullOrWhiteSpace(unbox<string> text)) then
+                if
+                    isString role
+                    && String.Equals(unbox<string> role, "assistant", StringComparison.OrdinalIgnoreCase)
+                    && isString text
+                    && not (String.IsNullOrWhiteSpace(unbox<string> text))
+                then
                     Some(unbox<string> text)
                 else
                     None)
@@ -131,7 +149,9 @@ type AdvisorLedger() =
 
             incoming |> Array.iter (fun key -> cursor.Add key |> ignore)
 
-    member _.clear(caller: obj) : unit = cursors.Remove(callerOf caller) |> ignore
+    member _.clear(caller: obj) : unit =
+        cursors.Remove(callerOf caller) |> ignore
+
     member _.clearAll() : unit = cursors.Clear()
 
 /// Pure advisor consult laws: material identity, delta planning and prose read-back.

@@ -4,12 +4,12 @@
  * Material identity, the follow-up delta over a caller-generated view, the per-caller
  * delivered-material ledger, and prose read-back. Pure except for the ledger, which is
  * process-live state owned by its instance. The host keeps view generation (anchor
- * ledger, report mapping), TOML rendering, the advisor child session and its dispatch.
+ * ledger, carry selection), TOML rendering, the advisor child session and its dispatch.
  */
 
 export interface Material {
-  /** Representative anchor: a non-negative integer; 0 is the implicit opening. */
-  readonly anchor: number
+  /** Historical anchor, or null/absent for literal text. */
+  readonly anchor?: number | null
   readonly text: string
 }
 
@@ -29,9 +29,9 @@ export interface ProseMessage {
 }
 
 export declare class AdvisorLaw {
-  readonly contractVersion: 1
-  /** `${anchor}:${text.length}:${text}` (UTF-16 length). Throws on a malformed anchor or text. */
-  materialKey(anchor: number, text: string): string
+  readonly contractVersion: 2
+  /** Anchor/literal identity plus exact text (UTF-16 length). */
+  materialKey(anchor: number | null, text: string): string
   /** Filter the complete view by delivered identities; never filters the input before generation. */
   plan(delivered: readonly string[], material: readonly Material[]): ConsultPlan
   /** Last non-blank assistant text (role matched case-insensitively), or null. */

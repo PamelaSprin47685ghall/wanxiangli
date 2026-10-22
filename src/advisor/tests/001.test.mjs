@@ -8,14 +8,16 @@ const m = (anchor, text) => ({ anchor, text })
 const plain = (v) => JSON.parse(JSON.stringify(v))
 
 test('SPEC[advisor-1] material identity is anchor plus exact text, length-prefixed', () => {
-  assert.equal(law.contractVersion, 1)
+  assert.equal(law.contractVersion, 2)
   assert.equal(law.materialKey(3, 'abc'), '3:3:abc')
   assert.equal(law.materialKey(0, ''), '0:0:')
   // counterexample: naive "anchor:text" would collide here; the length prefix separates them
   assert.notEqual(law.materialKey(1, '2:x'), law.materialKey(12, 'x'))
   assert.notEqual(law.materialKey(0, 'first-opening'), law.materialKey(0, 'second-opening'))
   assert.equal(law.materialKey(1, '名'), '1:1:名')
-  for (const bad of [-1, 1.5, '1', null, undefined]) assert.throws(() => law.materialKey(bad, 'x'), /malformed anchor/)
+  assert.equal(law.materialKey(null, 'abc'), 'literal:3:abc')
+  assert.notEqual(law.materialKey(null, 'abc'), law.materialKey(0, 'abc'))
+  for (const bad of [-1, 1.5, '1', NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) assert.throws(() => law.materialKey(bad, 'x'), /malformed anchor/)
   assert.throws(() => law.materialKey(1, null), /malformed text/)
 })
 
@@ -50,6 +52,15 @@ test('SPEC[advisor-2] follow-ups filter the generated output; a new summary on t
   assert.throws(() => law.plan(null, []), /malformed delivered/)
   assert.throws(() => law.plan([], [{ anchor: 1 }]), /malformed material text/)
   assert.throws(() => law.plan([], [null]), /malformed material entry/)
+})
+
+test('SPEC[advisor-2] literals keep exact whitespace and duplicates within one selection', () => {
+  const material = [m(null, ''), m(null, '  '), m(7, 'same'), m(null, 'same'), m(7, 'same')]
+  const first = law.plan([], material)
+  assert.deepEqual(plain(first.delta), material)
+  assert.deepEqual(plain(first.deliveredAnchors), [7])
+  assert.deepEqual(plain(law.plan(first.deliveredMaterial, material).delta), [])
+  assert.deepEqual(plain(law.plan(first.deliveredMaterial, [m(null, 'same\n')]).delta), [m(null, 'same\n')])
 })
 
 test('SPEC[advisor-3] ledger is monotone, isolated per caller and per instance, and only record advances it', () => {

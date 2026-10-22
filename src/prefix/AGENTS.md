@@ -50,4 +50,4 @@
 
 - 本对象不读宿主请求、不调用 Trace，也不判定缓存是否真的命中；不得用前缀判定反推 authority。
 - 消息规范字节由调用方渲染；本对象只逐条比较，不解析消息结构。
-- "切多长"（view 声明的 prefixUntil/thenMap）归 compression，不在本包。
+- "切多长"（压缩声明的 prefixCount/carry）归 compression，不在本包。

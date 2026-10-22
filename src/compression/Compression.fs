@@ -38,14 +38,18 @@ let private isNaturalNumber (_value: obj) : bool = jsNative
 [<Emit("typeof $0 === 'object' && $0 !== null && !Array.isArray($0)")>]
 let private isRecord (_value: obj) : bool = jsNative
 
-let private isAbsent (value: obj) = isNull value || jsTypeof value = "undefined"
+let private isAbsent (value: obj) =
+    isNull value || jsTypeof value = "undefined"
 
 let private ownField (value: obj) (name: string) : obj option =
     let descriptor = descriptorOf value name
 
-    if isAbsent descriptor then None
-    elif not (hasOwn descriptor "value") then fail ("Accessor field is not accepted: " + name)
-    else Some descriptor?value
+    if isAbsent descriptor then
+        None
+    elif not (hasOwn descriptor "value") then
+        fail ("Accessor field is not accepted: " + name)
+    else
+        Some descriptor?value
 
 let private requiredField (what: string) (value: obj) (name: string) : obj =
     if not (isRecord value) then
@@ -55,7 +59,8 @@ let private requiredField (what: string) (value: obj) (name: string) : obj =
     | Some field -> field
     | None -> fail (what + "." + name + " is required")
 
-let private invalid reason = freeze (createObj [ "ok" ==> false; "reason" ==> reason ])
+let private invalid reason =
+    freeze (createObj [ "ok" ==> false; "reason" ==> reason ])
 
 let private carryOf value =
     if not (isArray value) then
@@ -88,7 +93,8 @@ let private parseView value =
     freeze (
         createObj
             [ "ok" ==> true
-              "view" ==> freeze (createObj [ "prefixCount" ==> prefixCount; "carry" ==> carry ]) ]
+              "view"
+              ==> freeze (createObj [ "prefixCount" ==> prefixCount; "carry" ==> carry ]) ]
     )
 
 let private callKey (what: string) (value: obj) : string =
@@ -114,13 +120,20 @@ let private checkpointSettlement () : CheckpointSettlementMessages =
             let status = requiredField "terminal" terminal "status"
 
             let completed =
-                match (if jsTypeof status = "string" then unbox<string> status else "") with
+                match
+                    (if jsTypeof status = "string" then
+                         unbox<string> status
+                     else
+                         "")
+                with
                 | "completed" -> true
                 | "error" -> false
                 | _ -> fail "terminal.status must be completed or error"
 
-            if pending.Contains key then "join"
-            elif not (settled.Add key) then "skip"
+            if pending.Contains key then
+                "join"
+            elif not (settled.Add key) then
+                "skip"
             elif completed then
                 pending.Add key |> ignore
                 "append"
@@ -133,7 +146,12 @@ let private checkpointSettlement () : CheckpointSettlementMessages =
             if not (pending.Contains key) then
                 fail "call has no pending checkpoint append"
 
-            match (if jsTypeof outcome = "string" then unbox<string> outcome else "") with
+            match
+                (if jsTypeof outcome = "string" then
+                     unbox<string> outcome
+                 else
+                     "")
+            with
             | "committed" ->
                 pending.Remove key |> ignore
                 "settled"
@@ -144,7 +162,9 @@ let private checkpointSettlement () : CheckpointSettlementMessages =
             | "WriteUnknown"
             | "NoNewWriteReleaseFailed"
             | "FactRejected" -> "failed"
-            | _ -> fail "outcome must be committed, WriterUnavailable, WriteUnknown, NoNewWriteReleaseFailed or FactRejected" }
+            | _ ->
+                fail
+                    "outcome must be committed, WriterUnavailable, WriteUnknown, NoNewWriteReleaseFailed or FactRejected" }
 
 let private receipt parser value =
     try

@@ -4,7 +4,7 @@ import { Delivery, fence } from './support.mjs'
 
 test('SPEC[delivery-001] only a fenced cell answers take, peek and fence', () => {
   const delivery = Delivery()
-  const view = { prefixUntil: 3 }
+  const view = [3, 'literal']
   delivery.stage('s', view)
   assert.equal(delivery.peek('s'), null)
   assert.equal(delivery.fence('s'), null)
@@ -55,3 +55,4 @@ test('SPEC[delivery-001] the fence is a frozen copy, not an alias of the input',
   assert.equal(read.providerRun, 'run-1')
   assert.ok(Object.isFrozen(read))
 })
+

@@ -1,37 +1,34 @@
-# compression — ANCHOR 视图覆盖定律
+# compression — 上下文声明与检查点准入
 
-层：内核。npm 入口 `wanxiangli/compression`，导出工厂 `Compression()`。不得 import 任何宿主 SDK、Trace 或存储；不读文件或环境变量、不计量 token。覆盖定律四条消息无状态；`checkpoints()` 返回的检查点准入台账是唯一有状态对象，只记内存中的 call 准入，不写任何事实。
-
-来源：宿主仓 `proposals/extraction-kanban/cards/CUT-16.md`（子范围①②）；现行需求 `requirements/context-compression/WHAT.md` [003][017][031][028]、`requirements/obligation-ledger/WHAT.md` [005]。锚点编号台账、声明的暂存与一次性消费、o200k 计量、摘要怎样写回宿主消息，都留在宿主组合者。
+层：内核。npm 入口 `wanxiangli/compression`，导出工厂 `Compression()`。本对象只校验声明的形状，不认识 Host、消息、锚点编号台账或存储。可见区间与请求边界由宿主提供并校验；token 计量与 TOML 呈现也由宿主负责。
 
 # AXIOM
 
-1. [使用者] 历史越短越便宜，但删什么只能由模型显式声明决定，宿主不得替它压。
-    - 理由：模型是唯一知道哪些上下文对任务重要的主体（context-compression [001][008]）。
-2. [使用者] 摘要一旦提交就永久生效，重放必须得到同一个视图。
-    - 理由：视图决定发给模型的字节；同样的历史给出不同视图，既破坏缓存也破坏审计。
-3. [使用者] 一次成功的 view 调用恰好沉淀一个检查点；失败调用不沉淀，结局不明的写入不能重写。
-    - 理由：检查点决定压缩窗口；重复或伪造的检查点会把未发生的压缩当成事实（obligation-ledger [005]）。
+1. [使用者] 保留什么由模型明确声明。整数引用锚点，字符串就是字面内容，数组顺序就是携带顺序。
+   - 理由：模型负责内容取舍，系统只执行形式合规的选择，不判断摘要质量或重复语义。
+2. [使用者] 压缩额外指定原样保留的前缀长度；父子传递与子父传递没有前缀。
+   - 理由：前缀用于本会话保留已有字节，传递只需给出实际携带的材料。
+3. [使用者] 一次成功调用至多追加一个检查点；结局未知不能重写。
+   - 理由：重复或伪造的检查点不能成为已发生的压缩事实。
 
 # LEMMA
 
-1. [AXIOM 1] view 形状严格为 `{ prefixUntil, thenMap }`：`prefixUntil` 为非负整数；`thenMap` 键为规范非负整数字符串，值为 `null` 或非空白摘要。任一处非法整次拒绝，只报第一处原因，原因文字与宿主原实现逐字一致。
-2. [AXIOM 1] 锚点 0 永远存活；被替换过的真实锚点退出存活集合，不复活。存活锚点把内容划分为区间：从自身到下一个存活锚点之前，最后一个区间到输入末尾。
-3. [AXIOM 1, 2] 本轮声明只在本轮输入的存活分区上定位：编号小于 `prefixUntil` 或已不存活的锚点静默忽略，`null` 表示保留；替换的区间边界在替换当时拍下，后来新增的锚点不会落入旧替换。
-4. [AXIOM 2] 投影按替换的因果先后折叠：一次替换覆盖它拍下的区间，连同区间内此前的摘要；锚点 0 的替换呈现为开头摘要。没有覆盖到任何行的替换不改变视图。
-5. [AXIOM 3] 检查点准入按 `(session, callId)` 精确键（长度前缀，不会别名）：首个 completed 终态得到 `append`，同一调用写入未结局时的重复终态 `join` 同一写入；`committed` 后永远 `skip`；error 终态封住该调用；`WriterUnavailable`（未尝试）释放以便重试；`WriteUnknown`/`NoNewWriteReleaseFailed`/`FactRejected` 保持在途，后来者 join 同一失败，永不重写。
+1. [AXIOM 1, 2] `parseCarry` 只接受 `(number|string)[]`。数字必须是有效的非负整数编号；空字符串与空白字符串合法，重复与重排合法。`parseView` 只接受 `{ prefixCount, carry }`，两字段必填，`prefixCount` 为非负整数。
+2. [AXIOM 1] 只读数组自己的数据元素，拒绝稀疏数组与 accessor。解析结果必须是新的冻结数组，不运行 iterator 或 `toJSON`。
+   - 推理：验证过的选择不能在稍后交付时被调用方修改或序列化钩子替换。
+3. [AXIOM 2] 本对象不接收区间历史、替换映射或当前回合。宿主按请求快照解析锚点并验证前缀范围，再建立实际布局。
+   - 推理：只有宿主拥有准确可见历史与请求边界，纯形状对象不能猜测它们。
+4. [AXIOM 3] 检查点按 `(session, callId)` 精确键准入。首个 completed 返回 `append`，未结局的重复调用返回 `join`，已提交或 error 返回 `skip`。只有确认未尝试的 `WriterUnavailable` 允许释放重试。
 
 # SPEC
 
-1. [LEMMA 1] `parseView` 接受合法声明并按锚点升序给出对；各类非法形状逐一报出第一处原因；从不抛出，accessor 字段被拒绝且不被读取。
-    - 证明：`tests/001.test.mjs`。
-2. [LEMMA 2, 3, 4] `live`/`plan`/`project`：0 永存、受保护与已死锚点被忽略、先 6 后 5 时第二次覆盖第一次摘要、旧尾部替换不吞后来内容、同轮相邻摘要互不吞并、开头摘要覆盖到下一存活锚点、空覆盖不改变视图。
-    - 证明：`tests/002.test.mjs`；与宿主原实现的双算见宿主 CUT-16 证据。
-3. 输入先完整校验（数组快照、拒绝稀疏数组与 accessor）；回答冻结，调用方事后改动输入不影响已返回结果。
-    - 证明：`tests/003.test.mjs`。
-4. [LEMMA 5] `checkpoints()`：只追加一次、在途重复 join、提交后 skip、error 封口、键不别名、终局失败不重试而未尝试可重试、非法输入（含 accessor）被拒且不留痕、实例互不影响。
-    - 证明：`tests/004.test.mjs`；宿主组合者只保留真正的 journal 写入与在途 Task 会合。
+1. [LEMMA 1] 合法声明保持顺序；缺字段、旧映射、额外字段、非法前缀拒绝，accessor 不运行。
+   - 证明：`tests/001.test.mjs`。
+2. [LEMMA 1, 3] 空数组、重复编号、重排、数字字符串、空白与 Unicode 字面值均保留；任一非法元素使整个数组失败，传递不接受前缀包装对象。
+   - 证明：`tests/002.test.mjs`。
+3. [LEMMA 2] 拒绝稀疏与 getter 元素；外部修改、iterator 与 `toJSON` 不能改变解析结果。
+   - 证明：`tests/003.test.mjs`。
+4. [LEMMA 4] 提交一次、重复会合、失败封口、键不别名、未尝试可重试、输入非法不留痕与实例独立。
+   - 证明：`tests/004.test.mjs`。
 
-# 与旧草稿的关系
-
-本目录此前只有占位草稿（字节上限切块、"用户原文不可覆盖"、todowrite 检查点窗口）。现行需求已废除 200 KiB 切块与独立 Y 轴（[003]），真实用户消息与 tool result 都是可编址锚点，只能被模型显式 view 声明替换（[017][031]）；宿主任何隐式改写仍被禁止。检查点窗口去重已由 `prefix`（LEMMA 5）承担，不在此重复。
+宿主的完整行为合同见 `requirements/context-compression/WHAT.md` [031]、[032]。旧 `thenMap`、`prefixUntil`、`live`、`plan`、`project` 覆盖模型已移除，没有兼容路径。源码与测试完成后须分别记录编译和实际验证结果；本文件的测试路径不代替运行回执。
