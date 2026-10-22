@@ -26,6 +26,13 @@ type private Replacement =
       Until: int
       Summary: string }
 
+/// A mapped anchor is either kept as written, replaced by a summary, or
+/// omitted. Omission is a decision: the interval is not carried forward.
+type private Mapping =
+    | Keep
+    | Replace of string
+    | Drop
+
 type private View =
     { PrefixUntil: int
       ThenMap: (int * string option) list }
@@ -223,9 +230,22 @@ let private liveAnchors (anchors: int list) (history: Replacement list) : int li
     |> List.sort
 
 /// 声明在本轮输入的存活分区上定位；边界在替换前拍下，后来的锚点不会落入旧替换。
+/// 映射里的摘要替换该区间，`null` 原样保留，没写的区间不传下去。
 let private planChanges (anchors: int list) (history: Replacement list) (view: View) : Replacement list =
     let surviving = liveAnchors anchors history
     let endOfInput = (anchors |> List.fold max 0) + 1
+    let mapped = view.ThenMap |> Map.ofList
+
+    let decision anchor =
+        match Map.tryFind anchor mapped with
+        | Some(Some text) -> Replace text
+        | Some None -> Keep
+        | None -> Drop
+
+    let untilOf anchor =
+        surviving
+        |> List.tryFind (fun candidate -> candidate > anchor)
+        |> Option.defaultValue endOfInput
 
     view.ThenMap
     |> List.choose (fun (anchor, summary) ->
@@ -236,10 +256,21 @@ let private planChanges (anchors: int list) (history: Replacement list) (view: V
             |> Option.map (fun text ->
                 { Anchor = anchor
                   Until =
-                    surviving
-                    |> List.tryFind (fun candidate -> candidate > anchor)
-                    |> Option.defaultValue endOfInput
+                    untilOf anchor
                   Summary = text }))
+    |> List.append (
+        surviving
+        |> List.filter (fun anchor -> anchor >= view.PrefixUntil)
+        |> List.choose (fun anchor ->
+            match decision anchor with
+            | Drop ->
+                Some
+                    { Anchor = anchor
+                      Until = untilOf anchor
+                      Summary = "" }
+            | Keep
+            | Replace _ -> None)
+    )
     |> List.sortBy _.Anchor
 
 let private indexOf (entry: Entry) : int =
@@ -257,6 +288,7 @@ let private replace (rows: Row list) (change: Replacement) : Row list =
         remaining |> List.partition (fun row -> row.Position < change.Until)
 
     match change.Anchor, covered with
+    | 0, _ when change.Summary = "" -> before @ after
     | 0, _ ->
         before
         @ [ { Position = 0
@@ -264,10 +296,13 @@ let private replace (rows: Row list) (change: Replacement) : Row list =
         @ after
     | _, [] -> rows
     | _, first :: _ ->
-        before
-        @ [ { Position = change.Anchor
-              Entry = Summarized(indexOf first.Entry, change.Summary) } ]
-        @ after
+        if change.Summary = "" then
+            before @ after
+        else
+            before
+            @ [ { Position = change.Anchor
+                  Entry = Summarized(indexOf first.Entry, change.Summary) } ]
+            @ after
 
 let private projectRows (positions: int list) (history: Replacement list) (prefixUntil: int) : obj =
     let rows =
