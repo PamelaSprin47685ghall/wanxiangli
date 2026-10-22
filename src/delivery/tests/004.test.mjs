@@ -1,18 +1,18 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { Delivery, fence, piece } from './support.mjs'
+import { Delivery, fence, piece, claimed } from './support.mjs'
 
 test('SPEC[delivery-004] a ticket is spent once and only by the instance that issued it', () => {
   const one = Delivery()
   const two = Delivery()
   one.stage('s', { v: 1 })
-  const ticket = one.claim('s', { mode: 'peek' })
-  assert.throws(() => two.handOff(ticket, [], null), /not issued by this delivery/)
-  assert.throws(() => one.handOff({ view: {} }, [], null), /not issued by this delivery/)
+  const ticket = claimed(one, 's', { mode: 'peek' })
+  assert.throws(() => two.handOff(ticket, []), /not issued by this delivery/)
+  assert.throws(() => one.handOff({ view: {} }, []), /not issued by this delivery/)
   assert.ok(Object.isFrozen(ticket), 'a ticket cannot be retargeted by the caller')
-  one.handOff(ticket, [piece('a')], null)
-  assert.throws(() => one.handOff(ticket, [piece('a')], null), /already spent/)
+  one.handOff(ticket, [piece('a')])
+  assert.throws(() => one.handOff(ticket, [piece('a')]), /already spent/)
 })
 
 test('SPEC[delivery-004] accessor fields are rejected before any caller code runs', () => {
@@ -21,9 +21,9 @@ test('SPEC[delivery-004] accessor fields are rejected before any caller code run
   const sneaky = Object.defineProperty({ toolCallId: 'c' }, 'providerRun', { enumerable: true, get() { reads += 1; delivery.clearAll(); return 'r' } })
   assert.throws(() => delivery.deliver('s', sneaky, {}), /Missing field or accessor: providerRun/)
   delivery.stage('s', { v: 1 })
-  const ticket = delivery.claim('s', { mode: 'peek' })
+  const ticket = claimed(delivery, 's', { mode: 'peek' })
   const sneakyPiece = Object.defineProperty({ key: 'k' }, 'text', { enumerable: true, get() { reads += 1; return 'x' } })
-  assert.throws(() => delivery.handOff(ticket, [sneakyPiece], null), /Missing field or accessor: text/)
+  assert.throws(() => delivery.handOff(ticket, [sneakyPiece]), /Missing field or accessor: text/)
   assert.equal(reads, 0)
   assert.deepEqual(delivery.peekCached('s'), { v: 1 })
 })
@@ -34,9 +34,9 @@ test('SPEC[delivery-004] malformed input is refused without changing state', () 
   assert.throws(() => delivery.deliver('', fence(), {}), /sessionId/)
   assert.throws(() => delivery.deliver('s', { providerRun: 'r', toolCallId: '' }, {}), /toolCallId/)
   assert.throws(() => delivery.stage(undefined, {}), /sessionId/)
-  const ticket = delivery.claim('s', { mode: 'peek' })
-  assert.throws(() => delivery.handOff(ticket, [{ key: 'k', text: 3 }], null), /text must be a string/)
-  assert.throws(() => delivery.handOff(delivery.claim('s', { mode: 'peek' }), [], 7), /assistant/)
+  const ticket = claimed(delivery, 's', { mode: 'peek' })
+  assert.throws(() => delivery.handOff(ticket, [{ key: 'k', text: 3 }]), /text must be a string/)
+  assert.throws(() => delivery.handOff(claimed(delivery, 's', { mode: 'peek' }), null), /candidates/)
   assert.deepEqual(delivery.fence('s'), fence())
 })
 

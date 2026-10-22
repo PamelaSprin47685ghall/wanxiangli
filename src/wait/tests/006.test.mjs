@@ -1,15 +1,14 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { Time } from '../../../dist/time/Time.js'
 import { Wait } from '../../../dist/wait/Wait.js'
-import { describe, registry } from './support.mjs'
+import { describe, registry, virtualTimer } from './support.mjs'
 
 // 卡内红反例 3：等待超时不得伪造业务成功，也不得残留活跃租约或悬空定时器。
 
 test('WHAT[CAUSAL-WAIT-006] deadline expiry returns WaitTimedOut and leaves no active wait', async () => {
   const runtime = registry()
-  const virtual = Time.virtualTimerPort()
-  const deadline = virtual.port.Delay(50)
+  const virtual = virtualTimer()
+  const deadline = virtual.delay(50)
 
   const outcome = Wait.untilSignalOrDeadline(
     runtime,
@@ -30,8 +29,8 @@ test('WHAT[CAUSAL-WAIT-006] deadline expiry returns WaitTimedOut and leaves no a
 
 test('WHAT[CAUSAL-WAIT-006] a signal win cancels the deadline and no timer survives', async () => {
   const runtime = registry()
-  const virtual = Time.virtualTimerPort()
-  const deadline = virtual.port.Delay(50)
+  const virtual = virtualTimer()
+  const deadline = virtual.delay(50)
 
   let reads = 0
   const outcome = Wait.untilSignalOrDeadline(
@@ -50,7 +49,7 @@ test('WHAT[CAUSAL-WAIT-006] a signal win cancels the deadline and no timer survi
 
   assert.deepEqual(result, { ok: true, value: { value: 'delivered' } })
   // 信号胜出必须立即取消截止句柄。
-  assert.equal(deadline.cancelCount, 1)
+  assert.equal(deadline.cancels, 1)
 
   // 推进虚拟时钟越过原定截止点：已取消的定时器不得触发过期回调。
   let expired = false
@@ -64,8 +63,8 @@ test('WHAT[CAUSAL-WAIT-006] a signal win cancels the deadline and no timer survi
 
 test('WHAT[CAUSAL-WAIT-006] an immediate read resolves without ever suspending', async () => {
   const runtime = registry()
-  const virtual = Time.virtualTimerPort()
-  const deadline = virtual.port.Delay(50)
+  const virtual = virtualTimer()
+  const deadline = virtual.delay(50)
 
   const result = await Wait.untilSignalOrDeadline(
     runtime,
@@ -76,7 +75,7 @@ test('WHAT[CAUSAL-WAIT-006] an immediate read resolves without ever suspending',
   )
 
   assert.deepEqual(result, { ok: true, value: 'already-there' })
-  assert.equal(deadline.cancelCount, 1)
+  assert.equal(deadline.cancels, 1)
   assert.equal(Wait.snapshot(runtime).history[1].exit, 'WaitResolved')
   virtual.advance(50)
 })

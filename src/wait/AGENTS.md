@@ -26,8 +26,8 @@
 
 ## SPEC
 
-1. [本模块 LEMMA 3, 4] 到期返回 `WaitTimedOut` 且活跃集清空、历史记录退出；信号或即时读取胜出即取消截止句柄（`cancelCount` 可观测），推进虚拟时钟越过截止点不再触发过期回调；租约释放与 `MarkExit` 幂等；处置一个租约不影响其他活跃等待。
-    - 证明：`tests/006.test.mjs`（卡内红反例 3）。[TODO] 运行验证由 DevOps 执行。
+1. [本模块 LEMMA 3, 4] 到期返回 `WaitTimedOut` 且活跃集清空、历史记录退出；信号或即时读取胜出即取消截止句柄（取消恰一次，由测试自有夹具的私有计数验证，等待模块不认识该计数），推进虚拟时钟越过截止点不再触发过期回调；租约释放与 `MarkExit` 幂等；处置一个租约不影响其他活跃等待。
+    - 证明：`tests/006.test.mjs`（卡内红反例 3），截止夹具在 `tests/support.mjs`。[TODO] 运行验证由 DevOps 执行。
 2. [本模块 LEMMA 5] 环、断边、外部前沿、链尾前沿与空快照分别得到 `CausalWaitCycle` / `BrokenCausalEdge` / `ExternalProducerFrontier` / `Empty`；同一算法在数组与快照对象上结果一致。
     - 证明：`tests/007.test.mjs`（卡内红反例 4）。[TODO] 运行验证由 DevOps 执行。
 3. [本模块 LEMMA 1] observer 句柄只有 `Enter`，reader 句柄只有 `Snapshot`；错误形状被拒绝而非强转；诊断 sink 抛错不影响等待生命周期；目标首绑唯一。

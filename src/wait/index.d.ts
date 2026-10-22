@@ -53,11 +53,12 @@ export interface IDeadlineHandle {
   Cancel(): void
 }
 
-/** 不透明租约：markExit 记录诊断退出原因；dispose 清除活跃等待。两者幂等。 */
-export interface WaitLease {
-  markExit(exit: WaitExitName): void
-  dispose(): void
-}
+/**
+ * 不透明租约句柄：运行时是进程内能力对象，句柄本身不携带任何公开成员。
+ * 只能通过 `Wait.markExit(lease, exit)` 记录诊断退出原因、通过 `Wait.dispose(lease)`
+ * 清除活跃等待；两者幂等。
+ */
+export type WaitLease = object
 
 export interface CompletionMailbox {
   pulseAgent(agent: unknown): void
@@ -92,8 +93,8 @@ export const Wait: {
   observerEnter(observer: unknown, descriptor: WaitDescriptor): WaitLease
   readerSnapshot(reader: unknown): WaitSnapshot
   enter(registry: unknown, descriptor: WaitDescriptor): WaitLease
-  markExit(lease: unknown, exit: WaitExitName): void
-  dispose(lease: unknown): void
+  markExit(lease: WaitLease, exit: WaitExitName): void
+  dispose(lease: WaitLease): void
   snapshot(registry: unknown): WaitSnapshot
   historyCapacity(registry: unknown): number
   /** 绑定诊断 sink（{ Publish(snapshot) }）；首绑唯一，返回是否绑定成功。 */

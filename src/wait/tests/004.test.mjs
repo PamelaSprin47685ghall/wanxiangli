@@ -10,7 +10,7 @@ test('WHAT[CAUSAL-WAIT-004] the observer capability exposes only Enter', () => {
   assert.equal(observer.Snapshot, undefined)
   assert.equal(observer.BindDiagnosticTarget, undefined)
 
-  const lease = observer.Enter(describe())
+  const lease = Wait.observerEnter(observer, describe())
   Wait.dispose(lease)
 })
 

@@ -1,7 +1,6 @@
-/** Handle returned by `run` / `runNaive`. */
+/** Handle returned by `run`. */
 export interface SandboxRunHandle {
   readonly programPromise: Promise<string>
-  readonly deadlineRef: { current: number }
 }
 
 export interface SandboxMessages {
@@ -17,15 +16,11 @@ export interface SandboxMessages {
     modelSource: string,
   ): SandboxRunHandle
 
-  /** Pre-membrane runner — library base-red only; do not use in production. */
-  runNaive(
-    api: object,
-    deadlineMs: number,
-    baseClassSource: string,
-    modelSource: string,
-  ): SandboxRunHandle
-
-  resetDeadline(deadlineRef: { current: number }, epochMs: number): void
+  /**
+   * Re-arm the async deadline of a run this object started.
+   * The deadline reference stays inside the sandbox; the run is named by handle.
+   */
+  extendDeadline(handle: SandboxRunHandle, epochMs: number): void
 }
 
 export function Sandbox(): SandboxMessages

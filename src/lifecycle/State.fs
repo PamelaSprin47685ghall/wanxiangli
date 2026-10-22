@@ -256,9 +256,6 @@ type internal WorkState(workId: string) =
         else
             noDelivery ()
             require (retired.Cursor.IsNone && retired.Operation.IsNone && retired.Session.IsNone && retired.Draft.IsNone) "Execution retirement has plan-only fields"
-            let review = tenure.Review |> Option.defaultWith (fun () -> fail "Review is required")
-            let confirmed = tenure.Confirmation |> Option.defaultWith (fun () -> fail "Confirmation is required")
-            require (retired.Fence.Call <> confirmed.Call && retired.Delivered = review.Promoted) "Second delivery must use another call and the review outcome"
         let result = Vocabulary.result (Vocabulary.ending retired.Delivered) [ "retirementId", box retired.Id; "incumbencyId", box retired.Tenure ]
         rememberFence FenceOwner.Retirement retired.Fence result (retired.Operation.IsSome)
         match retired.Operation with
@@ -291,16 +288,6 @@ type internal WorkState(workId: string) =
     member _.Revision = receipts.Count
     member _.RequireTenure id = requireTenure id
     member _.NoDelivery() = noDelivery ()
-
-    /// The last committed retirement, if any: an unreviewed Plan relay that
-    /// opened the current tenure. Two consecutive unreviewed relays is the
-    /// no-op handoff chain the kernel must refuse.
-    member _.LastRoundWasUnreviewedRelay =
-        match rounds.Count with
-        | 0 -> false
-        | count ->
-            let last = rounds[count - 1]
-            isNull (get last "reviewOutcome") && text (get last "outcome") = "Relayed"
 
     member _.TryReceipt id =
         match receipts.TryGetValue id with true, receipt -> Some receipt | _ -> None
@@ -465,6 +452,5 @@ type internal WorkState(workId: string) =
             | Some _, _ -> "ObserveExecution"
             | None, None -> if opened then "Done" else "Open"
             | None, Some tenure when tenure.Review.IsNone -> "Review"
-            | None, Some tenure when sequence = WorkSequence.Execution && tenure.Confirmation.IsNone -> "Confirm"
             | _ -> "Continue"
         objectOf [ "next", box next; "state", this.Snapshot() ]

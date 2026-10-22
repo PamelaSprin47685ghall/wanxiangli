@@ -29,40 +29,32 @@ test('SPEC[lifecycle-002] an unreviewed Plan can relay but cannot write source',
   assert.equal(rig.work.inspect().stage, 'S1')
 })
 
-test('SPEC[lifecycle-002] a second consecutive unreviewed Plan relay is refused without writes', () => {
+test('SPEC[lifecycle-002] consecutive unreviewed Plan relays succeed because review is never a lifecycle precondition', () => {
   const rig = new Rig()
   rig.open()
-  rig.review(['S1 facts are not complete.'])
+  // Multiple consecutive relays without review succeed; review is an optional
+  // collaboration result, not a lifecycle precondition for hand-off.
   assert.equal(rig.deliver().kind, 'Relayed')
-  // The first unreviewed successor relay is allowed: the prior retirement was reviewed.
   assert.equal(rig.deliver().kind, 'Relayed')
-  // The second consecutive unreviewed relay is the no-op chain. Refused, zero append, tenure stays.
-  const successor = rig.work.inspect().active.id
-  const writes = rig.count
-  assert.equal(rig.call(rig.delivery()).result.kind, 'ReviewRequired')
-  assert.equal(rig.count, writes)
-  assert.equal(rig.work.inspect().active.id, successor)
-  // A review opens the handoff again at the same stage; the chain length resets.
-  rig.review(['Still incomplete.'])
   assert.equal(rig.deliver().kind, 'Relayed')
-  const next = rig.work.inspect().active.id
-  assert.notEqual(next, successor)
   assert.equal(rig.work.inspect().stage, 'S1')
+  assert.equal(rig.work.inspect().rounds.length, 3)
 })
 
-test('SPEC[lifecycle-002] S4 requires review and two different delivery calls', () => {
+test('SPEC[lifecycle-002] S4 single delivery completes without confirmation ritual or review precondition', () => {
   const rig = new Rig(['S4'])
   rig.open()
-  assert.equal(rig.call(rig.delivery()).result.kind, 'ReviewRequired')
-  assert.equal(rig.count, 1)
+  // An unreviewed S4 can deliver directly without a review precondition.
+  // With no nextOwnerId, it completes the work in one call.
+  const unreviewedRig = new Rig(['S4'])
+  unreviewedRig.open()
+  const unreviewedDelivery = unreviewedRig.delivery({ toolCallId: 'unreviewed-complete', nextOwnerId: undefined })
+  assert.equal(unreviewedRig.apply(unreviewedDelivery).kind, 'Delivered')
+  assert.equal(unreviewedRig.work.inspect().active, null)
+
+  // A reviewed S4 also completes in one call without a confirmation step.
   rig.review()
   assert.equal(rig.work.inspect().deliveryAuthorized, false)
-  const first = rig.delivery({ toolCallId: 'confirmation' })
-  assert.equal(rig.apply(first).kind, 'Confirmed')
-  const writes = rig.count
-  assert.equal(rig.call(first, 'confirmation-again').result.kind, 'Confirmed')
-  assert.equal(rig.count, writes)
-  assert.ok(rig.work.inspect().active)
   assert.equal(rig.deliver({ toolCallId: 'retirement' }).kind, 'Delivered')
   assert.equal(rig.work.inspect().active, null)
   assert.equal(rig.work.recover().next, 'Done')
@@ -71,11 +63,10 @@ test('SPEC[lifecycle-002] S4 requires review and two different delivery calls', 
   for (const key of ['retirementCursor', 'execSessionId', 'digest', 'path']) assert.equal(key in retired, false)
 })
 
-test('SPEC[lifecycle-002] a stayed S4 review confirms and relays with auto-dispatch', () => {
+test('SPEC[lifecycle-002] a stayed S4 review relays with auto-dispatch in a single delivery', () => {
   const rig = new Rig(['S4'])
   rig.open()
   rig.review(['Still incomplete.'])
-  rig.deliver()
   const result = rig.deliver({ cursor: 70 })
   assert.equal(result.kind, 'Relayed')
   assert.equal(result.autoDispatch, true)
@@ -83,15 +74,43 @@ test('SPEC[lifecycle-002] a stayed S4 review confirms and relays with auto-dispa
   assert.equal(rig.work.inspect().active.reviewOutcome, null)
 })
 
-test('SPEC[lifecycle-002] a reused tool call under another provider is not a second confirmation', () => {
+test('SPEC[lifecycle-002] MUST-KEEP: a retired tenure cannot close the new one', () => {
   const rig = new Rig(['S4'])
-  rig.open()
-  rig.review()
-  const command = rig.delivery({ toolCallId: 'same-call' })
-  rig.apply(command)
-  const count = rig.count
-  assert.throws(() => rig.call({ ...command, providerRunId: 'other-run' }), /RetirementConfirmationReplayConflict/)
-  assert.equal(rig.count, count)
+  const first = rig.open()
+  rig.review(['First pass needs rework.'])
+  // First tenure relays to a successor tenure.
+  const relay = rig.deliver({ cursor: 10, nextOwnerId: 'manager' })
+  const secondTenureId = rig.work.inspect().active.id
+  assert.notEqual(secondTenureId, first.incumbencyId)
+
+  // The retired first tenure attempts to issue a delivery targeting the work.
+  // The kernel refuses because incumbencyId does not match the active tenure.
+  const staleDelivery = rig.delivery({
+    incumbencyId: first.incumbencyId,
+    toolCallId: 'stale-retire-attempt',
+    nextOwnerId: undefined,
+  })
+  assert.throws(() => rig.call(staleDelivery), /mismatch/i)
+  // Active tenure is unchanged; nothing retired.
+  assert.equal(rig.work.inspect().active.id, secondTenureId)
+})
+
+test('SPEC[lifecycle-002] MUST-KEEP: one active owner per work and active resource honestly blocks completion', () => {
+  const rig = new Rig(['S4'])
+  const first = rig.open({ ownerId: 'owner-a' })
+  assert.equal(rig.work.inspect().active.ownerId, 'owner-a')
+
+  // Active resource (blocker) cannot be reported as retired/completed.
+  const blocked = rig.deliver({ blockers: ['live-process-1', 'live-port-2'], nextOwnerId: undefined })
+  assert.equal(blocked.kind, 'Blocked')
+  // Tenure is still active and unchanged.
+  assert.equal(rig.work.inspect().active.id, first.incumbencyId)
+  assert.equal(rig.work.inspect().active.ownerId, 'owner-a')
+
+  // Once settled (no blockers), the single delivery intent genuinely completes.
+  const completed = rig.deliver({ blockers: [], nextOwnerId: undefined })
+  assert.equal(completed.kind, 'Delivered')
+  assert.equal(rig.work.inspect().active, null)
 })
 
 test('SPEC[lifecycle-002] a reused one-shot retirement fence under another provider is a retirement replay conflict', () => {

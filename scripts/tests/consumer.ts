@@ -1,4 +1,4 @@
-import { Work, type Command } from 'wanxiangli/work'
+import { Work, type Command, type Decision, type ExecutionResult } from 'wanxiangli/work'
 import { SqliteJournal, type SqliteConnection } from 'wanxiangli/eventstore'
 import { DurableWork, type Journal } from 'wanxiangli/durable-work'
 
@@ -11,6 +11,28 @@ if (localResult.status === 'Applied') {
   const body: string = localResult.record
   journal.append('typed-work', 0, 'request', body)
 }
+if (localResult.status === 'Conflict') {
+  const reason: string = localResult.reason
+  void reason
+  // @ts-expect-error Conflict carries no successful record.
+  const badRecord: string = localResult.record
+  void badRecord
+  // @ts-expect-error Conflict carries no successful result.
+  const badResult: Decision = localResult.result
+  void badResult
+}
+
+// Exhaustiveness: a consumer handling only Applied, Replayed, and Observed
+// fails compilation because Conflict is a declared variant of ExecutionResult.
+function exhaustivelyHandle(res: ExecutionResult): string {
+  switch (res.status) {
+    case 'Applied': return res.record
+    case 'Replayed':
+    case 'Observed': return res.result.kind
+    case 'Conflict': return res.reason
+  }
+}
+void exhaustivelyHandle
 const work = new DurableWork('typed-work', journal)
 const response = work.execute('request', command)
 if (response.status === 'Committed' && response.result.kind === 'Opened') {

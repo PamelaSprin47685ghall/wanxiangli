@@ -18,7 +18,6 @@ export type Decision =
   | { kind: 'DevOpsBound'; devopsId: string }
   | { kind: 'Advanced'; authority: string }
   | { kind: 'Blocked'; blockerDigest: string }
-  | { kind: 'ReviewRequired' }
   | { kind: 'DeliveryRequested'; operationId: string; digest: string; path: string }
   | { kind: 'ObserveExecution'; operationId: string; digest: string; path: string; execSessionId: string | null }
   | { kind: 'ExecutionSessionBound'; operationId: string; execSessionId: string; digest: string; path: string }
@@ -26,8 +25,9 @@ export type Decision =
   | { kind: 'Delivered'; retirementId: string; incumbencyId: string }
   | { kind: 'Relayed'; retirementId: string; incumbencyId: string; successorId: string; autoDispatch: boolean };
 export type ExecutionResult =
-  | { status: 'Applied'; revision: number; result: Decision; record: string }
-  | { status: 'Replayed' | 'Observed'; revision: number; result: Decision; record: null };
+  | { status: 'Applied'; revision: number; result: Decision; record: string; reason: null }
+  | { status: 'Replayed' | 'Observed'; revision: number; result: Decision; record: null; reason: null }
+  | { status: 'Conflict'; revision: number; result: null; record: null; reason: string };
 export interface Round {
   readonly incumbencyId: string;
   readonly ownerId: string;
@@ -62,7 +62,7 @@ export interface Snapshot {
   readonly pendingDelivery: null | { readonly kind: 'ObserveExecution'; readonly operationId: string; readonly digest: string; readonly path: string; readonly execSessionId: string | null };
   readonly rounds: readonly Round[];
 }
-export type Recovery = { next: 'Open' | 'Review' | 'Confirm' | 'Continue' | 'ObserveExecution' | 'Done'; state: Snapshot };
+export type Recovery = { next: 'Open' | 'Review' | 'Continue' | 'ObserveExecution' | 'Done'; state: Snapshot };
 export interface Frame {
   readonly requestId: string;
   readonly requestHash: string;

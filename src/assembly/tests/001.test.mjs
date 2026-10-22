@@ -25,7 +25,6 @@ test('SPEC[assembly-001] local-first recording and durable-first publication use
   const first = local.execute(...commands[0]).result.incumbencyId
   commands.push(
     ['review', { type: 'Review', incumbencyId: first, reviewerId: 'reviewer', findings: [] }],
-    ['confirm', { type: 'Deliver', incumbencyId: first, providerRunId: 'run', toolCallId: 'confirm', cursor: 5, blockers: [] }],
     ['finish', { type: 'Deliver', incumbencyId: first, providerRunId: 'run', toolCallId: 'finish', cursor: 6, blockers: [] }],
   )
   for (const request of commands.slice(1)) assert.equal(local.execute(...request).status, 'Applied')

@@ -82,10 +82,6 @@ module Permission =
 [<RequireQualifiedAccess>]
 module OfficeMatrix =
 
-    /// Manager 已交评审后的只读面：在评审后被收回。
-    let managerReviewReadOnly: Set<Permission> =
-        set [ Permission.Read; Permission.Glob; Permission.Grep ]
-
     /// capability-enforcement-025：最终在任者的读取/清理/收尾面——保留读、horizon、join
     /// 与 deliver 终局，去掉一切新工作能力（fork、resume、review）。
     let managerFinish: Set<Permission> =
@@ -122,14 +118,13 @@ module OfficeMatrix =
             set [ Permission.JsPlan; Permission.Ask; Permission.DevOpsConsultation; Permission.Review; Permission.Deliver ]
         | _ -> Set.empty
 
-    /// Manager 门禁：无在任者不授予任何能力；只有确认没有评审是非法事实，失败关闭；
-    /// 清理阻塞只留 Join + Finality；最终在任者只留收尾面；已评审收回只读面；其余为完整 Manager 集合。
+    /// Manager 门禁：无在任者不授予任何能力；清理阻塞只留 Join + Finality；
+    /// 最终在任者只留收尾面（保留读/清理/收尾）；已评审不再收回只读面（读能力不因评审消失）；
+    /// 其余为完整 Manager 集合。流程限制交由具体操作拥有，门禁不把工具面抽空。
     let permissionsForManagerFacts (facts: ManagerFacts): Set<Permission> =
         if not facts.HasActiveIncumbency then Set.empty
-        elif facts.HasConfirmation && not facts.HasAssessment then Set.empty
         elif facts.HasCleanupBlocker then set [ Permission.Join; Permission.Finality ]
         elif facts.IsFinalIncumbent then managerFinish
-        elif facts.HasAssessment then Set.difference manager managerReviewReadOnly
         else manager
 
 /// 能力 ↔ 宿主工具名的唯一映射（capability-enforcement-012）。schema 投影、派发映射与

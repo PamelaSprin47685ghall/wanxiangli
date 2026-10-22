@@ -42,11 +42,15 @@ const facts = (overrides = {}) => ({
 test('SPEC[capability-003] the manager gate reads exact lifecycle facts', () => {
   assert.deepEqual(capability.permissionsForManagerFacts(facts()), expected.manager)
   assert.deepEqual(capability.permissionsForManagerFacts(facts({ hasActiveIncumbency: false })), [])
-  assert.deepEqual(capability.permissionsForManagerFacts(facts({ hasConfirmation: true })), [], 'confirmation without review fails closed')
+  // N-04: Confirmation no longer empties the tool surface; an active incumbent retains full manager capability.
+  assert.deepEqual(capability.permissionsForManagerFacts(facts({ hasConfirmation: true })), expected.manager)
   assert.deepEqual(capability.permissionsForManagerFacts(facts({ hasCleanupBlocker: true, isFinalIncumbent: true, hasAssessment: true })), ['Finality', 'Join'])
   assert.deepEqual(capability.permissionsForManagerFacts(facts({ isFinalIncumbent: true, hasAssessment: true })), capability.managerFinishPermissions())
-  assert.deepEqual(capability.permissionsForManagerFacts(facts({ hasAssessment: true })), ['Advisor', 'Finality', 'Fork', 'Horizon', 'Join', 'Resume', 'ReviewAssessment'])
-  assert.deepEqual(capability.managerReviewReadOnlyPermissions(), ['Glob', 'Grep', 'Read'])
+  // N-04: Granted read capability (Read/Glob/Grep) must not disappear because a review happened.
+  assert.deepEqual(capability.permissionsForManagerFacts(facts({ hasAssessment: true })), expected.manager)
+  assert.ok(capability.permissionsForManagerFacts(facts({ hasAssessment: true })).includes('Read'))
+  assert.ok(capability.permissionsForManagerFacts(facts({ hasAssessment: true })).includes('Glob'))
+  assert.ok(capability.permissionsForManagerFacts(facts({ hasAssessment: true })).includes('Grep'))
   assert.deepEqual(capability.managerFinishPermissions(), ['Finality', 'Glob', 'Grep', 'Horizon', 'Join', 'Read'])
 })
 

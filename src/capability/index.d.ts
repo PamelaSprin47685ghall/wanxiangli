@@ -24,7 +24,6 @@ export declare class Capability {
   /** 排序后的能力标签；非规范角色一律 []。 */
   permissions(role: unknown): PermissionLabel[]
   isAllowed(role: unknown, permission: unknown): boolean
-  managerReviewReadOnlyPermissions(): PermissionLabel[]
   managerFinishPermissions(): PermissionLabel[]
   permissionsForManagerFacts(facts: ManagerFacts): PermissionLabel[]
   /** 能力 → 宿主工具名；空数组表示只在编程面上。未知能力 []。 */

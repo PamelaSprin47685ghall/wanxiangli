@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync, existsSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Sandbox } from './support.mjs'
+import { runNaive } from './support/naive.mjs'
 
 const law = Sandbox()
 const BASE = `class JsProgram {
@@ -26,9 +27,9 @@ async function runMembrane(body, api, deadlineMs = 2000, deadlineEpochMs = Date.
   }
 }
 
-async function runNaive(body, api, deadlineMs = 2000) {
+async function runNaiveFixture(body, api, deadlineMs = 2000) {
   const src = `class Js extends JsProgram { async run() { ${body} } }`
-  const handle = law.runNaive(api, deadlineMs, BASE, src)
+  const handle = runNaive(api, deadlineMs, BASE, src)
   try {
     const json = await handle.programPromise
     if (typeof json === 'string' && json.includes('__jsProgramFailed')) {
@@ -49,7 +50,7 @@ const api = {
 }
 
 test('SPEC[sandbox-001] naive runner: returned array constructor reaches host process (base-red)', async () => {
-  const result = await runNaive(
+  const result = await runNaiveFixture(
     `const r = await this.ls('.'); ${reach('r.constructor.constructor("return process")()')}`,
     api,
   )

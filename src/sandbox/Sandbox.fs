@@ -343,52 +343,35 @@ let private launch
 })($0, $1, $2, $3, $4, $5, $6)
 """
 
-/// Naive pre-membrane runner used only by library base-red tests.
-let private launchNaive
-    (api: obj)
-    (deadlineMs: float)
-    (baseClassSource: string)
-    (modelSource: string)
-    : obj =
-    emitJsExpr
-        (vm, api, deadlineMs, baseClassSource, modelSource)
-        """
-(function(vm, api, deadlineMs, baseClass, model) {
-  var createContext = vm.createContext;
-  var runInContext = vm.runInContext;
-  var deadlineRef = { current: Date.now() + 60000 };
-  var ctx = createContext({ api: api, __deadlineRef: deadlineRef });
-  var code =
-    "(async () => {\n" + baseClass + "\n" + model + "\n" +
-    "const __wrap = (target) => new Proxy(target, { get(target, prop) { const value = target[prop]; if (typeof value === 'function') return (...args) => value(...args); if (value && typeof value === 'object') return __wrap(value); return value; } });\n" +
-    "const __api = __wrap(api);\n" +
-    "let __result;\n" +
-    "try { __result = await new Js(__api).run(); }\n" +
-    "catch (__e) { return JSON.stringify({ __jsProgramFailed: true, message: String((__e && __e.message) || __e) }); }\n" +
-    "return JSON.stringify(__result);\n" +
-    "})()";
-  try {
-    return { programPromise: runInContext(code, ctx, { timeout: Number(deadlineMs) }), deadlineRef: deadlineRef };
-  } catch (e) {
-    return { programPromise: Promise.reject(e), deadlineRef: deadlineRef };
-  }
-})($0, $1, $2, $3, $4)
-"""
-
 type SandboxMessages =
-    abstract run: api: obj * deadlineMs: float * deadlineEpochMs: float * baseClassSource: string * modelSource: string -> obj
-    abstract runNaive: api: obj * deadlineMs: float * baseClassSource: string * modelSource: string -> obj
-    abstract resetDeadline: deadlineRef: obj * epochMs: float -> unit
+    abstract run:
+        api: obj * deadlineMs: float * deadlineEpochMs: float * baseClassSource: string * modelSource: string -> obj
+
+    /// Re-arm the async deadline of a run this object started. The deadline
+    /// reference stays inside the sandbox; the caller names the run by handle.
+    abstract extendDeadline: handle: obj * epochMs: float -> unit
 
 /// Realm-membrane sandbox. Each call is independent; the factory holds no state.
 let Sandbox () : SandboxMessages =
+    // The deadline reference of each run belongs to this sandbox instance:
+    // the handle the caller holds is the only name it can use.
+    let deadlines: obj = emitJsExpr (vm) "new WeakMap()"
+
     { new SandboxMessages with
         member _.run(api, deadlineMs, deadlineEpochMs, baseClassSource, modelSource) =
-            launch api deadlineMs deadlineEpochMs baseClassSource modelSource
+            let launched = launch api deadlineMs deadlineEpochMs baseClassSource modelSource
+            let handle: obj = emitJsExpr (launched) "({ programPromise: $0.programPromise })"
+            emitJsExpr (deadlines, handle, launched) "$0.set($1, $2.deadlineRef)"
+            handle
 
-        member _.runNaive(api, deadlineMs, baseClassSource, modelSource) =
-            launchNaive api deadlineMs baseClassSource modelSource
-
-        member _.resetDeadline(deadlineRef, epochMs) =
-            (emitJsExpr (deadlineRef, epochMs) "$0.current = Number($1)": unit) }
-
+        member _.extendDeadline(handle, epochMs) =
+            (emitJsExpr
+                (deadlines, handle, epochMs)
+                """
+(function(deadlines, handle, epochMs) {
+  var deadlineRef = deadlines.get(handle);
+  if (!deadlineRef) throw new Error("sandbox: unknown run handle");
+  deadlineRef.current = Number(epochMs);
+})($0, $1, $2)
+""": unit)
+    }

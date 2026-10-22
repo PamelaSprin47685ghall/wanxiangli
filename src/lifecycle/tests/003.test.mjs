@@ -12,7 +12,8 @@ test('SPEC[lifecycle-003] request identity binds canonical input and does not ap
   assert.equal(rig.count, 1)
   const conflict = rig.call({ ...rig.openCommand, root: 'other-root' }, 'open')
   assert.equal(conflict.status, 'Conflict')
-  assert.equal(conflict.record, 'RequestIdConflict')
+  assert.equal(conflict.record, null)
+  assert.equal(conflict.reason, 'RequestIdConflict')
   assert.equal(rig.count, 1)
 })
 
@@ -36,20 +37,16 @@ test('SPEC[lifecycle-003] findings are returned but are not copied into the revi
   assert.equal('findings' in rig.work.history().at(-1).events[0], false)
 })
 
-test('SPEC[lifecycle-003] stale retirement and confirmation replays do not act on a successor', () => {
+test('SPEC[lifecycle-003] stale retirement replays do not act on a successor', () => {
   const rig = new Rig(['S4'])
   rig.open()
   rig.review(['Not done.'])
-  const confirmation = rig.delivery({ toolCallId: 'first-call' })
-  rig.apply(confirmation, 'confirm')
   const retirement = rig.delivery({ toolCallId: 'last-call' })
   const retired = rig.apply(retirement, 'retire')
   const successor = rig.work.inspect().active.id
   const writes = rig.count
-  assert.equal(rig.call(confirmation, 'confirm').result.kind, 'Confirmed')
   assert.equal(rig.call(retirement, 'different-request-same-fence').result.retirementId, retired.retirementId)
   assert.equal(rig.work.inspect().active.id, successor)
-  assert.equal(rig.work.inspect().active.confirmed, false)
   assert.equal(rig.count, writes)
 })
 

@@ -18,12 +18,14 @@
 3. [AXIOM 1] 期限检查用宿主时钟，不读可被程序改写的 sandbox `Date.now`。
 4. [AXIOM 2] 宿主侧驱动循环在每次 `runInContext('void 0')` 上施加剩余 timeout，使 await 之后的同步死循环同样以超时结束。
 5. [AXIOM 2] 驱动循环按唤醒推进，不空转：程序等待的宿主 Promise 用宿主 realm 的回调订阅（落在宿主微任务队列），结算或宿主回调进程序代码时唤醒驱动；两次唤醒之间睡到期限或慢轮询（unref 定时器）。空闲程序（park、等宿主 Promise）不占 CPU，也不单独让进程存活；期限过后在进程存活期间仍以超时结束。
+6. [AXIOM 2] 期限引用由沙箱对象持有，run handle 只暴露 `programPromise`；延长期限经 `extendDeadline(handle, epochMs)` 由对象改自己的引用，调用方拿不到可变引用。
 
 # SPEC
 
 1. [LEMMA 1] 下列逃逸在 membrane 下均拿不到宿主 `process`，且不能在 workspace 外写文件；在 naive 实现上会成功（base-red）。
     - 全局 `api` / `__deadlineRef` / `globalThis.constructor` / `this.ls` 返回值的 `constructor.constructor`
-    - 证明：`tests/001.test.mjs`
+    - naive 实现是测试夹具 `tests/support/naive.mjs`（pre-membrane runner 的 plain-JS 等价物），不在生产面；生产对象不再导出 `runNaive`。
+    - 证明：`tests/001.test.mjs`（naive 断言跑在夹具上）
 2. [LEMMA 4] 同步死循环与 await 之后的死循环都在 deadlineMs 量级内以超时结束。
     - 证明：`tests/002.test.mjs`（await 路径在子进程中跑，避免 node:test async_hooks 与 afterEvaluate 冲突）
 3. 正常 api 往返仍返回 sandbox 数据（例如 `ls` 的 entries 数组）。
@@ -32,3 +34,5 @@
     - 证明：`tests/003.test.mjs`
 5. [LEMMA 5] 等一个不结算的宿主 Promise 的程序：1 s 内 CPU < 300 ms，进程 5 s 内自然退出（0.62.0 上空转到 60 s 期限）；迟到结算与宿主回调仍能推进程序；期限过后仍以超时结束。
     - 证明：`tests/004.test.mjs`
+6. [LEMMA 6] 生产对象不含 naive runner，handle 不暴露可变期限引用；`extendDeadline` 按 handle 重挂期限，未知 handle 报错，未延长则期限仍束缚运行。
+    - 证明：`tests/005.test.mjs`

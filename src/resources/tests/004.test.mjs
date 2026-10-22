@@ -15,7 +15,6 @@ test('SPEC[resources-003] package-internal location works from any working direc
   const elsewhere = mkdtempSync(join(tmpdir(), 'wanxiangli-resources-cwd-'))
   try {
     chdir(elsewhere)
-    resources.requireLanguagePair('library/resource-pair')
     const english = resources.readText('English', 'library/resource-pair')
     const chinese = resources.readText('zh-CN', 'library/resource-pair')
     assert.match(english, /Hello, \{\{name\}\}\./)
@@ -31,5 +30,4 @@ test('SPEC[resources-003] package-internal location works from any working direc
 
 test('SPEC[resources-003] a resource absent from the package fails instead of reading elsewhere', () => {
   assert.throws(() => resources.readText('English', 'library/not-in-package'), /missing/)
-  assert.throws(() => resources.requireLanguagePair('library/not-in-package'), /missing/)
 })

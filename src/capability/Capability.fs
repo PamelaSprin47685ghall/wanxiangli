@@ -48,8 +48,6 @@ type Capability() =
             | Some value -> OfficeMatrix.permissions (roleOf role) |> Set.contains value
             | None -> false)
 
-    member _.managerReviewReadOnlyPermissions(): string array = labels OfficeMatrix.managerReviewReadOnly
-
     member _.managerFinishPermissions(): string array = labels OfficeMatrix.managerFinish
 
     /// Manager 事实门禁。facts = { hasActiveIncumbency, hasAssessment, hasConfirmation,

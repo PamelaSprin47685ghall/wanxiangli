@@ -7,9 +7,11 @@ open Fable.Core.JsInterop
 /// Bilingual semantic resources anchored at a package root.
 /// Resource root is resolved from the package's own absolute location
 /// (import.meta.url walk to package.json); never from process.cwd().
-/// Every semantic path must provide both `en.md` and `zh-CN.md`; a missing
-/// side fails closed with no fallback to the other language (PROMPT-017
-/// §4.7.8 / HOST-026 / ARCH-016 Gate C).
+/// A read touches only the selected language: the selected leaf missing
+/// fails closed with no fallback to the other language. Whether every
+/// declared language leaf is present and whether the language pair carries
+/// the same placeholder set is a distribution property, checked by the
+/// distribution check of this module, not by every runtime read.
 [<AttachMembers>]
 type Resources(?rootDir: string) =
 
@@ -95,75 +97,48 @@ type Resources(?rootDir: string) =
     member _.resourceExists(relativeResourcePath: string) : bool =
         existsSync (resolveResource relativeResourcePath)
 
-    /// Walk up from this module's directory to the nearest package.json.
-    static member private selfPackageRoot () : string =
+    /// Walk up from `startDirectory` to the nearest package.json.
+    /// Terminates with "package root not found" when the filesystem stops
+    /// yielding a different parent.
+    static member packageRootFrom(startDirectory: string) : string =
         let rec walk (dir: string) : string =
             if isNull dir then
                 raise (InvalidOperationException "package root not found")
             elif existsSync (pathJoin (dir, "package.json")) then
                 dir
             else
-                walk (dirname dir)
+                let parent = dirname dir
 
-        walk (dirname (fileURLToPath (moduleUrl ())))
+                if parent = dir then
+                    raise (InvalidOperationException "package root not found")
+                else
+                    walk parent
+
+        walk startDirectory
+
+    /// Walk up from this module's directory to the nearest package.json.
+    static member private selfPackageRoot () : string =
+        Resources.packageRootFrom (dirname (fileURLToPath (moduleUrl ())))
 
     /// `provider/<semanticPath>/{en.md|zh-CN.md}` relative to the resource root.
     member _.relativePath(languageRaw: string, semanticPath: string) : string =
         semanticLeaf (languageOf languageRaw) semanticPath
 
-    /// Both locale leaves must exist for a semantic path.
-    member _.requireLanguagePair(semanticPath: string) : unit =
-        for language in [ ProviderLanguage.English; ProviderLanguage.SimplifiedChinese ] do
-            let relative = semanticLeaf language semanticPath
-
-            if not (existsSync (resolveResource relative)) then
-                raise (
-                    InvalidOperationException(
-                        sprintf
-                            "provider resource missing for %s: %s (HOST-026 / ARCH-016 Gate C)"
-                            (ProviderLanguage.label language)
-                            semanticPath
-                    )
-                )
-
     member _.exists(languageRaw: string, semanticPath: string) : bool =
         existsSync (resolveResource (semanticLeaf (languageOf languageRaw) semanticPath))
 
-    /// Read one language of a semantic pair. The pair is verified first:
-    /// a missing counterpart fails even when the requested leaf exists.
+    /// Read the selected language of a semantic path. Only the selected
+    /// leaf is validated: a missing counterpart does not affect this read,
+    /// and a missing selected leaf fails closed with no fallback.
     member this.readText(languageRaw: string, semanticPath: string) : string =
         let language = languageOf languageRaw
-        this.requireLanguagePair semanticPath
         (readResource (semanticLeaf language semanticPath)).Trim()
 
-    /// Load the pair, verify both sides share the same `{{name}}` placeholder
-    /// set, then substitute on the requested language. Missing substitution
-    /// keys and leftover placeholders fail closed.
+    /// Load the selected language's template and substitute on it. Missing
+    /// substitution keys and leftover placeholders fail closed.
     member this.render(languageRaw: string, semanticPath: string, substitutions: obj) : string =
         let language = languageOf languageRaw
-        this.requireLanguagePair semanticPath
-
-        let english = readResource (semanticLeaf ProviderLanguage.English semanticPath)
-        let chinese = readResource (semanticLeaf ProviderLanguage.SimplifiedChinese semanticPath)
-
-        let englishPlaceholders = Set.ofList (ProseTemplate.placeholders english)
-        let chinesePlaceholders = Set.ofList (ProseTemplate.placeholders chinese)
-
-        if englishPlaceholders <> chinesePlaceholders then
-            raise (
-                InvalidOperationException(
-                    sprintf
-                        "provider prose placeholder mismatch for %s: en=%A zh-CN=%A (PROMPT-019)"
-                        semanticPath
-                        (Set.toList englishPlaceholders)
-                        (Set.toList chinesePlaceholders)
-                )
-            )
-
-        let template =
-            match language with
-            | ProviderLanguage.English -> english
-            | ProviderLanguage.SimplifiedChinese -> chinese
+        let template = readResource (semanticLeaf language semanticPath)
 
         // 与 readText 一致：主仓旧链路 readText 先 Trim 再替换，
         // 渲染结果不得携带资源尾换行（嵌入 JS 字符串字面量会断行）。

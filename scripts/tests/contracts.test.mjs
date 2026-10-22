@@ -21,17 +21,19 @@ for (const mode of ['local', 'durable']) {
     const review = { type: 'Review', incumbencyId: tenure, reviewerId: 'other', findings: ['unfinished'] }
     assert.equal(work.execute('review', review).status, fresh)
     assert.equal(work.execute('review', review).status, 'Replayed')
-    const confirm = { type: 'Deliver', incumbencyId: tenure, providerRunId: 'run', toolCallId: 'first', cursor: 10, blockers: [], nextOwnerId: 'next' }
-    assert.equal(work.execute('confirm', confirm).result.kind, 'Confirmed')
-    const retired = work.execute('retire', { ...confirm, toolCallId: 'second' })
-    assert.equal(retired.status, fresh)
-    assert.equal(retired.result.kind, 'Relayed')
+    // Single delivery: with nextOwnerId present and Stayed review, a single
+    // deliver call atomically relays to a successor tenure.
+    const relay = { type: 'Deliver', incumbencyId: tenure, providerRunId: 'run', toolCallId: 'relay', cursor: 10, blockers: [], nextOwnerId: 'next' }
+    const relayed = work.execute('relay', relay)
+    assert.equal(relayed.status, fresh)
+    assert.equal(relayed.result.kind, 'Relayed')
     assert.notEqual(work.inspect().active.id, tenure)
     assert.equal(work.inspect().active.reviewOutcome, null)
-    assert.equal(work.execute('confirm', confirm).result.kind, 'Confirmed')
+    // Fence replay on the retired fence returns the recorded Relayed result.
+    assert.equal(work.execute('relay-replay', relay).result.kind, 'Relayed')
     const reconstructed = new Work('contract', work.records())
     assert.deepEqual(reconstructed.inspect(), work.inspect())
-    assert.equal(work.records().length, 4)
+    assert.equal(work.records().length, 3)
     const exposed = work.inspect()
     exposed.rounds[0].ownerId = 'outsider'
     assert.equal(work.inspect().rounds[0].ownerId, 'owner')

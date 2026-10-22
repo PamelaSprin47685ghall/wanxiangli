@@ -1,7 +1,6 @@
 module Wanxiangli.Wait.Wait
 
 open System
-open System.Collections.Generic
 open System.Threading.Tasks
 open Fable.Core
 open Fable.Core.JsInterop
@@ -163,9 +162,6 @@ module private Handles =
     type RuntimeHandle(runtime: CausalWaitRuntime) =
         member _.Runtime = runtime
 
-    type LeaseHandle(lease: IWaitLease) =
-        member _.Lease = lease
-
     [<AttachMembers>]
     type ObserverHandle(observer: IWaitObserver) =
         member _.Enter(wait: DiagnosticWait) = observer.Enter wait
@@ -173,6 +169,26 @@ module private Handles =
     [<AttachMembers>]
     type SnapshotReaderHandle(reader: IWaitSnapshotReader) =
         member _.Snapshot() = snapshotObject (reader.Snapshot())
+
+/// 租约句柄是不透明能力：句柄对象本身不带任何成员，租约本体留在模块私有弱表里，
+/// 只能经 markExit / dispose 操作。句柄是租约唯一的强引用；句柄被回收后租约随之可回收。
+[<Emit("new WeakMap()")>]
+let private newLeaseTable () : obj = jsNative
+
+let private leaseTable = newLeaseTable ()
+
+let private registerLease (lease: IWaitLease) : obj =
+    let handle = createObj []
+    emitJsExpr (leaseTable, handle, box lease) "$0.set($1, $2)" |> ignore
+    handle
+
+let private leaseOf (handle: obj) : IWaitLease =
+    let lease = emitJsExpr (leaseTable, handle) "$0.get($1)"
+
+    if isNullish lease then
+        invalidArg "lease" "wait lease required"
+    else
+        unbox<IWaitLease> lease
 
 let private frontierKindName =
     function
@@ -248,7 +264,7 @@ let private requireSnapshotReader (value: obj) =
     | _ -> invalidArg "reader" "snapshot reader capability required"
 
 let observerEnter (observer: obj) (descriptor: obj) : obj =
-    Handles.LeaseHandle((requireObserver observer).Enter(waitOf descriptor)) :> obj
+    registerLease ((requireObserver observer).Enter(waitOf descriptor))
 
 let readerSnapshot (reader: obj) : obj =
     // SnapshotReaderHandle.Snapshot 已返回 JS 视图（snapshotObject）。
@@ -258,9 +274,9 @@ let enter (registry: obj) (descriptor: obj) : obj =
     observerEnter (observerCapability registry) descriptor
 
 let markExit (lease: obj) (exit: string) : unit =
-    (lease :?> Handles.LeaseHandle).Lease.MarkExit(exitOf exit)
+    (leaseOf lease).MarkExit(exitOf exit)
 
-let dispose (lease: obj) : unit = (lease :?> Handles.LeaseHandle).Lease.Dispose()
+let dispose (lease: obj) : unit = (leaseOf lease).Dispose()
 
 let snapshot (registry: obj) : obj = readerSnapshot (snapshotReaderCapability registry)
 
@@ -318,17 +334,10 @@ let untilSignalOrDeadline
     : Task<obj> =
     let inner = unbox<IDeadlineHandle> deadline
 
-    let cancellations = List<int>()
-    emitJsExpr (deadline, 0) "$0.cancelCount = $1" |> ignore
-
     let deadlineHandle =
         { new IDeadlineHandle with
             member _.Delay = inner.Delay
-
-            member _.Cancel() =
-                cancellations.Add 1
-                emitJsExpr (deadline, cancellations.Count) "$0.cancelCount = $1" |> ignore
-                inner.Cancel() }
+            member _.Cancel() = inner.Cancel() }
 
     let read () =
         let value = call0 tryRead

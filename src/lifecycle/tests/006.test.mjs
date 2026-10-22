@@ -65,7 +65,6 @@ test('SPEC[lifecycle-006] a delivered S4 tenure hands off to its own next tenure
   rig.open()
   rig.review()
   const deliveredTenure = rig.work.inspect().active.id
-  rig.deliver()
   const retired = rig.deliver()
   assert.equal(retired.kind, 'Delivered')
   assert.equal(rig.work.inspect().active, null, 'a delivery leaves no open tenure')
@@ -92,7 +91,6 @@ test('SPEC[lifecycle-006] an S4 hand-off is refused while a tenure is open, with
   const rig = new Rig(['S4'])
   rig.open()
   rig.review(['the gap is still open'])
-  rig.deliver()
   const relayed = rig.deliver()
   assert.equal(relayed.kind, 'Relayed')
   const openTenure = rig.work.inspect().active.id
@@ -111,7 +109,6 @@ test('SPEC[lifecycle-006] retirement blockers are recorded observations, not dir
   const rig = new Rig(['S4'])
   rig.open()
   rig.review(['Tests failed and the workspace is dirty.'])
-  rig.deliver()
   const first = rig.deliver({ blockers: ['process', 'child', 'process'] })
   const second = rig.deliver({ blockers: ['child', 'process'] })
   assert.equal(first.kind, 'Blocked')

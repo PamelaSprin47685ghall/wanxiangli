@@ -86,22 +86,25 @@ module private Commands =
             | None ->
                 let tenure = state.RequireTenure tenureId
                 state.NoDelivery()
-                if state.Sequence = WorkSequence.Execution && tenure.Review.IsNone then
-                    Observe(Vocabulary.result "ReviewRequired" [])
-                elif state.Sequence = WorkSequence.Execution && tenure.Confirmation.IsNone then
-                    Write [ Fact.ConfirmationCommitted(tenureId, fence) ]
-                elif not (Array.isEmpty reasons) then blocked tenureId reasons
+                if not (Array.isEmpty reasons) then blocked tenureId reasons
                 elif state.Sequence = WorkSequence.Plan && state.Authorized then
                     let selected = draft |> Option.defaultWith (fun () -> fail "Authorized delivery requires a draft")
                     Write [ Fact.DeliveryRequested
                                 { Id = identity "delivery-operation-v1" [ workId; tenureId; state.Authority; requestId ]
                                   Tenure = tenureId; Fence = fence; Cursor = observedCursor; Draft = selected } ]
-                elif state.Sequence = WorkSequence.Plan
-                     && tenure.Review.IsNone
-                     && state.LastRoundWasUnreviewedRelay then
-                    Observe(Vocabulary.result "ReviewRequired" [])
                 else
-                    let delivered = state.Sequence = WorkSequence.Execution && tenure.Review.Value.Promoted
+                    // One delivery intent is enough. Naming a successor hands the
+                    // work over; naming none completes it. Review is a recorded
+                    // collaboration fact, never a precondition for either: when
+                    // present, a promoted review completes and a stayed review
+                    // relays; when absent, the presence of a successor decides.
+                    let delivered =
+                        if state.Sequence = WorkSequence.Execution then
+                            match tenure.Review with
+                            | Some review -> review.Promoted
+                            | None -> nextOwner.IsNone
+                        else
+                            false
                     let retirementCursor = if state.Sequence = WorkSequence.Plan then Some observedCursor else None
                     let retired = retire workId state tenureId fence delivered retirementCursor None None None
                     if delivered then Write [ Fact.IncumbencyRetired retired ]
@@ -199,8 +202,8 @@ let Work (workId: string) (records: string array option): IWork =
 
     let detached value = value |> canonical |> parse
 
-    let response status revision result record =
-        objectOf [ "status", box status; "revision", box revision; "result", result; "record", record ]
+    let response status revision result record reason =
+        objectOf [ "status", box status; "revision", box revision; "result", result; "record", record; "reason", reason ]
 
     let addFindings (command: obj) (result: obj) =
         let result = detached result
@@ -225,14 +228,14 @@ let Work (workId: string) (records: string array option): IWork =
             match state.TryReceipt requestId with
             | Some receipt ->
                 if receipt.Hash = hash then
-                    response "Replayed" state.Revision (addFindings command (state.Replay receipt)) (null: obj)
+                    response "Replayed" state.Revision (addFindings command (state.Replay receipt)) (null: obj) (null: obj)
                 else
                     // 同一 requestId 的异载荷是可预见的冲突：返回结构化结果，不写、不抛。
-                    response "Conflict" state.Revision (null: obj) (box "RequestIdConflict")
+                    response "Conflict" state.Revision (null: obj) (null: obj) (box "RequestIdConflict")
             | None ->
                 match Commands.decide workId requestId state command with
-                | Refuse reason -> response "Conflict" state.Revision (null: obj) (box reason)
-                | Observe result -> response "Observed" state.Revision (addFindings command result) (null: obj)
+                | Refuse reason -> response "Conflict" state.Revision (null: obj) (null: obj) (box reason)
+                | Observe result -> response "Observed" state.Revision (addFindings command result) (null: obj) (null: obj)
                 | Write facts ->
                     // 事务在私有候选上完成；任何验证失败都不改变当前个体。
                     let candidate = rebuild saved
@@ -241,7 +244,7 @@ let Work (workId: string) (records: string array option): IWork =
                     let body = canonical (objectOf [ "requestId", box requestId; "requestHash", box hash; "events", box (facts |> List.map FactCodec.encode |> List.toArray) ])
                     let operation = facts |> List.tryPick (function Fact.DeliveryRequested delivery -> Some delivery.Id | _ -> None)
                     candidate.Remember(requestId, hash, result, operation)
-                    let reply = response "Applied" candidate.Revision (addFindings command result) (box body)
+                    let reply = response "Applied" candidate.Revision (addFindings command result) (box body) (null: obj)
                     let next = Array.append saved [| body |]
                     saved <- next
                     state <- candidate
