@@ -237,7 +237,7 @@ let private installSource =
       "    return JSON.stringify({ __jsAbandoned: true });\n" +
       "  }\n" +
       "  if (__e && __e.__jsDelivered) {\n" +
-      "    return JSON.stringify({ __jsDelivered: true, view: __e.__jsDelivered.view });\n" +
+      "    return JSON.stringify({ __jsDelivered: true, carry: __e.__jsDelivered.carry });\n" +
       "  }\n" +
       "  return JSON.stringify({ __jsProgramFailed: true, message: String((__e && __e.message) || __e) });\n" +
       "}\n" +
@@ -391,3 +391,4 @@ let Sandbox () : SandboxMessages =
 
         member _.resetDeadline(deadlineRef, epochMs) =
             (emitJsExpr (deadlineRef, epochMs) "$0.current = Number($1)": unit) }
+

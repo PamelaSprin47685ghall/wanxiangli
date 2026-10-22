@@ -16,7 +16,7 @@ type DeliveryMessages =
     abstract fence: sessionId: string -> obj
     abstract returned: sessionId: string -> string array
     abstract claim: sessionId: string * request: obj -> obj
-    abstract handOff: ticket: obj * candidates: obj array * assistant: obj -> obj array
+    abstract handOff: ticket: obj * candidates: obj array -> obj array
     abstract clear: sessionId: string -> unit
     abstract clearReturned: sessionId: string -> unit
     abstract clearAll: unit -> unit
@@ -27,10 +27,9 @@ type private Cell = { View: obj; Fence: Fence option }
 
 type private Piece = { Key: string; Text: string }
 
-/// 一次 claim 的凭据状态。凭据本身只是冻结的 `{ view }`；状态留在签发实例里，调用方改不到。
+/// 凭据只公开冻结的声明与围栏；消费状态留在签发实例里。
 type private Ticket =
     { SessionId: string
-      View: obj
       Advance: bool
       mutable Spent: bool }
 
@@ -94,15 +93,6 @@ let private pieceValue (piece: Piece) : obj =
 
 let private stored (view: obj) : obj = if isAbsent view then null else view
 
-/// 散文游标键沿用宿主原定义：会话、UTF-16 长度与前 24 个码元。
-let private proseKey (sessionId: string) (prose: string) =
-    "prose:"
-    + sessionId
-    + ":"
-    + string prose.Length
-    + ":"
-    + prose.Substring(0, min 24 prose.Length)
-
 let Delivery () : DeliveryMessages =
     let cells = Dictionary<string, Cell>()
     let returnedKeys = Dictionary<string, HashSet<string>>()
@@ -139,13 +129,17 @@ let Delivery () : DeliveryMessages =
         | false, _ -> None
 
     let issue sessionId (cell: Cell) advance =
-        let ticket = freeze (createObj [ "view" ==> cell.View ])
+        let ticket =
+            freeze (
+                createObj
+                    [ "view" ==> cell.View
+                      "fence" ==> (cell.Fence |> Option.map fenceValue |> Option.defaultValue null) ]
+            )
 
         weakSet
             tickets
             ticket
             { SessionId = sessionId
-              View = cell.View
               Advance = advance
               Spent = false }
 
@@ -175,7 +169,7 @@ let Delivery () : DeliveryMessages =
             | _ -> null
         | other -> fail ("Unknown claim mode: " + other)
 
-    let handOff (ticket: obj) (candidates: obj array) (assistant: obj) : obj array =
+    let handOff (ticket: obj) (candidates: obj array) : obj array =
         let ticket =
             match if isAbsent ticket || jsTypeof ticket <> "object" then None else Option.ofObj (box (weakGet tickets ticket)) with
             | Some state -> unbox<Ticket> state
@@ -189,38 +183,19 @@ let Delivery () : DeliveryMessages =
 
         let pieces = candidates |> Array.map pieceOf |> Array.toList
 
-        let assistant =
-            if isAbsent assistant then
-                None
-            else
-                match assistant with
-                | :? string as prose -> Some prose
-                | _ -> fail "assistant must be a string or null"
-
         let sessionId = ticket.SessionId
 
         let fresh =
             pieces
             |> List.filter (fun piece -> not (hasReturned sessionId piece.Key))
 
-        let selected =
-            match assistant with
-            | Some prose when not (isAbsent ticket.View) && not (String.IsNullOrWhiteSpace prose) ->
-                let key = proseKey sessionId prose
-
-                if hasReturned sessionId key || fresh |> List.exists (fun piece -> piece.Key = key) then
-                    fresh
-                else
-                    fresh @ [ { Key = key; Text = prose } ]
-            | _ -> fresh
-
         ticket.Spent <- true
 
         if ticket.Advance then
             let keys = returnedOf sessionId
-            selected |> List.iter (fun piece -> keys.Add piece.Key |> ignore)
+            fresh |> List.iter (fun piece -> keys.Add piece.Key |> ignore)
 
-        selected |> List.map pieceValue |> List.toArray
+        fresh |> List.map pieceValue |> List.toArray
 
     { new DeliveryMessages with
         member _.stage(sessionId, view) =
@@ -274,8 +249,8 @@ let Delivery () : DeliveryMessages =
         member _.claim(sessionId, request) =
             guard (fun () -> claim (text "sessionId" sessionId) request)
 
-        member _.handOff(ticket, candidates, assistant) =
-            guard (fun () -> handOff ticket candidates assistant)
+        member _.handOff(ticket, candidates) =
+            guard (fun () -> handOff ticket candidates)
 
         member _.clear(sessionId) =
             guard (fun () -> cells.Remove(text "sessionId" sessionId) |> ignore)
@@ -287,3 +262,4 @@ let Delivery () : DeliveryMessages =
             guard (fun () ->
                 cells.Clear()
                 returnedKeys.Clear()) }
+
