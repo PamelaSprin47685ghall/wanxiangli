@@ -42,6 +42,5 @@ export declare class Prefix {
   propose(state: PrefixState, evidence: Evidence): Candidate | null
   proposeCompaction(state: PrefixState, observedRuns: readonly string[]): Candidate | null
   commit(state: PrefixState, candidate: Candidate): CommitResult
-  appendCheckpoint(window: readonly string[], callId: string): readonly string[]
   classify(previous: Wire, next: Wire): { readonly append: boolean; readonly breaks: readonly Break[] }
 }

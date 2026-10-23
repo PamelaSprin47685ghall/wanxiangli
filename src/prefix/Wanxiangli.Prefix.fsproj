@@ -7,7 +7,6 @@
   <ItemGroup>
     <Compile Include="Wire.fs" />
     <Compile Include="Generation.fs" />
-    <Compile Include="Checkpoints.fs" />
     <Compile Include="WireLaw.fs" />
     <Compile Include="Prefix.fs" />
   </ItemGroup>

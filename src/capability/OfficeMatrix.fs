@@ -27,6 +27,7 @@ type Permission =
     | Review
     | DevOpsConsultation
     | Advisor
+    | ResetScope
 
 /// Manager 的生命周期事实。门禁只读精确事实，不读阶段枚举。
 type ManagerFacts =
@@ -43,7 +44,7 @@ module Permission =
           Permission.Read; Permission.Write; Permission.Edit; Permission.Glob; Permission.Grep
           Permission.Move; Permission.Remove; Permission.Exec; Permission.Pty; Permission.ReviewAssessment
           Permission.Fetch; Permission.Finality; Permission.BashHoneypot; Permission.JsPlan; Permission.Ask
-          Permission.Deliver; Permission.Review; Permission.DevOpsConsultation; Permission.Advisor ]
+          Permission.Deliver; Permission.Review; Permission.DevOpsConsultation; Permission.Advisor; Permission.ResetScope ]
 
     let label (permission: Permission): string =
         match permission with
@@ -71,6 +72,7 @@ module Permission =
         | Permission.Review -> "Review"
         | Permission.DevOpsConsultation -> "DevOpsConsultation"
         | Permission.Advisor -> "Advisor"
+        | Permission.ResetScope -> "ResetScope"
 
     /// 未知标签不是能力。
     let tryParse (text: string): Permission option =
@@ -96,7 +98,8 @@ module OfficeMatrix =
     let private manager: Set<Permission> =
         set
             [ Permission.Fork; Permission.Resume; Permission.Join; Permission.Horizon; Permission.Advisor
-              Permission.ReviewAssessment; Permission.Finality; Permission.Read; Permission.Glob; Permission.Grep ]
+              Permission.ReviewAssessment; Permission.Finality; Permission.Read; Permission.Glob; Permission.Grep
+              Permission.ResetScope ]
 
     /// 矩阵认得的角色标签（现行角色）。其余标签（历史角色、内部槽位、未知名）失败关闭。
     let roles: string list = [ "advisor"; "manager"; "orchestrator"; "engineer"; "devops"; "plan" ]
@@ -106,20 +109,20 @@ module OfficeMatrix =
         match roleLabel with
         | "advisor" -> Set.empty
         | "manager" -> manager
-        | "orchestrator" -> set [ Permission.Fork; Permission.Join; Permission.Horizon; Permission.Advisor ]
+        | "orchestrator" -> set [ Permission.Fork; Permission.Join; Permission.Horizon; Permission.Advisor; Permission.ResetScope ]
         | "engineer" ->
             set
                 [ Permission.Read; Permission.Write; Permission.Edit; Permission.Glob; Permission.Grep
                   Permission.Move; Permission.Remove; Permission.BashHoneypot; Permission.Fetch
-                  Permission.Fission; Permission.Advisor ]
+                  Permission.Fission; Permission.Advisor; Permission.ResetScope ]
         | "devops" ->
             set
                 [ Permission.Read; Permission.Write; Permission.Edit; Permission.Glob; Permission.Grep
                   Permission.Move; Permission.Remove; Permission.Exec; Permission.Join; Permission.Horizon
-                  Permission.Advisor ]
+                  Permission.Advisor; Permission.ResetScope ]
         // devops 委派调查，ask 只提问用户；两者不是同一项能力。
         | "plan" ->
-            set [ Permission.JsPlan; Permission.Ask; Permission.DevOpsConsultation; Permission.Review; Permission.Deliver ]
+            set [ Permission.JsPlan; Permission.Ask; Permission.DevOpsConsultation; Permission.Review; Permission.Deliver; Permission.ResetScope ]
         | _ -> Set.empty
 
     /// Manager 门禁：无在任者不授予任何能力；清理阻塞只留 Join + Finality；
@@ -152,6 +155,7 @@ module ToolSurface =
         | Permission.JsPlan -> [ "todowrite-for-plan" ]
         | Permission.Deliver -> [ "deliver" ]
         | Permission.Review -> [ "review" ]
+        | Permission.ResetScope -> [ "resetScope" ]
         | Permission.Read
         | Permission.Write
         | Permission.Edit

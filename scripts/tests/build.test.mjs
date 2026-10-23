@@ -32,7 +32,7 @@ function succeed(result) {
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
 }
 
-for (const name of ['lifecycle', 'eventstore', 'process', 'trace', 'session', 'delivery', 'degeneration', 'spool', 'pty', 'ablation', 'compression', 'sandbox', 'routing', 'projection', 'authority', 'permit', 'capacity', 'admission-queue', 'dispatch', 'borrowing', 'run-witness', 'git-porcelain', 'failure', 'attachment-lease', 'warm-start', 'handle-lifecycle', 'failure-budget', 'delegate-batch', 'fission-group', 'ordinal', 'bayes', 'advisor']) {
+for (const name of ['lifecycle', 'eventstore', 'process', 'trace', 'session', 'delivery', 'degeneration', 'spool', 'pty', 'ablation', 'sandbox', 'routing', 'projection', 'authority', 'permit', 'capacity', 'admission-queue', 'dispatch', 'borrowing', 'run-witness', 'git-porcelain', 'failure', 'attachment-lease', 'warm-start', 'handle-lifecycle', 'failure-budget', 'delegate-batch', 'fission-group', 'ordinal', 'bayes']) {
   test(`SPEC[build-001] ${name} compiles and runs its own tests without any sibling source`, { timeout: 90000 }, t => {
     const directory = fixture(t, [name])
     assert.deepEqual(readdirSync(path.join(directory, 'src')), [name])

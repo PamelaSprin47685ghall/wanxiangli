@@ -63,7 +63,6 @@ let private installSource =
         };
       }
       if (hostErr && hostErr.__jsAbandoned) g.__jsAbandoned = true;
-      if (hostErr && hostErr.__jsDelivered) g.__jsDelivered = wrap(hostErr.__jsDelivered);
       return g;
     }
     function looksLikeError(v) {
@@ -71,7 +70,7 @@ let private installSource =
         v &&
         typeof v === "object" &&
         typeof v.message === "string" &&
-        (typeof v.name === "string" || v.__jsFailure || v.__jsAbandoned || v.__jsDelivered)
+        (typeof v.name === "string" || v.__jsFailure || v.__jsAbandoned)
       );
     }
     function bridgeInstance(guestInst) {
@@ -235,9 +234,6 @@ let private installSource =
       "  }\n" +
       "  if (__e && __e.__jsAbandoned) {\n" +
       "    return JSON.stringify({ __jsAbandoned: true });\n" +
-      "  }\n" +
-      "  if (__e && __e.__jsDelivered) {\n" +
-      "    return JSON.stringify({ __jsDelivered: true, carry: __e.__jsDelivered.carry });\n" +
       "  }\n" +
       "  return JSON.stringify({ __jsProgramFailed: true, message: String((__e && __e.message) || __e) });\n" +
       "}\n" +

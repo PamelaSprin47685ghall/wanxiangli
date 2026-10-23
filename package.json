@@ -108,10 +108,6 @@
       "types": "./src/ablation/index.d.ts",
       "import": "./dist/ablation/Ablation.js"
     },
-    "./compression": {
-      "types": "./src/compression/index.d.ts",
-      "import": "./dist/compression/Compression.js"
-    },
     "./projection": {
       "types": "./src/projection/index.d.ts",
       "import": "./dist/projection/Projection.js"
@@ -196,10 +192,6 @@
       "types": "./src/warm-start/index.d.ts",
       "import": "./dist/warm-start/WarmStartLaw.js"
     },
-    "./advisor": {
-      "types": "./src/advisor/index.d.ts",
-      "import": "./dist/advisor/AdvisorLaw.js"
-    },
     "./handle-lifecycle": {
       "types": "./src/handle-lifecycle/index.d.ts",
       "import": "./dist/handle-lifecycle/HandleLifecycleLaw.js"
@@ -241,7 +233,6 @@
     "src/quarantine/index.d.ts",
     "src/pty/index.d.ts",
     "src/ablation/index.d.ts",
-    "src/compression/index.d.ts",
     "src/projection/index.d.ts",
     "src/capability/index.d.ts",
     "src/authority/index.d.ts",
@@ -260,7 +251,6 @@
     "src/ordinal/index.d.ts",
     "src/bayes/index.d.ts",
     "src/warm-start/index.d.ts",
-    "src/advisor/index.d.ts",
     "src/handle-lifecycle/index.d.ts",
     "src/delegate-batch/index.d.ts",
     "src/fission-group/index.d.ts",
@@ -276,7 +266,7 @@
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "npm run build && node --test src/lifecycle/tests/*.test.mjs src/eventstore/tests/*.test.mjs src/assembly/tests/*.test.mjs src/process/tests/*.test.mjs src/trace/tests/*.test.mjs src/session/tests/*.test.mjs src/resources/tests/*.test.mjs src/identity/tests/*.test.mjs src/events/tests/*.test.mjs src/fs/tests/*.test.mjs src/time/tests/*.test.mjs src/wait/tests/*.test.mjs src/prefix/tests/*.test.mjs src/delivery/tests/*.test.mjs src/degeneration/tests/*.test.mjs src/spool/tests/*.test.mjs src/convergence/tests/*.test.mjs src/retention/tests/*.test.mjs src/segments/tests/*.test.mjs src/casebook/tests/*.test.mjs src/casebook-maintenance/tests/*.test.mjs src/casebook-access/tests/*.test.mjs src/quarantine/tests/*.test.mjs src/pty/tests/*.test.mjs src/ablation/tests/*.test.mjs src/capability/tests/*.test.mjs src/authority/tests/*.test.mjs src/compression/tests/*.test.mjs src/projection/tests/*.test.mjs src/sandbox/tests/*.test.mjs src/routing/tests/*.test.mjs src/permit/tests/*.test.mjs src/capacity/tests/*.test.mjs src/admission-queue/tests/*.test.mjs src/dispatch/tests/*.test.mjs src/borrowing/tests/*.test.mjs src/chat-execution/tests/*.test.mjs src/association/tests/*.test.mjs src/programming/tests/*.test.mjs src/run-witness/tests/*.test.mjs src/git-porcelain/tests/*.test.mjs src/failure/tests/*.test.mjs src/failure-budget/tests/*.test.mjs src/attachment-lease/tests/*.test.mjs src/warm-start/tests/*.test.mjs src/handle-lifecycle/tests/*.test.mjs src/delegate-batch/tests/*.test.mjs src/ordinal/tests/*.test.mjs src/bayes/tests/*.test.mjs src/fission-group/tests/*.test.mjs src/advisor/tests/*.test.mjs scripts/tests/*.test.mjs",
+    "test": "npm run build && node --test src/lifecycle/tests/*.test.mjs src/eventstore/tests/*.test.mjs src/assembly/tests/*.test.mjs src/process/tests/*.test.mjs src/trace/tests/*.test.mjs src/session/tests/*.test.mjs src/resources/tests/*.test.mjs src/identity/tests/*.test.mjs src/events/tests/*.test.mjs src/fs/tests/*.test.mjs src/time/tests/*.test.mjs src/wait/tests/*.test.mjs src/prefix/tests/*.test.mjs src/delivery/tests/*.test.mjs src/degeneration/tests/*.test.mjs src/spool/tests/*.test.mjs src/convergence/tests/*.test.mjs src/retention/tests/*.test.mjs src/segments/tests/*.test.mjs src/casebook/tests/*.test.mjs src/casebook-maintenance/tests/*.test.mjs src/casebook-access/tests/*.test.mjs src/quarantine/tests/*.test.mjs src/pty/tests/*.test.mjs src/ablation/tests/*.test.mjs src/capability/tests/*.test.mjs src/authority/tests/*.test.mjs src/projection/tests/*.test.mjs src/sandbox/tests/*.test.mjs src/routing/tests/*.test.mjs src/permit/tests/*.test.mjs src/capacity/tests/*.test.mjs src/admission-queue/tests/*.test.mjs src/dispatch/tests/*.test.mjs src/borrowing/tests/*.test.mjs src/chat-execution/tests/*.test.mjs src/association/tests/*.test.mjs src/programming/tests/*.test.mjs src/run-witness/tests/*.test.mjs src/git-porcelain/tests/*.test.mjs src/failure/tests/*.test.mjs src/failure-budget/tests/*.test.mjs src/attachment-lease/tests/*.test.mjs src/warm-start/tests/*.test.mjs src/handle-lifecycle/tests/*.test.mjs src/delegate-batch/tests/*.test.mjs src/ordinal/tests/*.test.mjs src/bayes/tests/*.test.mjs src/fission-group/tests/*.test.mjs scripts/tests/*.test.mjs",
     "prepack": "npm run build"
   },
   "devDependencies": {

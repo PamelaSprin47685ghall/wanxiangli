@@ -10,11 +10,13 @@ module Generation =
     type Evidence =
         | Compaction of run: string
         | Tenure of incumbencyId: string
+        | Scope of callId: string
 
     type State =
         { Epoch: float
           CompactionRuns: Set<string>
-          Tenures: Set<string> }
+          Tenures: Set<string>
+          Scopes: Set<string> }
 
     /// 一条待写入的推进行。PreviousEpoch 是写入时认定的现行世代。
     type Candidate =
@@ -34,12 +36,14 @@ module Generation =
     let empty =
         { Epoch = 0.0
           CompactionRuns = Set.empty
-          Tenures = Set.empty }
+          Tenures = Set.empty
+          Scopes = Set.empty }
 
     let isReanchored (evidence: Evidence) (state: State) =
         match evidence with
         | Compaction run -> Set.contains run state.CompactionRuns
         | Tenure incumbency -> Set.contains incumbency state.Tenures
+        | Scope callId -> Set.contains callId state.Scopes
 
     /// 候选：证据尚未推进过时，提议从现行世代推进一代；否则没有候选。
     let propose (evidence: Evidence) (state: State) : Candidate option =
@@ -79,6 +83,11 @@ module Generation =
                     { state with
                         Epoch = candidate.NextEpoch
                         Tenures = Set.add incumbency state.Tenures }
+            | Scope callId ->
+                Ok
+                    { state with
+                        Epoch = candidate.NextEpoch
+                        Scopes = Set.add callId state.Scopes }
 
     /// 吸收策略：重放的行与重复的观察是预期的稳态，调用方什么都不写；
     /// 非后继世代是损坏，必须报告。

@@ -13,26 +13,37 @@ type Prefix() =
     static let stateOf (value: obj) : State =
         { Epoch = Wire.epoch value "epoch"
           CompactionRuns = Set.ofList (Wire.strings value "compactionRuns")
-          Tenures = Set.ofList (Wire.strings value "tenures") }
+          Tenures = Set.ofList (Wire.strings value "tenures")
+          Scopes =
+            if emitJsExpr value "'scopes' in Object($0)" then
+                Set.ofList (Wire.strings value "scopes")
+            else
+                Set.empty }
 
     static let stateView (state: State) : obj =
-        Wire.freeze (
+        let baseObj =
             createObj
                 [ "epoch" ==> state.Epoch
                   "compactionRuns" ==> Wire.stringArray state.CompactionRuns
                   "tenures" ==> Wire.stringArray state.Tenures ]
-        )
+        if Set.isEmpty state.Scopes then
+            Wire.freeze baseObj
+        else
+            baseObj?scopes <- Wire.stringArray state.Scopes
+            Wire.freeze baseObj
 
     static let evidenceOf (value: obj) : Evidence =
         match Wire.text value "kind" with
         | "compaction" -> Compaction(Wire.text value "run")
         | "tenure" -> Tenure(Wire.text value "incumbencyId")
+        | "scope" -> Scope(Wire.text value "callId")
         | other -> Wire.fail $"prefix: unknown evidence kind '%s{other}'"
 
     static let evidenceView (evidence: Evidence) : obj =
         match evidence with
         | Compaction run -> Wire.freeze (createObj [ "kind" ==> "compaction"; "run" ==> run ])
         | Tenure incumbency -> Wire.freeze (createObj [ "kind" ==> "tenure"; "incumbencyId" ==> incumbency ])
+        | Scope callId -> Wire.freeze (createObj [ "kind" ==> "scope"; "callId" ==> callId ])
 
     static let candidateOf (value: obj) : Candidate =
         { PreviousEpoch = Wire.lineEpoch value "previousEpoch"
@@ -92,12 +103,6 @@ type Prefix() =
         match Generation.commit (candidateOf candidate) (stateOf state) with
         | Ok next -> Wire.freeze (createObj [ "ok" ==> true; "state" ==> stateView next ])
         | Error rejection -> rejectionView rejection
-
-    /// 检查点窗口追加：同一调用身份重入不产生第二个检查点。返回新数组。
-    member _.appendCheckpoint(window: obj, callId: obj) : obj =
-        let current = Wire.strings (createObj [ "window" ==> window ]) "window"
-        let id = Wire.text (createObj [ "callId" ==> callId ]) "callId"
-        Wire.stringArray (Checkpoints.append id current)
 
     /// 同代追加律：{ append, breaks }。breaks 为空即 next 保留 previous 为精确前缀。
     member _.classify(previous: obj, next: obj) : obj =
