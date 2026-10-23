@@ -8,22 +8,26 @@ import { build } from 'esbuild'
 const root = fileURLToPath(new URL('..', import.meta.url))
 const source = path.join(root, 'src')
 const compiler = path.join(root, 'node_modules/@fable-org/fable-compiler-js/index.js')
-const projects = new Map()
-
-for (const directory of readdirSync(source, { withFileTypes: true })) {
-  if (!directory.isDirectory()) continue
-  const folder = path.join(source, directory.name)
-  const files = readdirSync(folder).filter(file => file.endsWith('.fsproj'))
-  if (files.length > 1) throw new Error(`One project is allowed per module: ${directory.name}`)
-  if (files.length === 1) projects.set(directory.name, path.join(folder, files[0]))
+function discoverProjects() {
+  const projects = new Map()
+  for (const directory of readdirSync(source, { withFileTypes: true })) {
+    if (!directory.isDirectory()) continue
+    const folder = path.join(source, directory.name)
+    const files = readdirSync(folder).filter(file => file.endsWith('.fsproj'))
+    if (files.length > 1) throw new Error(`One project is allowed per module: ${directory.name}`)
+    if (files.length === 1) projects.set(directory.name, path.join(folder, files[0]))
+  }
+  return projects
 }
+const projects = discoverProjects()
 
 const args = process.argv.slice(2)
 // 增量构建：模块输入（fsproj、其显式源文件、工具链版本、本脚本）未变且产物完好时跳过。
 // `--force` 或 WANXIANGLI_BUILD_FORCE=1 强制全部重编。
 const force = args.includes('--force') || /^(1|true|yes)$/i.test(process.env.WANXIANGLI_BUILD_FORCE ?? '')
 const selected = args.filter(arg => arg !== '--force')
-if (selected.length === 0) selected.push(...projects.keys())
+const allModules = selected.length === 0
+if (allModules) selected.push(...projects.keys())
 if (selected.length === 0) throw new Error('No implemented modules found')
 for (const name of selected) {
   if (!projects.has(name)) throw new Error(`Unknown module: ${name}`)
@@ -42,13 +46,16 @@ function packageVersion(name) {
   }
 }
 // 工具链指纹：编译器、Fable 运行库（被打包进产物）、esbuild、Node 主版本与构建脚本本身。
-const toolchain = sha256(JSON.stringify({
-  compiler: packageVersion('@fable-org/fable-compiler-js'),
-  fableLibrary: packageVersion('@fable-org/fable-library-js'),
-  esbuild: packageVersion('esbuild'),
-  node: process.versions.node.split('.')[0],
-  script: sha256(readFileSync(fileURLToPath(import.meta.url))),
-}))
+function toolchainKey() {
+  return sha256(JSON.stringify({
+    compiler: packageVersion('@fable-org/fable-compiler-js'),
+    fableLibrary: packageVersion('@fable-org/fable-library-js'),
+    esbuild: packageVersion('esbuild'),
+    node: process.versions.node.split('.')[0],
+    script: sha256(readFileSync(fileURLToPath(import.meta.url))),
+  }))
+}
+const toolchain = toolchainKey()
 
 function moduleKey(name, project, declaration, includes) {
   const hash = createHash('sha256')
@@ -109,22 +116,44 @@ function dropStamp(name) {
   rmSync(path.join(stamps, `${name}.json`), { force: true })
 }
 
-for (const name of selected) {
-  const project = projects.get(name)
+function moduleInputs(name, project) {
   const declaration = readFileSync(project, 'utf8')
-  if (/<ProjectReference\b|<Import\b/.test(declaration)) {
+  const xml = declaration.replace(/<!--[\s\S]*?-->/g, '')
+  if (/<ProjectReference\b|<Import\b/.test(xml)) {
     throw new Error(`Module ${name} must compile without other source projects`)
   }
-  const includes = [...declaration.matchAll(/<Compile\s+Include="([^"]+)"/g)].map(match => match[1])
+  // 与 Fable ProjectParser 一样读取属性，不依赖属性顺序、引号或等号两侧空白。
+  const includes = [...xml.matchAll(/<Compile\s+[^>]*Include\s*=\s*("[^"]*|'[^']*)/g)]
+    .map(match => match[1].slice(1).trim().replaceAll('\\', '/'))
   if (includes.length === 0) throw new Error(`No sources declared: ${name}`)
   for (const file of includes) {
     if (path.isAbsolute(file) || file.split(/[\\/]/).includes('..') || /[*?]/.test(file)) {
       throw new Error(`Source must be local and explicit: ${name}/${file}`)
     }
   }
+  return { name, project, includes, key: moduleKey(name, project, declaration, includes) }
+}
+
+function assertInputsUnchanged(input) {
+  let current
+  try {
+    current = moduleInputs(input.name, input.project)
+  } catch (cause) {
+    dropStamp(input.name)
+    throw new Error(`Inputs changed during build: ${input.name}; run the build again`, { cause })
+  }
+  if (current.key !== input.key) {
+    dropStamp(input.name)
+    throw new Error(`Inputs changed during build: ${input.name}; run the build again`)
+  }
+}
+
+const inputs = selected.map(name => moduleInputs(name, projects.get(name)))
+
+for (const input of inputs) {
+  const { name, project, includes, key } = input
   const temporary = path.join(root, '.build', `${name}-${process.pid}`)
   const target = path.join(root, 'dist', name)
-  const key = moduleKey(name, project, declaration, includes)
   if (!force && cached(name, key, target)) {
     console.log(`[build] ${name}: cached`)
     continue
@@ -156,6 +185,7 @@ for (const name of selected) {
       // 以临时目录为工作目录，产物里的模块路径注释不再带进程号，相同输入得到相同字节。
       absWorkingDir: temporary,
     })
+    assertInputsUnchanged(input)
     dropStamp(name)
     rmSync(target, { recursive: true, force: true })
     renameSync(bundle, target)
@@ -164,4 +194,16 @@ for (const name of selected) {
   } finally {
     rmSync(temporary, { recursive: true, force: true })
   }
+}
+
+if (toolchainKey() !== toolchain) {
+  for (const name of selected) dropStamp(name)
+  throw new Error('Inputs changed during build: toolchain; run the build again')
+}
+// 缓存命中的模块也必须复查，后续模块编译期间仍可能保存它们的源码。
+for (const input of inputs) assertInputsUnchanged(input)
+const finalProjects = discoverProjects()
+if ((allModules && finalProjects.size !== projects.size)
+  || selected.some(name => finalProjects.get(name) !== projects.get(name))) {
+  throw new Error('Inputs changed during build: module projects; run the build again')
 }

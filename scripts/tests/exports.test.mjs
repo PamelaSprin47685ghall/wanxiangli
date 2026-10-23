@@ -15,7 +15,9 @@ function implementedModules() {
     const folder = path.join(root, 'src', directory.name)
     const project = readdirSync(folder).find(file => file.endsWith('.fsproj'))
     if (!project) continue
-    const includes = [...readFileSync(path.join(folder, project), 'utf8').matchAll(/<Compile\s+Include="([^"]+)"/g)].map(match => match[1])
+    const xml = readFileSync(path.join(folder, project), 'utf8').replace(/<!--[\s\S]*?-->/g, '')
+    const includes = [...xml.matchAll(/<Compile\s+[^>]*Include\s*=\s*("[^"]*|'[^']*)/g)]
+      .map(match => match[1].slice(1).trim().replaceAll('\\', '/'))
     modules.set(directory.name, `./dist/${directory.name}/${path.basename(includes.at(-1), '.fs')}.js`)
   }
   return modules
