@@ -48,13 +48,14 @@ test('SPEC[lifecycle-004] duplicate, noncanonical and foreign histories are not 
 test('SPEC[lifecycle-004] a rejected successor cannot leave a half-retired object', () => {
   const rig = new Rig()
   rig.open({ openingCursor: 40 })
-  rig.review()
+  // An unreviewed Plan relays; a stayed review would block delivery, so stay
+  // unreviewed to exercise the relay path.
   const before = rig.work.inspect()
   assert.throws(() => rig.deliver({ nextOwnerId: 'x'.repeat(1025) }), /Identifier/)
   assert.deepEqual(rig.work.inspect(), before)
   assert.throws(() => rig.deliver({ cursor: 39 }), /backwards/)
   assert.deepEqual(rig.work.inspect(), before)
-  assert.equal(rig.count, 2)
+  assert.equal(rig.count, 1)
   assert.equal(rig.deliver({ cursor: 41 }).kind, 'Relayed')
 })
 
@@ -65,14 +66,15 @@ test('SPEC[lifecycle-004] input, response, history and recovery views never beco
   rig.openCommand.sequence[0] = 'S4'
   assert.notEqual(rig.work.inspect().root, rig.openCommand.root)
   assert.deepEqual(rig.work.inspect().sequence, ['S1', 'S2', 'S3'])
-  const command = { type: 'Review', incumbencyId: rig.work.inspect().active.id, reviewerId: 'reviewer', findings: ['fix'] }
+  const command = { type: 'Review', incumbencyId: rig.work.inspect().active.id, reviewerId: 'reviewer', updates: [{ key: 'gap', value: 'fix' }] }
   const result = rig.call(command, 'review')
-  command.findings.push('later input')
-  result.result.findings.push('later result')
+  command.updates.push({ key: 'gap2', value: 'later input' })
+  result.result.obligations.push({ key: 'gap2', value: 'later result' })
   result.result.outcome = 'Promoted'
-  const replay = rig.call({ ...command, findings: ['fix'] }, 'review')
-  assert.deepEqual(replay.result.findings, ['fix'])
+  const replay = rig.call({ ...command, updates: [{ key: 'gap', value: 'fix' }] }, 'review')
+  assert.deepEqual(replay.result.obligations, [{ key: 'gap', value: 'fix' }])
   assert.equal(replay.result.outcome, 'Stayed')
+  rig.review([{ key: 'gap', value: null }])
   rig.deliver()
   rig.work.recover().state.rounds[0].ownerId = 'changed round'
   assert.equal(rig.work.inspect().rounds[0].ownerId, 'manager')

@@ -86,7 +86,7 @@ if (mode === 'isolated') {
       assert.equal((await ready()).instance, lease.token)
       const binding = { externalId: String(begun.pid), incarnationId: lease.token }
       commit('started', { type: 'Started', lease, binding })
-      workCommit('review', { type: 'Review', incumbencyId: scope, reviewerId: 'reviewer', findings: [] })
+      workCommit('review', { type: 'Review', incumbencyId: scope, reviewerId: 'reviewer', updates: [] })
       // Single delivery: no pre-confirmation step. When blockers are present,
       // deliver returns Blocked and keeps the tenure active until settled.
       const delivery = { type: 'Deliver', incumbencyId: scope, providerRunId: 'run', cursor: 10, blockers: [] }

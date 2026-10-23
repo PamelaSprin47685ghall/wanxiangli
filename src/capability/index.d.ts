@@ -14,7 +14,6 @@ export type PermissionLabel =
 export interface ManagerFacts {
   hasActiveIncumbency: boolean
   hasAssessment: boolean
-  hasConfirmation: boolean
   isFinalIncumbent: boolean
   hasCleanupBlocker: boolean
 }

@@ -35,23 +35,22 @@ test('SPEC[capability-002] roles outside the matrix fail closed', () => {
 })
 
 const facts = (overrides = {}) => ({
-  hasActiveIncumbency: true, hasAssessment: false, hasConfirmation: false,
+  hasActiveIncumbency: true, hasAssessment: false,
   isFinalIncumbent: false, hasCleanupBlocker: false, ...overrides,
 })
 
 test('SPEC[capability-003] the manager gate reads exact lifecycle facts', () => {
   assert.deepEqual(capability.permissionsForManagerFacts(facts()), expected.manager)
   assert.deepEqual(capability.permissionsForManagerFacts(facts({ hasActiveIncumbency: false })), [])
-  // N-04: Confirmation no longer empties the tool surface; an active incumbent retains full manager capability.
-  assert.deepEqual(capability.permissionsForManagerFacts(facts({ hasConfirmation: true })), expected.manager)
   assert.deepEqual(capability.permissionsForManagerFacts(facts({ hasCleanupBlocker: true, isFinalIncumbent: true, hasAssessment: true })), ['Finality', 'Join'])
   assert.deepEqual(capability.permissionsForManagerFacts(facts({ isFinalIncumbent: true, hasAssessment: true })), capability.managerFinishPermissions())
-  // N-04: Granted read capability (Read/Glob/Grep) must not disappear because a review happened.
-  assert.deepEqual(capability.permissionsForManagerFacts(facts({ hasAssessment: true })), expected.manager)
-  assert.ok(capability.permissionsForManagerFacts(facts({ hasAssessment: true })).includes('Read'))
-  assert.ok(capability.permissionsForManagerFacts(facts({ hasAssessment: true })).includes('Glob'))
-  assert.ok(capability.permissionsForManagerFacts(facts({ hasAssessment: true })).includes('Grep'))
-  assert.deepEqual(capability.managerFinishPermissions(), ['Finality', 'Glob', 'Grep', 'Horizon', 'Join', 'Read'])
+  // After assessment, Read/Glob/Grep are revoked, while ReviewAssessment remains allowed to update the obligation ledger.
+  const reviewed = capability.permissionsForManagerFacts(facts({ hasAssessment: true }))
+  assert.equal(reviewed.includes('Read'), false)
+  assert.equal(reviewed.includes('Glob'), false)
+  assert.equal(reviewed.includes('Grep'), false)
+  assert.equal(reviewed.includes('ReviewAssessment'), true)
+  assert.deepEqual(capability.managerFinishPermissions(), ['Finality', 'Glob', 'Grep', 'Horizon', 'Join', 'Read', 'ReviewAssessment'])
 })
 
 test('SPEC[capability-003] malformed manager facts grant nothing', () => {

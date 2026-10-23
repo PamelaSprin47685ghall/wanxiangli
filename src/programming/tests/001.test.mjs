@@ -46,6 +46,17 @@ test('SPEC[programming-001] dag requires Join', () => {
   assert.deepEqual(law.membersFor(['Fork', 'Join'], 'Engineer').sort(), ['dag', 'fork', 'join'])
 })
 
+test('SPEC[programming-001] ReviewAssessment and Review project to Review capability and review member', () => {
+  assert.equal(law.projectPermission('ReviewAssessment'), 'Review')
+  assert.equal(law.projectPermission('Review'), 'Review')
+  assert.deepEqual(law.projectPermissions(['ReviewAssessment', 'Review']), ['Review'])
+  assert.deepEqual(law.membersFor(['Review'], 'Manager'), ['review'])
+  assert.deepEqual(law.membersFor(['Review'], 'Plan'), ['review'])
+  const managerSurface = law.projectRole('Manager', ['ReviewAssessment'])
+  assert.ok(managerSurface.members.includes('review'))
+  assert.ok(managerSurface.capabilities.includes('Review'))
+})
+
 test('SPEC[programming-001] empty / unknown labels fail closed', () => {
   assert.equal(law.admitsSurface([]), false)
   assert.equal(law.admitsSurface(['Pty', 'Deliver', 'Finality']), false)

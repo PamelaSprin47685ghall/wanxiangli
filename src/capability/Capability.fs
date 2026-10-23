@@ -31,7 +31,6 @@ type Capability() =
             Some
                 { HasActiveIncumbency = Wire.isTrue raw?hasActiveIncumbency
                   HasAssessment = Wire.isTrue raw?hasAssessment
-                  HasConfirmation = Wire.isTrue raw?hasConfirmation
                   IsFinalIncumbent = Wire.isTrue raw?isFinalIncumbent
                   HasCleanupBlocker = Wire.isTrue raw?hasCleanupBlocker }
 
@@ -50,7 +49,7 @@ type Capability() =
 
     member _.managerFinishPermissions(): string array = labels OfficeMatrix.managerFinish
 
-    /// Manager 事实门禁。facts = { hasActiveIncumbency, hasAssessment, hasConfirmation,
+    /// Manager 事实门禁。facts = { hasActiveIncumbency, hasAssessment,
     /// isFinalIncumbent, hasCleanupBlocker }，字段必须是布尔 true 才算成立；非对象一律空集。
     member _.permissionsForManagerFacts(facts: obj): string array =
         match factsOf facts with

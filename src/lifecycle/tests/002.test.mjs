@@ -6,17 +6,20 @@ test('SPEC[lifecycle-002] Plan advances through S1 S2 S3 without two-call confir
   const rig = new Rig()
   rig.authorizePlan()
   assert.equal(rig.work.inspect().stage, 'S3')
+  // Each promotion relays into a fresh tenure, so two promotion rounds retire.
   assert.equal(rig.work.inspect().rounds.length, 2)
   assert.equal(rig.eventTypes().includes('ConfirmationCommitted'), false)
-  assert.deepEqual(rig.work.inspect().rounds.map(round => [round.openingStage, round.closingStage]), [['S1', 'S2'], ['S2', 'S3']])
 })
 
 test('SPEC[lifecycle-002] a stayed Plan review does not advance or authorize delivery', () => {
   const rig = new Rig()
   rig.open()
-  rig.review(['The migration has no consumer test.'])
+  rig.review([{ key: 'consumer-test', value: 'The migration has no consumer test.' }])
   assert.equal(rig.work.inspect().stage, 'S1')
   assert.equal(rig.work.inspect().deliveryAuthorized, false)
+  // A non-empty ledger blocks delivery until the obligation is cleared.
+  assert.equal(rig.call(rig.delivery(), 'blocked-attempt').result.kind, 'Blocked')
+  rig.review([{ key: 'consumer-test', value: null }])
   assert.equal(rig.deliver().kind, 'Relayed')
   assert.equal(rig.work.inspect().active.openingStage, 'S1')
 })
@@ -44,15 +47,14 @@ test('SPEC[lifecycle-002] consecutive unreviewed Plan relays succeed because rev
 test('SPEC[lifecycle-002] S4 single delivery completes without confirmation ritual or review precondition', () => {
   const rig = new Rig(['S4'])
   rig.open()
-  // An unreviewed S4 can deliver directly without a review precondition.
-  // With no nextOwnerId, it completes the work in one call.
+  // An unreviewed S4 is not eligible, so it relays to a successor.
   const unreviewedRig = new Rig(['S4'])
   unreviewedRig.open()
-  const unreviewedDelivery = unreviewedRig.delivery({ toolCallId: 'unreviewed-complete', nextOwnerId: undefined })
-  assert.equal(unreviewedRig.apply(unreviewedDelivery).kind, 'Delivered')
-  assert.equal(unreviewedRig.work.inspect().active, null)
+  const unreviewedDelivery = unreviewedRig.delivery({ toolCallId: 'unreviewed-relay', nextOwnerId: 'manager' })
+  assert.equal(unreviewedRig.apply(unreviewedDelivery).kind, 'Relayed')
+  assert.notEqual(unreviewedRig.work.inspect().active, null)
 
-  // A reviewed S4 also completes in one call without a confirmation step.
+  // A reviewed (empty ledger) S4 is eligible and completes in one call.
   rig.review()
   assert.equal(rig.work.inspect().deliveryAuthorized, false)
   assert.equal(rig.deliver({ toolCallId: 'retirement' }).kind, 'Delivered')
@@ -66,7 +68,10 @@ test('SPEC[lifecycle-002] S4 single delivery completes without confirmation ritu
 test('SPEC[lifecycle-002] a stayed S4 review relays with auto-dispatch in a single delivery', () => {
   const rig = new Rig(['S4'])
   rig.open()
-  rig.review(['Still incomplete.'])
+  rig.review([{ key: 'incomplete', value: 'Still incomplete.' }])
+  // The stayed ledger blocks delivery; a later review clears the obligation and
+  // the eligibility stays locked as Stayed, so deliver relays a successor.
+  rig.review([{ key: 'incomplete', value: null }])
   const result = rig.deliver({ cursor: 70 })
   assert.equal(result.kind, 'Relayed')
   assert.equal(result.autoDispatch, true)
@@ -77,7 +82,8 @@ test('SPEC[lifecycle-002] a stayed S4 review relays with auto-dispatch in a sing
 test('SPEC[lifecycle-002] MUST-KEEP: a retired tenure cannot close the new one', () => {
   const rig = new Rig(['S4'])
   const first = rig.open()
-  rig.review(['First pass needs rework.'])
+  rig.review([{ key: 'rework', value: 'First pass needs rework.' }])
+  rig.review([{ key: 'rework', value: null }])
   // First tenure relays to a successor tenure.
   const relay = rig.deliver({ cursor: 10, nextOwnerId: 'manager' })
   const secondTenureId = rig.work.inspect().active.id
@@ -101,6 +107,7 @@ test('SPEC[lifecycle-002] MUST-KEEP: one active owner per work and active resour
   assert.equal(rig.work.inspect().active.ownerId, 'owner-a')
 
   // Active resource (blocker) cannot be reported as retired/completed.
+  rig.review([])
   const blocked = rig.deliver({ blockers: ['live-process-1', 'live-port-2'], nextOwnerId: undefined })
   assert.equal(blocked.kind, 'Blocked')
   // Tenure is still active and unchanged.

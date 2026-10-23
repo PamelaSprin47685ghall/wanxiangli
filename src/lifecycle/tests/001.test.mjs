@@ -22,14 +22,15 @@ test('SPEC[lifecycle-001] opening is one transaction with one first incumbent', 
 test('SPEC[lifecycle-001] relay atomically retires the old incumbent and opens its successor', () => {
   const rig = new Rig()
   const first = rig.open()
-  rig.review()
+  // An unreviewed Plan is not eligible: deliver relays to a successor at the
+  // same stage (no stage advance).
   const result = rig.deliver({ cursor: 97, nextOwnerId: 'successor' })
   const frame = rig.work.history().at(-1)
   assert.deepEqual(frame.events.map(event => event.type), ['IncumbencyRetired', 'IncumbencyOpened'])
   assert.equal(frame.events[0].incumbencyId, first.incumbencyId)
   assert.equal(frame.events[0].retirementCursor, 97)
   assert.equal(frame.events[1].openingCursor, 97)
-  assert.equal(frame.events[1].stage, 'S2')
+  assert.equal(frame.events[1].stage, 'S1')
   assert.equal(rig.work.inspect().active.id, result.successorId)
   assert.notEqual(result.successorId, first.incumbencyId)
   assert.equal(result.autoDispatch, false)
@@ -39,7 +40,8 @@ test('SPEC[lifecycle-001] relay atomically retires the old incumbent and opens i
 test('SPEC[lifecycle-001] an independent object restores data without any service', () => {
   const rig = new Rig()
   rig.open()
-  rig.review()
+  rig.review([{ key: 'gap', value: 'open' }])
+  rig.review([{ key: 'gap', value: null }])
   rig.deliver()
   const records = rig.work.records()
   const restored = new Work('work-a', records)
@@ -63,6 +65,6 @@ test('SPEC[lifecycle-001] an unopened work can be inspected but cannot be review
   const rig = new Rig()
   assert.equal(rig.work.recover().next, 'Open')
   assert.equal(rig.work.inspect().active, null)
-  assert.throws(() => rig.call({ type: 'Review', incumbencyId: 'absent', reviewerId: 'reviewer', findings: [] }), /No active/)
+  assert.throws(() => rig.call({ type: 'Review', incumbencyId: 'absent', reviewerId: 'reviewer', updates: [] }), /No active/)
   assert.equal(rig.count, 0)
 })

@@ -29,6 +29,8 @@ module internal Projection =
         | "Horizon" -> Some "Horizon"
         | "Advisor" -> Some "Advisor"
         | "Ask" -> Some "Ask"
+        | "ReviewAssessment"
+        | "Review" -> Some "Review"
         | _ -> None
 
     let expand (labels: string array) : Set<string> =
@@ -63,7 +65,8 @@ module internal Projection =
           "Fission", "fission", []
           "Horizon", "horizon", []
           "Advisor", "advisor", []
-          "Ask", "ask", [] ]
+          "Ask", "ask", []
+          "Review", "review", [] ]
 
     let isProjected (capabilities: Set<string>) (capability: string) (extra: string list) : bool =
         Set.contains capability capabilities

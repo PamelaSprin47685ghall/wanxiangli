@@ -16,13 +16,15 @@ for (const mode of ['local', 'durable']) {
     assert.equal(work.execute('open', open).status, fresh)
     const tenure = work.inspect().active.id
     const before = work.inspect()
-    assert.throws(() => work.execute('self-review', { type: 'Review', incumbencyId: tenure, reviewerId: 'owner', findings: [] }))
+    assert.throws(() => work.execute('self-review', { type: 'Review', incumbencyId: tenure, reviewerId: 'owner', updates: [] }))
     assert.deepEqual(work.inspect(), before)
-    const review = { type: 'Review', incumbencyId: tenure, reviewerId: 'other', findings: ['unfinished'] }
+    const review = { type: 'Review', incumbencyId: tenure, reviewerId: 'other', updates: [{ key: 'unfinished', value: 'unfinished' }] }
     assert.equal(work.execute('review', review).status, fresh)
     assert.equal(work.execute('review', review).status, 'Replayed')
-    // Single delivery: with nextOwnerId present and Stayed review, a single
-    // deliver call atomically relays to a successor tenure.
+    // A stayed review leaves a non-empty ledger, so clear it before relay.
+    work.execute('clear-review', { type: 'Review', incumbencyId: tenure, reviewerId: 'other', updates: [{ key: 'unfinished', value: null }] })
+    // Single delivery: eligibility stays locked as Stayed, so a single deliver
+    // call atomically relays to a successor tenure.
     const relay = { type: 'Deliver', incumbencyId: tenure, providerRunId: 'run', toolCallId: 'relay', cursor: 10, blockers: [], nextOwnerId: 'next' }
     const relayed = work.execute('relay', relay)
     assert.equal(relayed.status, fresh)
@@ -33,7 +35,7 @@ for (const mode of ['local', 'durable']) {
     assert.equal(work.execute('relay-replay', relay).result.kind, 'Relayed')
     const reconstructed = new Work('contract', work.records())
     assert.deepEqual(reconstructed.inspect(), work.inspect())
-    assert.equal(work.records().length, 3)
+    assert.equal(work.records().length, 4)
     const exposed = work.inspect()
     exposed.rounds[0].ownerId = 'outsider'
     assert.equal(work.inspect().rounds[0].ownerId, 'owner')

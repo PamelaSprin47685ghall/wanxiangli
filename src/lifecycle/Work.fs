@@ -41,12 +41,29 @@ module private Commands =
                 Write [ Fact.WorkOpened(workId, read "root", sequence, identity "authority-initial-v1" [ workId ])
                         Fact.IncumbencyOpened(workId, identity "first-incumbency-v1" [ workId ], id "ownerId", firstStage, cursor (get command "openingCursor")) ]
         | "Review" ->
-            exact [ "incumbencyId"; "reviewerId"; "findings" ] []
-            let findings = strings (get command "findings")
+            exact [ "incumbencyId"; "reviewerId"; "updates" ] []
+            let updates =
+                (get command "updates" |> unbox<obj array>)
+                |> Array.map (fun update ->
+                    { Key = text (get update "key")
+                      Value = optionalText update "value" })
+                |> Array.toList
             let tenure = state.RequireTenure(id "incumbencyId")
-            require tenure.Review.IsNone "Incumbency already reviewed"
             require (id "reviewerId" <> tenure.Owner) "An owner cannot review its own incumbency"
-            Write [ Fact.Reviewed(tenure.Id, { Stage = state.Stage; Promoted = Array.isEmpty findings }) ]
+            // First review fixes eligibility: an empty resulting ledger is the
+            // promotion eligibility, never the promotion itself. Later reviews
+            // keep the recorded eligibility and only apply keyed updates.
+            let promoted =
+                match tenure.Review with
+                | Some existing -> existing.Promoted
+                | None ->
+                    updates
+                    |> List.fold (fun acc update ->
+                        match update.Value with
+                        | None -> Map.remove update.Key acc
+                        | Some value -> Map.add update.Key value acc) Map.empty
+                    |> Map.isEmpty
+            Write [ Fact.Reviewed(tenure.Id, { Stage = state.Stage; Promoted = promoted }, updates) ]
         | "BindDevOps" ->
             exact [ "incumbencyId"; "trigger"; "devopsId"; "target" ] []
             state.RequireTenure(id "incumbencyId") |> ignore
@@ -87,31 +104,38 @@ module private Commands =
                 let tenure = state.RequireTenure tenureId
                 state.NoDelivery()
                 if not (Array.isEmpty reasons) then blocked tenureId reasons
-                elif state.Sequence = WorkSequence.Plan && state.Authorized then
-                    let selected = draft |> Option.defaultWith (fun () -> fail "Authorized delivery requires a draft")
-                    Write [ Fact.DeliveryRequested
-                                { Id = identity "delivery-operation-v1" [ workId; tenureId; state.Authority; requestId ]
-                                  Tenure = tenureId; Fence = fence; Cursor = observedCursor; Draft = selected } ]
+                elif not (Map.isEmpty tenure.Obligations) then
+                    Observe(Vocabulary.result "Blocked" [ "obligations", box (tenure.Obligations |> Map.toList |> List.map (fun (k, v) -> objectOf [ "key", box k; "value", box v ]) |> List.toArray) ])
                 else
-                    // One delivery intent is enough. Naming a successor hands the
-                    // work over; naming none completes it. Review is a recorded
-                    // collaboration fact, never a precondition for either: when
-                    // present, a promoted review completes and a stayed review
-                    // relays; when absent, the presence of a successor decides.
-                    let delivered =
-                        if state.Sequence = WorkSequence.Execution then
-                            match tenure.Review with
-                            | Some review -> review.Promoted
-                            | None -> nextOwner.IsNone
-                        else
-                            false
-                    let retirementCursor = if state.Sequence = WorkSequence.Plan then Some observedCursor else None
-                    let retired = retire workId state tenureId fence delivered retirementCursor None None None
-                    if delivered then Write [ Fact.IncumbencyRetired retired ]
+                    let eligible =
+                        tenure.Review |> Option.map (fun review -> review.Promoted) |> Option.defaultValue false
+                    // Deliver performs the promotion/completion. An eligible Plan
+                    // S1/S2 relays into a fresh tenure at the NEXT stage; S3 grants
+                    // delivery authority; an eligible S4 completes.
+                    if state.Sequence = WorkSequence.Plan && state.Authorized then
+                        let selected = draft |> Option.defaultWith (fun () -> fail "Authorized delivery requires a draft")
+                        Write [ Fact.DeliveryRequested
+                                    { Id = identity "delivery-operation-v1" [ workId; tenureId; state.Authority; requestId ]
+                                      Tenure = tenureId; Fence = fence; Cursor = observedCursor; Draft = selected } ]
+                    elif state.Sequence = WorkSequence.Plan && eligible && state.Stage = 2 then
+                        Write [ Fact.PlanAuthorized(tenureId) ]
                     else
-                        let owner = nextOwner |> Option.defaultWith (fun () -> fail "Relay requires nextOwnerId")
-                        Write [ Fact.IncumbencyRetired retired
-                                Fact.IncumbencyOpened(workId, identity "successor-incumbency-v1" [ retired.Id ], owner, state.Stage, observedCursor) ]
+                        let delivered =
+                            state.Sequence = WorkSequence.Execution
+                            && tenure.Review |> Option.map (fun review -> review.Promoted) |> Option.defaultValue false
+                        let retirementCursor = if state.Sequence = WorkSequence.Plan then Some observedCursor else None
+                        let retired = retire workId state tenureId fence delivered retirementCursor None None None
+                        if delivered then Write [ Fact.IncumbencyRetired retired ]
+                        else
+                            match nextOwner with
+                            | None -> Observe(Vocabulary.result "Blocked" [ "successor", box true ])
+                            | Some owner ->
+                                // An eligible Plan S1/S2 opens the successor at the
+                                // NEXT stage (promotion); everything else relays at
+                                // the same stage.
+                                let successorStage = if state.Sequence = WorkSequence.Plan && eligible && state.Stage < 2 then state.Stage + 1 else state.Stage
+                                Write [ Fact.IncumbencyRetired retired
+                                        Fact.IncumbencyOpened(workId, identity "successor-incumbency-v1" [ retired.Id ], owner, successorStage, observedCursor) ]
         | "ResolveDelivery" ->
             let outcome = read "outcome"
             let extra =
@@ -205,10 +229,10 @@ let Work (workId: string) (records: string array option): IWork =
     let response status revision result record reason =
         objectOf [ "status", box status; "revision", box revision; "result", result; "record", record; "reason", reason ]
 
-    let addFindings (command: obj) (result: obj) =
+    let addUpdates (command: obj) (result: obj) =
         let result = detached result
         if (unbox<string> (get command "type")) = "Review" && not (isNull result) then
-            result?findings <- detached (get command "findings")
+            result?updates <- detached (get command "updates")
         result
 
     let inspect () = guard (fun () -> detached (state.Snapshot()))
@@ -228,14 +252,14 @@ let Work (workId: string) (records: string array option): IWork =
             match state.TryReceipt requestId with
             | Some receipt ->
                 if receipt.Hash = hash then
-                    response "Replayed" state.Revision (addFindings command (state.Replay receipt)) (null: obj) (null: obj)
+                    response "Replayed" state.Revision (addUpdates command (state.Replay receipt)) (null: obj) (null: obj)
                 else
                     // 同一 requestId 的异载荷是可预见的冲突：返回结构化结果，不写、不抛。
                     response "Conflict" state.Revision (null: obj) (null: obj) (box "RequestIdConflict")
             | None ->
                 match Commands.decide workId requestId state command with
                 | Refuse reason -> response "Conflict" state.Revision (null: obj) (null: obj) (box reason)
-                | Observe result -> response "Observed" state.Revision (addFindings command result) (null: obj) (null: obj)
+                | Observe result -> response "Observed" state.Revision (addUpdates command result) (null: obj) (null: obj)
                 | Write facts ->
                     // 事务在私有候选上完成；任何验证失败都不改变当前个体。
                     let candidate = rebuild saved
@@ -244,7 +268,7 @@ let Work (workId: string) (records: string array option): IWork =
                     let body = canonical (objectOf [ "requestId", box requestId; "requestHash", box hash; "events", box (facts |> List.map FactCodec.encode |> List.toArray) ])
                     let operation = facts |> List.tryPick (function Fact.DeliveryRequested delivery -> Some delivery.Id | _ -> None)
                     candidate.Remember(requestId, hash, result, operation)
-                    let reply = response "Applied" candidate.Revision (addFindings command result) (box body) (null: obj)
+                    let reply = response "Applied" candidate.Revision (addUpdates command result) (box body) (null: obj)
                     let next = Array.append saved [| body |]
                     saved <- next
                     state <- candidate

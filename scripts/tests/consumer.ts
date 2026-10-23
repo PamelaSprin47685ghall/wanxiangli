@@ -37,7 +37,7 @@ const work = new DurableWork('typed-work', journal)
 const response = work.execute('request', command)
 if (response.status === 'Committed' && response.result.kind === 'Opened') {
   const tenure: string = response.result.incumbencyId
-  work.execute('review', { type: 'Review', incumbencyId: tenure, reviewerId: 'reviewer', findings: [] })
+  work.execute('review', { type: 'Review', incumbencyId: tenure, reviewerId: 'reviewer', updates: [] })
 }
 const recovery = work.recover()
 if (recovery.next !== 'ObserveCommit') {
@@ -55,6 +55,6 @@ work.execute('invalid', { type: 'suicide' })
 // @ts-expect-error A plan cannot contain an arbitrary sequence.
 local.execute('invalid', { type: 'Open', root: 'root', sequence: ['S1'], ownerId: 'manager', openingCursor: 0 })
 // @ts-expect-error Findings must be text, not unchecked objects.
-work.execute('invalid', { type: 'Review', incumbencyId: 'tenure', reviewerId: 'reviewer', findings: [{}] })
+work.execute('invalid', { type: 'Review', incumbencyId: 'tenure', reviewerId: 'reviewer', updates: [{}] })
 // @ts-expect-error The composition needs atomic append, not read alone.
 new DurableWork('invalid', { read: () => [] })

@@ -9,7 +9,10 @@ test('SPEC[lifecycle-006] DevOps binding is stable across relay and cannot be re
   assert.throws(() => rig.call({ ...bind, trigger: 'Resume' }), /trigger/)
   rig.apply(bind)
   assert.equal(rig.work.inspect().canDispatchDevOps, false)
-  rig.review()
+  // A stayed first review then a clearing review leaves eligibility locked as
+  // Stayed, so deliver relays to a successor instead of promoting in place.
+  rig.review([{ key: 'devops-gap', value: 'open' }])
+  rig.review([{ key: 'devops-gap', value: null }])
   assert.equal(rig.work.inspect().canDispatchDevOps, true)
   rig.deliver()
   assert.equal(rig.work.inspect().devopsId, 'devops')
@@ -90,7 +93,8 @@ test('SPEC[lifecycle-006] a delivered S4 tenure hands off to its own next tenure
 test('SPEC[lifecycle-006] an S4 hand-off is refused while a tenure is open, with zero writes', () => {
   const rig = new Rig(['S4'])
   rig.open()
-  rig.review(['the gap is still open'])
+  rig.review([{ key: 'gap', value: 'the gap is still open' }])
+  rig.review([{ key: 'gap', value: null }])
   const relayed = rig.deliver()
   assert.equal(relayed.kind, 'Relayed')
   const openTenure = rig.work.inspect().active.id
@@ -108,12 +112,13 @@ test('SPEC[lifecycle-006] an S4 hand-off is refused while a tenure is open, with
 test('SPEC[lifecycle-006] retirement blockers are recorded observations, not dirty-workspace policy', () => {
   const rig = new Rig(['S4'])
   rig.open()
-  rig.review(['Tests failed and the workspace is dirty.'])
+  rig.review([{ key: 'tests', value: 'Tests failed and the workspace is dirty.' }])
   const first = rig.deliver({ blockers: ['process', 'child', 'process'] })
   const second = rig.deliver({ blockers: ['child', 'process'] })
   assert.equal(first.kind, 'Blocked')
   assert.equal(first.blockerDigest, second.blockerDigest)
   assert.equal(rig.work.inspect().rounds.length, 0)
+  rig.review([{ key: 'tests', value: null }])
   assert.equal(rig.deliver({ blockers: [] }).kind, 'Relayed')
 })
 

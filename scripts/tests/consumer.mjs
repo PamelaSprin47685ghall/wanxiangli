@@ -42,8 +42,10 @@ function dispatch(reply, execSessionId) {
 if (mode === 'start') {
   commit('open', { type: 'Open', root: '真实 npm 消费者', sequence: ['S1', 'S2', 'S3'], ownerId: 'manager', openingCursor: 0 })
   for (let stage = 1; stage <= 3; stage++) {
-    commit(`review-${stage}`, { type: 'Review', incumbencyId: work.inspect().active.id, reviewerId: 'reviewer', findings: [] })
-    if (stage < 3) commit(`relay-${stage}`, { type: 'Deliver', incumbencyId: work.inspect().active.id, providerRunId: 'run', toolCallId: `relay-call-${stage}`, cursor: stage * 10, blockers: [], nextOwnerId: 'manager' })
+    commit(`review-${stage}`, { type: 'Review', incumbencyId: work.inspect().active.id, reviewerId: 'reviewer', updates: [] })
+    // Deliver performs the promotion: S1→S2 and S2→S3 promote in place, and
+    // the S3 deliver grants delivery authority.
+    commit(`deliver-${stage}`, { type: 'Deliver', incumbencyId: work.inspect().active.id, providerRunId: 'run', toolCallId: `deliver-call-${stage}`, cursor: stage * 10, blockers: [], nextOwnerId: 'manager' })
   }
   const command = { type: 'Deliver', incumbencyId: work.inspect().active.id, providerRunId: 'run', toolCallId: 'delivery-call', cursor: 100, blockers: [], draft: { digest: 'approved-digest', path: '/approved-plan' } }
   const reply = work.execute('reserve', command)

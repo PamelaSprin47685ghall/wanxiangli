@@ -3,7 +3,7 @@ export type Stage = 'S1' | 'S2' | 'S3' | 'S4';
 export interface Draft { digest: string; path: string }
 export type Command =
   | { type: 'Open'; root: string; sequence: Sequence; ownerId: string; openingCursor: number }
-  | { type: 'Review'; incumbencyId: string; reviewerId: string; findings: readonly string[] }
+  | { type: 'Review'; incumbencyId: string; reviewerId: string; updates: readonly { key: string; value: string | null }[] }
   | { type: 'BindDevOps'; incumbencyId: string; trigger: 'Ask' | 'Resume' | 'Horizon'; devopsId: string; target: string | null }
   | { type: 'Advance'; incumbencyId: string; expected: string; next: string }
   | { type: 'Reopen'; retirementId: string; ownerId: string; openingCursor: number; blockers: readonly string[] }
@@ -13,8 +13,8 @@ export type Command =
   | { type: 'ResolveDelivery'; operationId: string; outcome: 'NotStarted'; reason: string }
   | { type: 'ResolveDelivery'; operationId: string; outcome: 'Unknown' };
 export type Decision =
-  | { kind: 'Opened' | 'Reopened' | 'Confirmed'; incumbencyId: string }
-  | { kind: 'Reviewed'; outcome: 'Promoted' | 'Stayed'; stage: Stage; findings: string[] }
+  | { kind: 'Opened' | 'Reopened'; incumbencyId: string }
+  | { kind: 'Reviewed'; outcome: 'Promoted' | 'Stayed'; stage: Stage; firstReview: boolean; obligations: { key: string; value: string }[] }
   | { kind: 'DevOpsBound'; devopsId: string }
   | { kind: 'Advanced'; authority: string }
   | { kind: 'Blocked'; blockerDigest: string }
@@ -23,6 +23,8 @@ export type Decision =
   | { kind: 'ExecutionSessionBound'; operationId: string; execSessionId: string; digest: string; path: string }
   | { kind: 'ExecutionRejected'; operationId: string; reason: string }
   | { kind: 'Delivered'; retirementId: string; incumbencyId: string }
+  | { kind: 'Promoted'; stage: Stage; retirementId: string; incumbencyId: string; successorId: string }
+  | { kind: 'Authorized'; incumbencyId: string }
   | { kind: 'Relayed'; retirementId: string; incumbencyId: string; successorId: string; autoDispatch: boolean };
 export type ExecutionResult =
   | { status: 'Applied'; revision: number; result: Decision; record: string; reason: null }
@@ -36,6 +38,7 @@ export interface Round {
   readonly openingCursor: number;
   readonly retirementCursor: number | null;
   readonly reviewOutcome: 'Promoted' | 'Stayed' | null;
+  readonly obligations: { key: string; value: string }[];
   readonly outcome: 'Relayed' | 'Delivered';
   readonly retirementId: string;
 }
@@ -54,7 +57,7 @@ export interface Snapshot {
     readonly openingStage: Stage;
     readonly openingCursor: number;
     readonly reviewOutcome: 'Promoted' | 'Stayed' | null;
-    readonly confirmed: boolean;
+    readonly obligations: { key: string; value: string }[];
   };
   readonly devopsId: string | null;
   readonly canWriteSource: boolean;

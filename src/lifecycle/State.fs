@@ -9,6 +9,9 @@ type internal WorkSequence = Plan | Execution
 type internal Fence = { Run: string; Call: string }
 type internal Draft = { Digest: string; Path: string }
 type internal Review = { Stage: int; Promoted: bool }
+/// One keyed ledger update from a review: the value replaces (or, when None,
+/// deletes) the obligation named by the key.
+type internal LedgerUpdate = { Key: string; Value: string option }
 type internal Delivery = { Id: string; Tenure: string; Fence: Fence; Cursor: float; Draft: Draft }
 type internal Retirement =
     { Id: string
@@ -25,9 +28,9 @@ type internal Retirement =
 type internal Fact =
     | WorkOpened of workId: string * root: string * sequence: WorkSequence * authority: string
     | IncumbencyOpened of workId: string * id: string * owner: string * stage: int * cursor: float
-    | Reviewed of tenure: string * review: Review
-    | ConfirmationCommitted of tenure: string * fence: Fence
+    | Reviewed of tenure: string * review: Review * updates: LedgerUpdate list
     | IncumbencyRetired of Retirement
+    | PlanAuthorized of tenure: string
     | DevOpsBound of id: string * target: string option
     | AdvanceCommitted of tenure: string * expected: string * next: string
     | Reopened of retirementId: string
@@ -74,10 +77,9 @@ module internal FactCodec =
             make "WorkOpened" [ "workId", box workId; "root", box root; "sequence", box (Vocabulary.sequence sequence); "authorityInitial", box authority ]
         | Fact.IncumbencyOpened(workId, id, owner, stage, cursor) ->
             make "IncumbencyOpened" [ "workId", box workId; "incumbencyId", box id; "ownerId", box owner; "stage", box (Vocabulary.stage stage); "openingCursor", box cursor ]
-        | Fact.Reviewed(tenure, review) ->
-            make "Reviewed" [ "incumbencyId", box tenure; "stage", box (Vocabulary.stage review.Stage); "outcome", box (Vocabulary.outcome review.Promoted) ]
-        | Fact.ConfirmationCommitted(tenure, fence) ->
-            make "ConfirmationCommitted" (("incumbencyId", box tenure) :: fenceFields fence)
+        | Fact.Reviewed(tenure, review, updates) ->
+            make "Reviewed" [ "incumbencyId", box tenure; "stage", box (Vocabulary.stage review.Stage); "outcome", box (Vocabulary.outcome review.Promoted)
+                              "updates", box (updates |> List.map (fun update -> objectOf [ "key", box update.Key; "value", nullable update.Value ]) |> List.toArray) ]
         | Fact.IncumbencyRetired retired ->
             let common =
                 [ "retirementId", box retired.Id; "incumbencyId", box retired.Tenure
@@ -93,6 +95,8 @@ module internal FactCodec =
                 | None, None, None -> []
                 | _ -> fail "Incomplete execution receipt"
             make "IncumbencyRetired" (common @ physical @ execution)
+        | Fact.PlanAuthorized tenure ->
+            make "PlanAuthorized" [ "incumbencyId", box tenure ]
         | Fact.DevOpsBound(id, target) -> make "DevOpsBound" [ "devopsId", box id; "target", nullable target ]
         | Fact.AdvanceCommitted(tenure, expected, next) ->
             make "AdvanceCommitted" [ "incumbencyId", box tenure; "expected", box expected; "next", box next ]
@@ -118,11 +122,14 @@ module internal FactCodec =
             exact [ "workId"; "incumbencyId"; "ownerId"; "stage"; "openingCursor" ]
             Fact.IncumbencyOpened(id "workId", id "incumbencyId", id "ownerId", Vocabulary.readStage (get value "stage"), cursor (get value "openingCursor"))
         | "Reviewed" ->
-            exact [ "incumbencyId"; "stage"; "outcome" ]
-            Fact.Reviewed(id "incumbencyId", { Stage = Vocabulary.readStage (get value "stage"); Promoted = Vocabulary.readChoice "Promoted" "Stayed" (get value "outcome") })
-        | "ConfirmationCommitted" ->
-            exact [ "incumbencyId"; "providerRunId"; "toolCallId" ]
-            Fact.ConfirmationCommitted(id "incumbencyId", Vocabulary.fence value)
+            exact [ "incumbencyId"; "stage"; "outcome"; "updates" ]
+            let updates =
+                (get value "updates" |> unbox<obj array>)
+                |> Array.map (fun update ->
+                    { Key = text (get update "key")
+                      Value = optionalText update "value" })
+                |> Array.toList
+            Fact.Reviewed(id "incumbencyId", { Stage = Vocabulary.readStage (get value "stage"); Promoted = Vocabulary.readChoice "Promoted" "Stayed" (get value "outcome") }, updates)
         | "IncumbencyRetired" ->
             let physicalFields, fence, retirementCursor =
                 if has value "projectionCut" then
@@ -139,6 +146,9 @@ module internal FactCodec =
             Fact.IncumbencyRetired
                 { Id = id "retirementId"; Tenure = id "incumbencyId"; Delivered = Vocabulary.readChoice "Delivered" "Relayed" (get value "outcome")
                   Fence = fence; Expected = id "expectedAdvance"; Cursor = retirementCursor; Operation = operation; Session = session; Draft = draft }
+        | "PlanAuthorized" ->
+            exact [ "incumbencyId" ]
+            Fact.PlanAuthorized(id "incumbencyId")
         | "DevOpsBound" ->
             exact [ "devopsId"; "target" ]
             Fact.DevOpsBound(id "devopsId", optionalText value "target")
@@ -162,16 +172,17 @@ type internal Tenure(id: string, owner: string, openingStage: int, openingCursor
     member _.OpeningStage = openingStage
     member _.OpeningCursor = openingCursor
     member val Review: Review option = None with get, set
-    member val Confirmation: Fence option = None with get, set
+    /// The keyed obligation ledger of this tenure: key -> value, updated item
+    /// by item. Only the first review fixes promotion eligibility; later
+    /// reviews apply keyed updates (a null value deletes the key).
+    member val Obligations: Map<string, string> = Map.empty with get, set
 
 type internal Receipt = { Hash: string; Result: obj; Operation: string option }
 
 /// Which durable fact owns a recorded tool-call fence. The replay refusal keeps
-/// the owner: only the two-stage first call's confirmation names the
-/// confirmation conflict; a retirement or a delivery operation names the
-/// retirement replay conflict.
+/// the owner: a retirement or a delivery operation names the retirement replay
+/// conflict.
 type internal FenceOwner =
-    | Confirmation
     | Retirement
     | Delivery
 
@@ -223,7 +234,6 @@ type internal WorkState(workId: string) =
 
     let fenceConflict owner =
         match owner with
-        | FenceOwner.Confirmation -> "RetirementConfirmationReplayConflict"
         | FenceOwner.Retirement
         | FenceOwner.Delivery -> "RetirementReplayConflict"
 
@@ -268,6 +278,7 @@ type internal WorkState(workId: string) =
               "openingStage", box (Vocabulary.stage tenure.OpeningStage); "closingStage", box (Vocabulary.stage stage)
               "openingCursor", box tenure.OpeningCursor; "retirementCursor", nullableCursor retired.Cursor
               "reviewOutcome", nullable (tenure.Review |> Option.map (fun review -> Vocabulary.outcome review.Promoted))
+              "obligations", box (tenure.Obligations |> Map.toList |> List.map (fun (k, v) -> objectOf [ "key", box k; "value", box v ]) |> List.toArray)
               "outcome", box (Vocabulary.ending retired.Delivered); "retirementId", box retired.Id ])
         active <- None
         pending <- None
@@ -331,36 +342,53 @@ type internal WorkState(workId: string) =
             Vocabulary.result "Opened" [ "incumbencyId", box tenureId ]
         | [ Fact.IncumbencyRetired retired; Fact.IncumbencyOpened(id, tenureId, owner, openingStage, openingCursor) ] ->
             require (not retired.Delivered && id = workId) "Successor must follow a relay"
-            require (tenureId = identity "successor-incumbency-v1" [ retired.Id ] && openingStage = stage) "Successor identity or stage mismatch"
+            // A Plan successor at the NEXT stage is a promotion (fresh tenure,
+            // fresh first-review eligibility); the same stage is a plain relay.
+            let promoted = sequence = WorkSequence.Plan && openingStage = stage + 1
+            require ((openingStage = stage) || promoted) "Successor stage mismatch"
+            require (tenureId = identity "successor-incumbency-v1" [ retired.Id ]) "Successor identity mismatch"
             require (openingCursor >= (current ()).OpeningCursor && openingCursor >= lastCursor) "Successor cursor moved backwards"
             if sequence = WorkSequence.Plan then require (retired.Cursor = Some openingCursor) "Plan successor cursor differs from retirement"
             let result = retire retired
             lastCursor <- openingCursor
+            if promoted then stage <- stage + 1
             active <- Some(Tenure(tenureId, owner, stage, openingCursor))
-            let response = objectOf [ "kind", box "Relayed"; "retirementId", get result "retirementId"; "incumbencyId", box retired.Tenure; "successorId", box tenureId; "autoDispatch", box (sequence = WorkSequence.Execution) ]
+            let response =
+                if promoted then
+                    objectOf [ "kind", box "Promoted"; "stage", box (Vocabulary.stage stage); "retirementId", get result "retirementId"; "incumbencyId", box retired.Tenure; "successorId", box tenureId ]
+                else
+                    objectOf [ "kind", box "Relayed"; "retirementId", get result "retirementId"; "incumbencyId", box retired.Tenure; "successorId", box tenureId; "autoDispatch", box (sequence = WorkSequence.Execution) ]
             fences[retired.Fence.Call] <- { Run = retired.Fence.Run; Owner = FenceOwner.Retirement; Result = response }
             response
         | [ Fact.IncumbencyRetired retired ] ->
             require retired.Delivered "Relay is missing its successor"
             retire retired
-        | [ Fact.Reviewed(id, review) ] ->
+        | [ Fact.PlanAuthorized(id) ] ->
             noDelivery ()
             let tenure = requireTenure id
-            require tenure.Review.IsNone "Incumbency already reviewed"
+            require (sequence = WorkSequence.Plan && stage = 2) "Only S3 can be authorized"
+            authorized <- true
+            Vocabulary.result "Authorized" [ "incumbencyId", box tenure.Id ]
+        | [ Fact.Reviewed(id, review, updates) ] ->
+            noDelivery ()
+            let tenure = requireTenure id
             require (review.Stage = stage) "Review stage mismatch"
-            tenure.Review <- Some review
-            if sequence = WorkSequence.Plan && review.Promoted then
-                if stage < 2 then stage <- stage + 1
-                else authorized <- true
-            Vocabulary.result "Reviewed" [ "outcome", box (Vocabulary.outcome review.Promoted); "stage", box (Vocabulary.stage stage) ]
-        | [ Fact.ConfirmationCommitted(id, fence) ] ->
-            noDelivery ()
-            let tenure = requireTenure id
-            require (sequence = WorkSequence.Execution && tenure.Review.IsSome && tenure.Confirmation.IsNone) "Confirmation requires an unconfirmed reviewed S4 incumbency"
-            tenure.Confirmation <- Some fence
-            let result = Vocabulary.result "Confirmed" [ "incumbencyId", box id ]
-            rememberFence FenceOwner.Confirmation fence result false
-            result
+            // Keyed, item-by-item ledger updates: an existing key is replaced, a
+            // missing key is added, and a null value deletes the key.
+            let obligations =
+                updates
+                |> List.fold (fun acc update ->
+                    match update.Value with
+                    | None -> Map.remove update.Key acc
+                    | Some value -> Map.add update.Key value acc) tenure.Obligations
+            // Only the first review fixes promotion eligibility. The kernel does
+            // NOT advance the stage here: deliver performs the promotion. Later
+            // reviews apply keyed updates without touching eligibility.
+            let firstReview = tenure.Review.IsNone
+            if firstReview then
+                tenure.Review <- Some review
+            tenure.Obligations <- obligations
+            Vocabulary.result "Reviewed" [ "outcome", box (Vocabulary.outcome review.Promoted); "stage", box (Vocabulary.stage stage); "firstReview", box firstReview; "obligations", box (obligations |> Map.toList |> List.map (fun (k, v) -> objectOf [ "key", box k; "value", box v ]) |> List.toArray) ]
         | [ Fact.DevOpsBound(id, target) ] ->
             current () |> ignore
             noDelivery ()
@@ -436,7 +464,7 @@ type internal WorkState(workId: string) =
             active |> Option.map (fun tenure ->
                 objectOf [ "id", box tenure.Id; "ownerId", box tenure.Owner; "openingStage", box (Vocabulary.stage tenure.OpeningStage); "openingCursor", box tenure.OpeningCursor
                            "reviewOutcome", nullable (tenure.Review |> Option.map (fun review -> Vocabulary.outcome review.Promoted))
-                           "confirmed", box tenure.Confirmation.IsSome ]) |> Option.defaultValue null
+                           "obligations", box (tenure.Obligations |> Map.toList |> List.map (fun (k, v) -> objectOf [ "key", box k; "value", box v ]) |> List.toArray) ]) |> Option.defaultValue null
         let canWrite = active |> Option.exists (fun tenure -> tenure.Review.IsSome && pending.IsNone)
         objectOf [ "workId", box workId; "opened", box opened; "root", (if opened then box root else null)
                    "sequence", (if opened then box (Vocabulary.sequence sequence) else null)
@@ -452,5 +480,6 @@ type internal WorkState(workId: string) =
             | Some _, _ -> "ObserveExecution"
             | None, None -> if opened then "Done" else "Open"
             | None, Some tenure when tenure.Review.IsNone -> "Review"
+            | None, Some tenure when not (Map.isEmpty tenure.Obligations) -> "Review"
             | _ -> "Continue"
         objectOf [ "next", box next; "state", this.Snapshot() ]

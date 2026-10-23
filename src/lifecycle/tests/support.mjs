@@ -27,8 +27,8 @@ export class Rig {
     this.openCommand = { type: 'Open', root: '用户的工作 🧭\n第二行', sequence: this.sequence, ownerId: 'manager', openingCursor: 0, ...overrides }
     return this.apply(this.openCommand, 'open')
   }
-  review(findings = [], overrides = {}) {
-    return this.apply({ type: 'Review', incumbencyId: this.work.inspect().active.id, reviewerId: 'reviewer', findings, ...overrides })
+  review(updates = [], overrides = {}) {
+    return this.apply({ type: 'Review', incumbencyId: this.work.inspect().active.id, reviewerId: 'reviewer', updates, ...overrides })
   }
   delivery(overrides = {}) {
     const state = this.work.inspect()
@@ -43,7 +43,7 @@ export class Rig {
     this.open()
     for (let index = 0; index < 3; index++) {
       this.review()
-      if (index < 2) this.deliver()
+      this.deliver()
     }
     assert.equal(this.work.inspect().deliveryAuthorized, true)
   }

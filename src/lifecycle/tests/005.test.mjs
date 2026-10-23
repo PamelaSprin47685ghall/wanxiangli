@@ -98,6 +98,8 @@ test('SPEC[lifecycle-005] a late accepted receipt is idempotent and cannot settl
   const cursor = rig.work.history().at(-1).events[0].retirementCursor
   rig.apply({ type: 'Reopen', retirementId: retired.retirementId, ownerId: 'manager', openingCursor: cursor + 1, blockers: [] })
   rig.review()
+  // Deliver authorizes the reopened S3 tenure first, then a drafted deliver reserves.
+  assert.equal(rig.deliver().kind, 'Authorized')
   const next = rig.deliver({ draft: { digest: 'next-draft', path: '/next-plan' } })
   const count = rig.count
   assert.equal(rig.call(rig.accepted(operationId), 'late-accepted').result.retirementId, retired.retirementId)
