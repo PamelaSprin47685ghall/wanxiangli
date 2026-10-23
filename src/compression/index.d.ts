@@ -1,7 +1,9 @@
 export type Carry = readonly (number | string)[]
 
 export interface AnchorView {
+  /** Exclusive position in visible history: preserve its first N entries. Not an anchor ID. */
   readonly prefixUntil: number
+  /** Render in order after the preserved prefix; numbers reference anchors and strings are literals. */
   readonly carry: Carry
 }
 
@@ -35,6 +37,7 @@ export interface CheckpointSettlementMessages {
 }
 
 export interface CompressionMessages {
+  /** Validates shape; the Host must additionally reject prefixUntil greater than its visible history length. */
   parseView(value: unknown): ParsedView
   parseCarry(value: unknown): ParsedCarry
   checkpoints(): CheckpointSettlementMessages

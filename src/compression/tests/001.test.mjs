@@ -4,7 +4,7 @@ import { Compression } from './support.mjs'
 
 const law = Compression()
 
-test('SPEC[compression-001] compression requires a prefix until cutoff and an ordered carry array', () => {
+test('SPEC[compression-001] compression requires an exclusive prefix position and an ordered carry array', () => {
   const view = { prefixUntil: 2, carry: [7, 'new summary', 3, 0] }
   assert.deepEqual(law.parseView(view), { ok: true, view })
   assert.deepEqual(law.parseView({ prefixUntil: 0, carry: [] }), {
@@ -16,6 +16,8 @@ test('SPEC[compression-001] incomplete, retired and extra fields are refused', (
   for (const value of [
     null, [], {}, { prefixUntil: 0 }, { carry: [] },
     { prefixCount: 0, carry: [] },
+    { prefixUntil: 0, prefixCount: 0, carry: [] },
+    { prefixUntil: 0, thenMap: {}, carry: [] },
     { prefixUntil: 0, carry: [], extra: true },
     { prefixUntil: 0, carry: [], [Symbol('extra')]: true },
   ]) {

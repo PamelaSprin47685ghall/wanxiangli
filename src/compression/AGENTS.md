@@ -13,10 +13,10 @@
 
 # LEMMA
 
-1. [AXIOM 1, 2] `parseCarry` 只接受 `(number|string)[]`。数字必须是有效的非负整数编号；空字符串与空白字符串合法，重复与重排合法。`parseView` 只接受 `{ prefixUntil, carry }`，两字段必填，`prefixUntil` 为非负整数（保留所有锚点编号严格小于它的历史区间）。
+1. [AXIOM 1, 2] `parseCarry` 只接受 `(number|string)[]`。数字必须是有效的非负整数编号；空字符串与空白字符串合法，重复与重排合法。`parseView` 只接受 `{ prefixUntil, carry }`，两字段必填。`prefixUntil` 是当前可见历史序列的位置上界（exclusive end）：值为 N 就原样保留前 N 段，不按锚点编号筛选。
 2. [AXIOM 1] 只读数组自己的数据元素，拒绝稀疏数组与 accessor。解析结果必须是新的冻结数组，不运行 iterator 或 `toJSON`。
    - 推理：验证过的选择不能在稍后交付时被调用方修改或序列化钩子替换。
-3. [AXIOM 2] 本对象不接收区间历史、替换映射或当前回合。宿主按请求快照解析锚点并按 prefixUntil 截取前缀，再建立实际布局。
+3. [AXIOM 2] 本对象不接收区间历史、替换映射或当前回合，只校验 `prefixUntil` 为非负整数。宿主须按请求快照验证 `0 <= prefixUntil <= 可见历史段数`，超出长度就拒绝；原样保留前 `prefixUntil` 段后，依次追加 `carry` 渲染出的内容。锚点编号的空洞、重排和重复都不改变前缀的位置计数。
    - 推理：只有宿主拥有准确可见历史与请求边界，纯形状对象不能猜测它们。
 4. [AXIOM 3] 检查点按 `(session, callId)` 精确键准入。首个 completed 返回 `append`，未结局的重复调用返回 `join`，已提交或 error 返回 `skip`。只有确认未尝试的 `WriterUnavailable` 允许释放重试。
 
@@ -31,4 +31,4 @@
 4. [LEMMA 4] 提交一次、重复会合、失败封口、键不别名、未尝试可重试、输入非法不留痕与实例独立。
    - 证明：`tests/004.test.mjs`。
 
-宿主的完整行为合同见 `requirements/context-compression/WHAT.md` [031]、[032]。旧 `thenMap`、`prefixUntil`、`live`、`plan`、`project` 覆盖模型已移除，没有兼容路径。源码与测试完成后须分别记录编译和实际验证结果；本文件的测试路径不代替运行回执。
+宿主的完整行为合同见 `requirements/context-compression/WHAT.md` [031]、[032]。旧 `thenMap`、`prefixCount`、`live`、`plan`、`project` 覆盖模型已移除，没有兼容路径；当前前缀字段只叫 `prefixUntil`。源码与测试完成后须分别记录编译和实际验证结果；本文件的测试路径不代替运行回执。
