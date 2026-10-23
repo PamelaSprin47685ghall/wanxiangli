@@ -16,6 +16,7 @@ function fixture(t, include) {
   t.after(() => rmSync(directory, { recursive: true, force: true }))
   mkdirSync(path.join(directory, 'scripts'))
   copyFileSync(path.join(root, 'scripts/build.mjs'), path.join(directory, 'scripts/build.mjs'))
+  copyFileSync(path.join(root, 'scripts/compiler.mjs'), path.join(directory, 'scripts/compiler.mjs'))
   writeFileSync(path.join(directory, 'package.json'), '{"type":"module"}')
   symlinkSync(path.join(root, 'node_modules'), path.join(directory, 'node_modules'), 'junction')
   for (const name of ['alpha', 'beta']) {
@@ -56,8 +57,6 @@ function mutateDuringBuild(directory, mutation, boundary = 'log', ...args) {
   // 真实构建照常运行；只把文件保存固定在缓存检查或编译结束的边界。
   writeFileSync(hook, `
 import { writeFileSync, rmSync, mkdirSync, appendFileSync } from 'node:fs'
-import childProcess from 'node:child_process'
-import { syncBuiltinESMExports } from 'node:module'
 let changed = false
 function mutate() {
   if (changed) return
@@ -65,20 +64,13 @@ function mutate() {
   ${mutation}
   writeFileSync('mutation-ran', 'yes')
 }
-if (${JSON.stringify(boundary)} === 'compiler') {
-  const spawnSync = childProcess.spawnSync
-  childProcess.spawnSync = (...args) => {
-    const result = spawnSync(...args)
-    mutate()
-    return result
-  }
-  syncBuiltinESMExports()
-} else {
-  const log = console.log
-  console.log = (...args) => {
-    if (String(args[0]).startsWith('[build] alpha:')) mutate()
-    log(...args)
-  }
+const log = console.log
+console.log = (...args) => {
+  const message = String(args[0])
+  if (${JSON.stringify(boundary)} === 'compiler'
+    ? message.startsWith('Project:') && message.includes('FCS time:')
+    : message.startsWith('[build] alpha:')) mutate()
+  log(...args)
 }
 `)
   const result = run(directory, ['--import', hook, 'scripts/build.mjs', ...args])
@@ -203,10 +195,12 @@ test('WHAT[build-010] a selected build does not reject changes to an unselected 
   assert.equal(value(directory, 'beta'), 2)
 })
 
-test('WHAT[build-010] changing the build script invalidates every selected stamp', { timeout: 60000 }, t => {
-  const directory = fixture(t)
-  build(directory)
-  rejected(directory, mutateDuringBuild(directory, "appendFileSync('scripts/build.mjs', '\\n// saved during build\\n')"))
-  assert.equal(existsSync(path.join(directory, '.build-stamps/beta.json')), false)
-  assert.doesNotMatch(build(directory), /: cached/)
-})
+for (const file of ['build.mjs', 'compiler.mjs']) {
+  test(`WHAT[build-010] changing ${file} invalidates every selected stamp`, { timeout: 60000 }, t => {
+    const directory = fixture(t)
+    build(directory)
+    rejected(directory, mutateDuringBuild(directory, `appendFileSync('scripts/${file}', '\\n// saved during build\\n')`))
+    assert.equal(existsSync(path.join(directory, '.build-stamps/beta.json')), false)
+    assert.doesNotMatch(build(directory), /: cached/)
+  })
+}

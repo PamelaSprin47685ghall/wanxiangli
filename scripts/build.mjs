@@ -1,13 +1,11 @@
 import { readdirSync, readFileSync, writeFileSync, mkdirSync, rmSync, renameSync, existsSync, statSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { build } from 'esbuild'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const source = path.join(root, 'src')
-const compiler = path.join(root, 'node_modules/@fable-org/fable-compiler-js/index.js')
 function discoverProjects() {
   const projects = new Map()
   for (const directory of readdirSync(source, { withFileTypes: true })) {
@@ -22,7 +20,7 @@ function discoverProjects() {
 const projects = discoverProjects()
 
 const args = process.argv.slice(2)
-// 增量构建：模块输入（fsproj、其显式源文件、工具链版本、本脚本）未变且产物完好时跳过。
+// 增量构建：模块输入（fsproj、其显式源文件、工具链版本、构建脚本）未变且产物完好时跳过。
 // `--force` 或 WANXIANGLI_BUILD_FORCE=1 强制全部重编。
 const force = args.includes('--force') || /^(1|true|yes)$/i.test(process.env.WANXIANGLI_BUILD_FORCE ?? '')
 const selected = args.filter(arg => arg !== '--force')
@@ -45,14 +43,17 @@ function packageVersion(name) {
     return null
   }
 }
-// 工具链指纹：编译器、Fable 运行库（被打包进产物）、esbuild、Node 主版本与构建脚本本身。
+// 工具链指纹包括编译器实际加载的 FCS、元数据和本地编译入口。
 function toolchainKey() {
   return sha256(JSON.stringify({
     compiler: packageVersion('@fable-org/fable-compiler-js'),
+    standalone: packageVersion('@fable-org/fable-standalone'),
+    metadata: packageVersion('@fable-org/fable-metadata'),
     fableLibrary: packageVersion('@fable-org/fable-library-js'),
     esbuild: packageVersion('esbuild'),
     node: process.versions.node.split('.')[0],
     script: sha256(readFileSync(fileURLToPath(import.meta.url))),
+    compilerScript: sha256(readFileSync(new URL('./compiler.mjs', import.meta.url))),
   }))
 }
 const toolchain = toolchainKey()
@@ -149,6 +150,7 @@ function assertInputsUnchanged(input) {
 }
 
 const inputs = selected.map(name => moduleInputs(name, projects.get(name)))
+let compiler
 
 for (const input of inputs) {
   const { name, project, includes, key } = input
@@ -161,10 +163,11 @@ for (const input of inputs) {
   rmSync(temporary, { recursive: true, force: true })
   const start = performance.now()
   try {
-    const result = spawnSync(process.execPath, [compiler, project, temporary,
-      '--fableLib', path.join(root, 'node_modules/@fable-org/fable-library-js')], { cwd: root, stdio: 'inherit' })
-    if (result.error) throw result.error
-    if (result.status !== 0) throw new Error(`Compilation failed: ${name}`)
+    if (!compiler) {
+      const { createCompiler } = await import('./compiler.mjs')
+      compiler = await createCompiler(path.join(root, 'node_modules/@fable-org/fable-library-js'))
+    }
+    await compiler.compile(project, temporary)
     for (const file of includes.filter(file => file.endsWith('.fs'))) {
       if (!existsSync(path.join(temporary, file.replace(/\.fs$/, '.js')))) {
         throw new Error(`Compiler did not emit ${name}/${file}`)
