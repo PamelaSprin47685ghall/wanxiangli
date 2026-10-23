@@ -18,7 +18,7 @@ test('SPEC[compression-003] sparse arrays and index getters are refused without 
 
 test('SPEC[compression-003] snapshots cannot be changed through caller arrays or result aliases', () => {
   const carry = [2, 'literal', 2]
-  const parsed = law.parseView({ prefixCount: 1, carry })
+  const parsed = law.parseView({ prefixUntil: 1, carry })
   assert.equal(parsed.ok, true)
   assert.ok(Object.isFrozen(parsed))
   assert.ok(Object.isFrozen(parsed.view))

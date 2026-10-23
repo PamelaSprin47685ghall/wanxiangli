@@ -1,7 +1,7 @@
 export type Carry = readonly (number | string)[]
 
 export interface AnchorView {
-  readonly prefixCount: number
+  readonly prefixUntil: number
   readonly carry: Carry
 }
 

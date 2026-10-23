@@ -13,10 +13,10 @@
 
 # LEMMA
 
-1. [AXIOM 1, 2] `parseCarry` 只接受 `(number|string)[]`。数字必须是有效的非负整数编号；空字符串与空白字符串合法，重复与重排合法。`parseView` 只接受 `{ prefixCount, carry }`，两字段必填，`prefixCount` 为非负整数。
+1. [AXIOM 1, 2] `parseCarry` 只接受 `(number|string)[]`。数字必须是有效的非负整数编号；空字符串与空白字符串合法，重复与重排合法。`parseView` 只接受 `{ prefixUntil, carry }`，两字段必填，`prefixUntil` 为非负整数（保留所有锚点编号严格小于它的历史区间）。
 2. [AXIOM 1] 只读数组自己的数据元素，拒绝稀疏数组与 accessor。解析结果必须是新的冻结数组，不运行 iterator 或 `toJSON`。
    - 推理：验证过的选择不能在稍后交付时被调用方修改或序列化钩子替换。
-3. [AXIOM 2] 本对象不接收区间历史、替换映射或当前回合。宿主按请求快照解析锚点并验证前缀范围，再建立实际布局。
+3. [AXIOM 2] 本对象不接收区间历史、替换映射或当前回合。宿主按请求快照解析锚点并按 prefixUntil 截取前缀，再建立实际布局。
    - 推理：只有宿主拥有准确可见历史与请求边界，纯形状对象不能猜测它们。
 4. [AXIOM 3] 检查点按 `(session, callId)` 精确键准入。首个 completed 返回 `append`，未结局的重复调用返回 `join`，已提交或 error 返回 `skip`。只有确认未尝试的 `WriterUnavailable` 允许释放重试。
 

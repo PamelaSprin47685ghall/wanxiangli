@@ -29,7 +29,7 @@ let private freeze (_value: obj) : obj = jsNative
 [<Emit("Array.isArray($0)")>]
 let private isArray (_value: obj) : bool = jsNative
 
-[<Emit("Reflect.ownKeys($0).every(key => key === 'prefixCount' || key === 'carry')")>]
+[<Emit("Reflect.ownKeys($0).every(key => key === 'prefixUntil' || key === 'carry')")>]
 let private hasOnlyViewFields (_value: obj) : bool = jsNative
 
 [<Emit("typeof $0 === 'number' && Number.isInteger($0) && $0 >= 0 && $0 < 2147483647")>]
@@ -81,12 +81,12 @@ let private parseCarry value =
 
 let private parseView value =
     if not (isRecord value) || not (hasOnlyViewFields value) then
-        fail "view accepts only prefixCount and carry"
+        fail "view accepts only prefixUntil and carry"
 
-    let prefixCount = requiredField "view" value "prefixCount"
+    let prefixUntil = requiredField "view" value "prefixUntil"
 
-    if not (isNaturalNumber prefixCount) then
-        fail "prefixCount must be a non-negative integer segment count"
+    if not (isNaturalNumber prefixUntil) then
+        fail "prefixUntil must be a non-negative integer"
 
     let carry = requiredField "view" value "carry" |> carryOf
 
@@ -94,7 +94,7 @@ let private parseView value =
         createObj
             [ "ok" ==> true
               "view"
-              ==> freeze (createObj [ "prefixCount" ==> prefixCount; "carry" ==> carry ]) ]
+              ==> freeze (createObj [ "prefixUntil" ==> prefixUntil; "carry" ==> carry ]) ]
     )
 
 let private callKey (what: string) (value: obj) : string =

@@ -7,12 +7,12 @@ const law = Compression()
 test('SPEC[compression-002] carry preserves order, repetition and literal bytes', () => {
   const carry = [8, '8', 2, '', '  \n', 8, '\u0000', 'Unicode 字面值']
   assert.deepEqual(law.parseCarry(carry), { ok: true, carry })
-  assert.deepEqual(law.parseView({ prefixCount: 0, carry }).view.carry, carry)
+  assert.deepEqual(law.parseView({ prefixUntil: 0, carry }).view.carry, carry)
 })
 
 test('SPEC[compression-002] transfer carries have no prefix or wrapper', () => {
   assert.deepEqual(law.parseCarry([]), { ok: true, carry: [] })
-  for (const value of [undefined, null, false, 1, 'text', {}, { carry: [] }, { prefixCount: 0, carry: [] }]) {
+  for (const value of [undefined, null, false, 1, 'text', {}, { carry: [] }, { prefixUntil: 0, carry: [] }]) {
     assert.equal(law.parseCarry(value).ok, false)
   }
 })
