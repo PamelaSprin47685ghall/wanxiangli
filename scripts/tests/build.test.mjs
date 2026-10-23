@@ -14,6 +14,7 @@ function fixture(t, modules) {
   mkdirSync(path.join(directory, 'scripts'))
   mkdirSync(path.join(directory, 'src'))
   copyFileSync(path.join(root, 'scripts/build.mjs'), path.join(directory, 'scripts/build.mjs'))
+  copyFileSync(path.join(root, 'scripts/compiler.mjs'), path.join(directory, 'scripts/compiler.mjs'))
   copyFileSync(path.join(root, 'package.json'), path.join(directory, 'package.json'))
   // 编译器是工具链；只借用工具链，不提供任何兄弟模块或旧仓源码。
   symlinkSync(path.join(root, 'node_modules'), path.join(directory, 'node_modules'), 'junction')
