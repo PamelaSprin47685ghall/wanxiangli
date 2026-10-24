@@ -26,6 +26,8 @@ Casebook 访问入口是 `wanxiangli/casebook-access` / `CasebookAccessLaw`：�
 
 调度协议入口是 `wanxiangli/routing` / `RoutingProtocol`：用户 `wanxiangshu.mjs` 的协议 2 ABI owner——模块导出形状与版本、同步调用 `route(role, running, previous)`（冻结副本）、target 严格解码、理论容量查询只认布尔。不读文件、不加载模块、不持有容量；选择策略全部属于用户 MJS。见 `src/routing/AGENTS.md`。
 
+Scope / Pair Hint 入口是 `wanxiangli/pair-hint` / `PairHint()`：每个实例私有持有各会话的 prompt identity、初始化状态与 `turnBudget`。`planRequest(sessionId, neutralMessages)` 接收只含角色归属、调用身份、分段位置的 HNI 中立视图，返回保留槽位及用户／工具后缀计划；OMP 和 OpenCode 仅负责各自物理 envelope 的解码与请求副本回写。`writeUserHint`、`writeToolResultHint` 是分开的注入工具，不更改原始对象。真实 tool callback 不被附加提示，全部注入只发生在发送 LLM 的请求副本上。规则与验证见 `src/pair-hint/AGENTS.md` 和 `src/pair-hint/tests/`。
+
 ## 第一刀：两个独立个体，一个组合者
 
 | 入口 | 对象 | 职责 |
@@ -73,6 +75,9 @@ node --test src/trace/tests/*.test.mjs
 
 npm run build -- session
 node --test src/session/tests/*.test.mjs
+
+npm run build -- pair-hint
+node --test src/pair-hint/tests/*.test.mjs
 
 # 实际交付包；不发布到 registry
 npm pack

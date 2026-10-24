@@ -2,44 +2,27 @@ module Wanxiangli.PairHint.PairHint
 
 open System
 open System.Collections.Generic
-open System.Text.RegularExpressions
 open Fable.Core
 open Fable.Core.JsInterop
 
 [<AllowNullLiteral>]
 type PairHintMessages =
-    abstract budgetSuffix: budget: int -> string
-    abstract appendText: content: obj * addition: string -> obj
-    abstract appendUserReminder: content: obj -> obj
-    abstract appendBudgetReminder: content: obj * budget: int -> obj
-    abstract injectToolResultContent: content: obj * toolName: string * initialized: bool * budget: int -> obj
-    abstract initializeUserMessages: messages: obj -> obj array
-    abstract injectToolResults: messages: obj * initialized: bool * budget: int -> obj array
-    abstract stripContradictions: messages: obj -> obj array
-    abstract filter: messages: obj -> obj array
-    abstract appendWeakSteer: messages: obj -> obj array
-    abstract promptKey: message: obj -> string
-    abstract lastPromptIndex: messages: obj -> int
-    abstract hasResetSinceLastPrompt: messages: obj -> bool
-    abstract isScopePrompt: message: obj -> bool
-    abstract endsWithSideRequest: messages: obj -> bool
     abstract isUnchanged: left: obj array * right: obj array -> bool
+    abstract budgetSuffix: budget: int -> string
     abstract turnBudget: sessionId: string -> int
     abstract isInitialized: sessionId: string -> bool
     abstract startTurn: sessionId: string -> unit
-    abstract observePrompt: sessionId: string * message: obj * hasReset: bool -> unit
-    abstract setInitialized: sessionId: string * initialized: bool -> unit
     abstract resetSession: sessionId: string * budget: int -> unit
     abstract clearSession: sessionId: string -> unit
-    abstract prepareRequest: sessionId: string * messages: obj * injectExistingToolResults: bool -> obj array
-    abstract toolResultFor: sessionId: string * toolName: string * content: obj -> obj
     abstract writeUserHint: message: obj * texts: string array -> obj
     abstract writeToolResultHint: message: obj * texts: string array -> obj
     abstract stripKnownHints: message: obj * texts: string array -> obj
     abstract userCanCarryHint: message: obj -> bool
     abstract toolCanCarryHint: message: obj -> bool
+    abstract planRequest: sessionId: string * neutralMessages: obj -> obj
+    abstract planFilter: neutralMessages: obj -> obj
+    abstract appendTailOnce: content: obj * tail: string -> obj
 
-/// 会话自己持有预算与当前用户身份。外部只发送 turn、prompt 和 reset 消息。
 type private ScopeSession() =
     let mutable budget = 0
     let mutable initialized = false
@@ -80,9 +63,6 @@ let private InitializeReminder =
 let private WeakReminder =
     "[System: Weak, optional reminder — this scope's turnBudget is exhausted (0 remaining). If you are not busy and at a natural boundary, consider calling resetScope with a fresh budget. Do not interrupt, pause, or abandon your current work for this reminder. Keep going; reset when convenient.]"
 
-let private BudgetPattern = Regex(@"\[Remaining turnBudget: \d+\]")
-let private StripPattern = Regex(Regex.Escape Separator + @"\[Remaining turnBudget: \d+\](?=" + Regex.Escape(Separator + InitializeReminder) + ")")
-
 [<Emit("Array.isArray($0)")>]
 let private isArray (_value: obj) : bool = jsNative
 
@@ -103,21 +83,6 @@ let private fieldText (value: obj) (name: string) : string = textOf (field value
 let private role (message: obj) : string =
     let direct = fieldText message "role"
     if direct <> "" then direct else fieldText (field message "info") "role"
-
-let private attribution (message: obj) : string =
-    let direct = fieldText message "attribution"
-    if direct <> "" then direct else fieldText (field message "info") "attribution"
-
-let private timestamp (message: obj) : string =
-    let direct = field message "timestamp"
-    if not (isNull direct) then string direct
-    else
-        let info = field message "info"
-        let own = field info "timestamp"
-        if not (isNull own) then string own
-        else
-            let created = field (field info "time") "created"
-            if isNull created then "" else string created
 
 let private blocks (message: obj) : obj array =
     let content = field message "content"
@@ -153,11 +118,6 @@ let private contentText (content: obj) : string =
         |> String.concat "\n"
     else ""
 
-let private messageText (message: obj) : string =
-    let content = field message "content"
-    if not (isNull content) then contentText content
-    else contentText (box (blocks message))
-
 let private tail (content: obj) : string =
     let text = contentText content
     let idx = text.LastIndexOf(Separator, StringComparison.Ordinal)
@@ -187,36 +147,6 @@ let private appendOnce (content: obj) (addition: string) (already: string -> boo
 
 let private budgetSuffix (budget: int) = $"[Remaining turnBudget: %d{max 0 budget}]"
 
-let private appendUserReminder (content: obj) : obj =
-    appendOnce content InitializeReminder (fun current -> current.StartsWith(InitializeReminder, StringComparison.Ordinal))
-
-let private appendBudgetReminder (content: obj) (budget: int) : obj =
-    appendOnce content (budgetSuffix budget) (fun current -> BudgetPattern.IsMatch current)
-
-let private resultContent (content: obj) (name: string) (initialized: bool) (budget: int) : obj =
-    if initialized || name = ResetTool then appendBudgetReminder content budget
-    else appendUserReminder content
-
-let private stripText (text: string) = StripPattern.Replace(text, "")
-
-let private stripContent (content: obj) : obj =
-    if isString content then
-        let value = unbox<string> content
-        if StripPattern.IsMatch value then box (stripText value) else content
-    elif isArray content then
-        let items = unbox<obj array> content
-        let next = mapIfChanged items (fun item ->
-            if not (textBlock item) then item
-            else
-                let value = fieldText item "text"
-                if not (StripPattern.IsMatch value) then item
-                else
-                    let updated = copy item
-                    updated?text <- stripText value
-                    updated)
-        if sameElements items next then content else box next
-    else content
-
 let private withContent (message: obj) (updatedContent: obj) : obj =
     let result = copy message
     result?content <- updatedContent
@@ -229,237 +159,10 @@ let private withParts (message: obj) (updatedParts: obj array) : obj =
     emitJsStatement result "delete $0.providerPayload"
     result
 
-let private rewriteAssistant (message: obj) (items: obj array) : obj =
-    let changed =
-        if hasParts message then withParts message items
-        else withContent message (box items)
-    emitJsStatement changed "delete $0.providerPayload; delete $0.responseId"
-    changed
-
-let private isScopePrompt (message: obj) : bool =
-    role message = "user" && attribution message <> "agent"
-
-let private isPreservedUserMessage (message: obj) : bool =
-    role message = "user" || (role message = "custom" && attribution message = "user")
-
-let private isToolRole (value: string) : bool =
-    value = "toolResult" || value = "tool" || value = "tool_result" || value = "tool-result"
-
-let private isToolBlock (part: obj) : bool =
-    match fieldText part "type" with
-    | "tool" | "toolCall" | "tool-call" | "tool_call" -> true
-    | _ -> false
-
-let private toolName (part: obj) : string =
-    let direct = fieldText part "name"
-    if direct <> "" then direct
-    else
-        let opencode = fieldText part "tool"
-        if opencode <> "" then opencode else fieldText part "toolName"
-
-let private isResetCall (part: obj) : bool = isToolBlock part && toolName part = ResetTool
-
-let private callId (part: obj) : string option =
-    [ "id"; "toolCallId"; "callID"; "callId" ]
-    |> List.tryPick (fun key ->
-        let value = field part key
-        if isString value && not (String.IsNullOrEmpty(unbox<string> value)) then Some(unbox<string> value) else None)
-
-let private resultId (message: obj) : string option =
-    let named =
-        [ "toolCallId"; "callID"; "callId" ]
-        |> List.tryPick (fun key ->
-            let v = field message key
-            if isString v then Some(unbox<string> v) else None)
-    match named with
-    | Some value -> Some value
-    | None -> blocks message |> Array.tryPick (fun part -> if isToolRole (fieldText part "type") then callId part else None)
-
-let private lastReset (messages: obj array) : (int * int) option =
-    let mutable found = None
-    for i = 0 to messages.Length - 1 do
-        if role messages.[i] = "assistant" then
-            let items = blocks messages.[i]
-            for j = 0 to items.Length - 1 do
-                if isResetCall items.[j] then found <- Some(i, j)
-    found
-
-let private filterMessages (messages: obj) : obj array =
-    let source = asArray messages
-    match lastReset source with
-    | None -> source
-    | Some(activeMessage, activePart) ->
-        let rewritten = Dictionary<int, obj>()
-        for i = 0 to activeMessage - 1 do
-            let message = source.[i]
-            if role message = "assistant" then
-                let kept = blocks message |> Array.filter isResetCall
-                if kept.Length > 0 then rewritten.[i] <- rewriteAssistant message kept
-        let boundary = source.[activeMessage]
-        let part = blocks boundary
-        let retained = part |> Array.mapi (fun index value -> index, value)
-                            |> Array.filter (fun (index, value) -> isResetCall value || index >= activePart)
-                            |> Array.map snd
-        rewritten.[activeMessage] <- rewriteAssistant boundary retained
-
-        let calls = HashSet<string>()
-        for i = 0 to source.Length - 1 do
-            let message = source.[i]
-            if role message = "assistant" then
-                let items =
-                    if rewritten.ContainsKey i then blocks rewritten.[i]
-                    elif i > activeMessage then blocks message
-                    else [||]
-                for item in items do
-                    if isToolBlock item then
-                        match callId item with
-                        | Some id -> calls.Add id |> ignore
-                        | None -> ()
-
-        let result = ResizeArray<obj>()
-        for i = 0 to source.Length - 1 do
-            let message = source.[i]
-            if i < activeMessage then
-                if isPreservedUserMessage message then result.Add message
-                elif rewritten.ContainsKey i then result.Add rewritten.[i]
-                elif isToolRole (role message) then
-                    match resultId message with
-                    | Some id when calls.Contains id -> result.Add message
-                    | _ -> ()
-            elif i = activeMessage then
-                result.Add rewritten.[i]
-            elif isToolRole (role message) then
-                match resultId message with
-                | Some id when not (calls.Contains id) -> ()
-                | _ -> result.Add message
-            else result.Add message
-        result.ToArray()
-
-let private promptKey (message: obj) : string =
-    timestamp message + ":" + messageText message
-
-let private lastPromptIndex (messages: obj) : int =
-    asArray messages |> Array.tryFindIndexBack isScopePrompt |> Option.defaultValue -1
-
-let private hasResetSinceLastPrompt (messages: obj) : bool =
-    let items = asArray messages
-    let start = lastPromptIndex (box items)
-    if start < 0 then false
-    else items |> Array.skip (start + 1) |> Array.exists (fun message ->
-        role message = "assistant" && blocks message |> Array.exists isResetCall)
-
-let private endsWithSideRequest (messages: obj) : bool =
-    let items = asArray messages
-    if items.Length = 0 then false
-    else
-        let last = items.[items.Length - 1]
-        role last = "user" && attribution last = "agent" && field last "steering" <> box true
-
-let private injectUserMessage (message: obj) : obj =
-    if not (isScopePrompt message) then message
-    elif hasParts message then
-        let items = blocks message
-        let next = appendUserReminder (box items)
-        if obj.ReferenceEquals(next, box items) then message else withParts message (unbox<obj array> next)
-    else
-        let original = field message "content"
-        let next = appendUserReminder original
-        if obj.ReferenceEquals(original, next) then message else withContent message next
-
-let private initializeUserMessages (messages: obj) : obj array =
-    asArray messages |> fun items -> mapIfChanged items injectUserMessage
-
 let private cloneAndSet (objValue: obj) (key: string) (value: obj) : obj =
     let clone = copy objValue
     emitJsStatement (clone, key, value) "$0[$1] = $2"
     clone
-
-let private suffixState (name: string) (initialized: bool) (budget: int) (state: obj) : obj =
-    let status = fieldText state "status"
-    if status <> "completed" && status <> "error" then state
-    else
-        let key =
-            if isString (field state "output") then "output"
-            elif isString (field state "errorText") then "errorText"
-            elif isString (field state "error") then "error"
-            elif status = "completed" then "output"
-            else "error"
-        let current = field state key
-        let source = if isString current then current else box ""
-        let updated = resultContent source name initialized budget
-        if obj.ReferenceEquals(source, updated) then state else cloneAndSet state key updated
-
-let private suffixToolPart (initialized: bool) (budget: int) (part: obj) : obj =
-    let kind = fieldText part "type"
-    if kind = "tool" && not (isNull (field part "state")) then
-        let state = field part "state"
-        let newState = suffixState (toolName part) initialized budget state
-        if obj.ReferenceEquals(state, newState) then part else cloneAndSet part "state" newState
-    elif isToolRole kind && isString (field part "text") then
-        let content = field part "text"
-        let updated = resultContent content (toolName part) initialized budget
-        if obj.ReferenceEquals(content, updated) then part else cloneAndSet part "text" updated
-    else part
-
-let private stripToolPart (part: obj) : obj =
-    let kind = fieldText part "type"
-    if kind = "tool" && not (isNull (field part "state")) then
-        let state = field part "state"
-        let stripped =
-            [ "output"; "error"; "errorText" ]
-            |> List.fold (fun current key ->
-                let value = field current key
-                if not (isString value) || not (StripPattern.IsMatch(unbox<string> value)) then current
-                else cloneAndSet current key (box (stripText (unbox<string> value)))) state
-        if obj.ReferenceEquals(state, stripped) then part else cloneAndSet part "state" stripped
-    elif isToolRole kind && isString (field part "text") then
-        let value = fieldText part "text"
-        if not (StripPattern.IsMatch value) then part else cloneAndSet part "text" (box (stripText value))
-    else part
-
-let private injectToolResultMessage (initialized: bool) (budget: int) (message: obj) : obj =
-    let msgRole = role message
-    let original = field message "content"
-    let next =
-        if isToolRole msgRole && not (isNull original) then
-            resultContent original (toolName message) initialized budget
-        else original
-    let baseMessage =
-        if obj.ReferenceEquals(original, next) then message else withContent message next
-    let parts = field baseMessage "parts"
-    if isArray parts then
-        let current = unbox<obj array> parts
-        let mapped = mapIfChanged current (suffixToolPart initialized budget)
-        if sameElements current mapped then baseMessage else withParts baseMessage mapped
-    else baseMessage
-
-let private stripContradictoryMessage (message: obj) : obj =
-    let source = field message "content"
-    let content = if isToolRole (role message) then stripContent source else source
-    let baseMessage = if obj.ReferenceEquals(source, content) then message else withContent message content
-    let parts = field baseMessage "parts"
-    if not (isArray parts) then baseMessage
-    else
-        let current = unbox<obj array> parts
-        let mapped = mapIfChanged current stripToolPart
-        if sameElements current mapped then baseMessage else withParts baseMessage mapped
-
-let private appendWeakSteer (messages: obj) : obj array =
-    let items = asArray messages
-    let last = if items.Length > 0 then items.[items.Length - 1] else null
-    let envelope = not (isNull (field last "info"))
-    let steer =
-        if envelope then
-            let info = field last "info"
-            let session = field info "sessionID"
-            let freshInfo = createObj [ "role" ==> "user"; "sessionID" ==> session ]
-            createObj [ "info" ==> freshInfo
-                        "parts" ==> [| createObj [ "type" ==> "text"; "text" ==> WeakReminder ] |]
-                        "steering" ==> true; "attribution" ==> "agent" ]
-        else
-            createObj [ "role" ==> "user"; "content" ==> [| createObj [ "type" ==> "text"; "text" ==> WeakReminder ] |]
-                        "steering" ==> true; "attribution" ==> "agent" ]
-    Array.append items [| steer |]
 
 // 两条物理提示线由同一个模块维护。写入采用副本，不修改原始 Host 消息。
 let private textPartIndex (parts: obj array) : int option =
@@ -594,13 +297,201 @@ let private toolCanCarryHint (message: obj) : bool =
 [<Emit("typeof $0 === 'number' && Number.isFinite($0)")>]
 let private isFiniteNumber (_value: obj) : bool = jsNative
 
-let private numericTimestamp (message: obj) : float option =
-    let direct = field message "timestamp"
-    let info = field message "info"
-    let nested = field info "timestamp"
-    let created = field (field info "time") "created"
-    [ direct; nested; created ]
-    |> List.tryPick (fun value -> if isFiniteNumber value then Some(unbox<float> value) else None)
+type private NeutralCall =
+    { Part: int
+      Id: string
+      Tool: string
+      Field: string
+      ResultFor: string }
+
+type private NeutralMessage =
+    { Index: int
+      Kind: string
+      Operator: bool
+      Side: bool
+      Key: string
+      Stamp: float option
+      Calls: NeutralCall array
+      PartCount: int
+      ResultFor: string
+      ResultField: string }
+
+let private trueField (value: obj) (name: string) : bool =
+    let raw = field value name
+    not (isNull raw) && jsTypeof raw = "boolean" && unbox<bool> raw
+
+let private neutralCall (index: int) (value: obj) : NeutralCall =
+    { Part = index
+      Id = fieldText value "id"
+      Tool = fieldText value "tool"
+      Field = fieldText value "terminalField"
+      ResultFor = fieldText value "resultFor" }
+
+let private neutralMessage (index: int) (value: obj) : NeutralMessage =
+    let rawParts = field value "parts"
+    let parts = if isArray rawParts then unbox<obj array> rawParts else [||]
+    let stamp = field value "timestamp"
+    { Index = index
+      Kind = fieldText value "kind"
+      Operator = trueField value "operator"
+      Side = trueField value "sideRequest"
+      Key = fieldText value "key"
+      Stamp = if isFiniteNumber stamp then Some(unbox<float> stamp) else None
+      Calls = parts |> Array.mapi neutralCall |> Array.filter (fun part -> (part.Id <> "" && part.Tool <> "") || part.ResultFor <> "")
+      PartCount = parts.Length
+      ResultFor = fieldText value "resultFor"
+      ResultField = fieldText value "resultField" }
+
+let private neutralIsReset (part: NeutralCall) : bool = part.Tool = ResetTool
+
+let private resetPartIndices (parts: NeutralCall array) : int array =
+    let resets = parts |> Array.filter neutralIsReset
+    let resetIds = resets |> Array.map _.Id |> Set.ofArray
+    parts
+    |> Array.choose (fun item ->
+        if neutralIsReset item || (item.ResultFor <> "" && Set.contains item.ResultFor resetIds) then
+            Some item.Part
+        else None)
+
+let private latestReset (messages: NeutralMessage array) : (int * int) option =
+    let mutable barrier = None
+    for message in messages do
+        if message.Kind = "assistant" then
+            for part in message.Calls do
+                if neutralIsReset part then barrier <- Some(message.Index, part.Part)
+    barrier
+
+let private neutralSelection (message: NeutralMessage) (barrier: (int * int) option) : int array option option =
+    match barrier with
+    | None -> Some None
+    | Some(activeMessage, activePart) when message.Index > activeMessage -> Some None
+    | Some(activeMessage, activePart) when message.Index = activeMessage ->
+        let resetIndices = resetPartIndices message.Calls |> Set.ofArray
+        let keep = [| for index in 0 .. message.PartCount - 1 do
+                           if index >= activePart || Set.contains index resetIndices then yield index |]
+        Some(Some keep)
+    | Some _ when message.Kind = "user" || (message.Kind = "custom" && message.Operator) -> Some None
+    | Some _ when message.Kind = "result" -> Some None
+    | Some _ when message.Kind = "assistant" ->
+        let resetParts = resetPartIndices message.Calls
+        if resetParts.Length = 0 then None else Some(Some resetParts)
+    | _ -> None
+
+let private candidateSelections (messages: NeutralMessage array) (barrier: (int * int) option) =
+    messages |> Array.map (fun m -> m, neutralSelection m barrier)
+
+let private allowedCalls (candidates: (NeutralMessage * int array option option) array) : Dictionary<string, string> =
+    let known = Dictionary<string, string>()
+    for message, selected in candidates do
+        if message.Kind = "assistant" then
+            match selected with
+            | None -> ()
+            | Some partIndices ->
+                for call in message.Calls do
+                    if call.Id <> "" && call.Tool <> "" && (partIndices.IsNone || Array.contains call.Part partIndices.Value) then
+                        known[call.Id] <- call.Tool
+    known
+
+let private selectResult (known: Dictionary<string, string>) (barrier: (int * int) option) (message: NeutralMessage) =
+    if message.Kind <> "result" then true
+    else
+        match barrier with
+        | None -> true
+        | Some(active, _) when message.Index < active ->
+            message.ResultFor <> "" && known.ContainsKey(message.ResultFor)
+        | Some _ -> message.ResultFor = "" || known.ContainsKey(message.ResultFor)
+
+let private isSelected (known: Dictionary<string, string>) barrier (message, partIndices) =
+    match partIndices with
+    | None -> false
+    | Some _ -> selectResult known barrier message
+
+let private slotOf (message: NeutralMessage) (selection: int array option) =
+    createObj
+        [ "index" ==> message.Index
+          "parts" ==> (match selection with Some indexes -> box indexes | None -> null) ]
+
+let private tailForTool (initialized: bool) (budget: int) (toolName: string) =
+    if initialized || toolName = ResetTool then budgetSuffix budget else InitializeReminder
+
+let private toolHint (index: int) (part: int) (fieldName: string) (suffix: string) =
+    createObj
+        [ "kind" ==> "tool"
+          "index" ==> index
+          "part" ==> part
+          "field" ==> fieldName
+          "tail" ==> suffix ]
+
+let private userHint (index: int) =
+    createObj
+        [ "kind" ==> "user"
+          "index" ==> index
+          "part" ==> -1
+          "field" ==> ""
+          "tail" ==> InitializeReminder ]
+
+let private hintsAt (known: Dictionary<string, string>) (initialized: bool) (budget: int) (message: NeutralMessage) (selectedParts: int array option) =
+    if message.Kind = "user" && message.Operator then
+        [| userHint message.Index |]
+    elif message.Kind = "result" && message.ResultField <> "" then
+        let name =
+            if known.ContainsKey(message.ResultFor) then known[message.ResultFor] else ""
+        [| toolHint message.Index -1 message.ResultField (tailForTool initialized budget name) |]
+    elif message.Kind = "assistant" then
+        [| for part in message.Calls do
+               if part.Field <> "" && (selectedParts.IsNone || Array.contains part.Part selectedParts.Value) then
+                   yield toolHint message.Index part.Part part.Field (tailForTool initialized budget part.Tool) |]
+    else [||]
+
+let private neutralSelections (entries: NeutralMessage array) =
+    let barrier = latestReset entries
+    let candidates = candidateSelections entries barrier
+    let known = allowedCalls candidates
+    let retained = candidates |> Array.filter (isSelected known barrier)
+    retained, known
+
+let private neutralFilterPlan (messages: obj) : obj =
+    let entries = asArray messages |> Array.mapi neutralMessage
+    let retained, _ = neutralSelections entries
+    retained
+    |> Array.choose (fun (message, partIndices) -> partIndices |> Option.map (slotOf message))
+    |> box
+
+let private preparedNeutralPlan (scope: ScopeSession) (messages: obj) : obj =
+    let entries = asArray messages |> Array.mapi neutralMessage
+    let lastOperator = entries |> Array.tryFindIndexBack (fun m -> m.Kind = "user" && m.Operator)
+    let selected, known, weak, active =
+        match lastOperator with
+        | None ->
+            let retained = entries |> Array.map (fun m -> m, Some None)
+            retained, allowedCalls retained, false, false
+        | Some latest ->
+            let hasReset =
+                entries |> Array.skip (latest + 1)
+                |> Array.exists (fun m -> m.Kind = "assistant" && Array.exists neutralIsReset m.Calls)
+            let prompt = entries[latest]
+            let sideRequest = entries.Length > 0 && entries[entries.Length - 1].Side
+            if not sideRequest then scope.Observe(prompt.Key, prompt.Stamp, hasReset)
+            let retained, known = neutralSelections entries
+            let alreadySteered = entries.Length > 0 && entries[entries.Length - 1].Kind = "user" && not entries[entries.Length - 1].Operator && not entries[entries.Length - 1].Side
+            retained, known, scope.Initialized && scope.Budget = 0 && not sideRequest && not alreadySteered, true
+    let slots =
+        selected |> Array.choose (fun (m, selection) -> selection |> Option.map (slotOf m))
+    let tails =
+        if not active then [||]
+        else
+            selected
+            |> Array.collect (fun (m, selection) ->
+                match selection with
+                | Some partIndices -> hintsAt known scope.Initialized scope.Budget m partIndices
+                | None -> [||])
+    createObj
+        [ "slots" ==> slots
+          "hints" ==> tails
+          "weak" ==> (if weak then box WeakReminder else null)
+          "active" ==> active
+          "budget" ==> scope.Budget
+          "initialized" ==> scope.Initialized ]
 
 let PairHint () : PairHintMessages =
     let sessions = Dictionary<string, ScopeSession>()
@@ -613,61 +504,20 @@ let PairHint () : PairHintMessages =
             sessions[sessionId] <- scope
             scope
 
-    let observe (sessionId: string) (message: obj) (hasReset: bool) : unit =
-        let scope = current sessionId
-        scope.Observe(promptKey message, numericTimestamp message, hasReset)
-
-    let request (sessionId: string) (messages: obj) (injectExisting: bool) : obj array =
-        let original = asArray messages
-        let filtered = original |> filterMessages |> fun items -> mapIfChanged items stripContradictoryMessage
-        let index = lastPromptIndex (box filtered)
-        if index < 0 then original
-        else
-            if not (endsWithSideRequest (box original)) then
-                observe sessionId filtered[index] (hasResetSinceLastPrompt (box filtered))
-            let injected = initializeUserMessages (box filtered)
-            let active = current sessionId
-            let withSteer =
-                if active.Initialized && active.Budget = 0 && not (endsWithSideRequest (box injected)) then
-                    appendWeakSteer (box injected)
-                else injected
-            if injectExisting then
-                mapIfChanged withSteer (injectToolResultMessage active.Initialized active.Budget)
-            else withSteer
-
     { new PairHintMessages with
-        member _.budgetSuffix(budget) = budgetSuffix budget
-        member _.appendText(content, addition) = appendText content addition
-        member _.appendUserReminder(content) = appendUserReminder content
-        member _.appendBudgetReminder(content, budget) = appendBudgetReminder content budget
-        member _.injectToolResultContent(content, name, initialized, budget) = resultContent content name initialized budget
-        member _.initializeUserMessages(messages) = initializeUserMessages messages
-        member _.injectToolResults(messages, initialized, budget) =
-            asArray messages |> fun items -> mapIfChanged items (injectToolResultMessage initialized budget)
-        member _.stripContradictions(messages) =
-            asArray messages |> fun items -> mapIfChanged items stripContradictoryMessage
-        member _.filter(messages) = filterMessages messages
-        member _.appendWeakSteer(messages) = appendWeakSteer messages
-        member _.promptKey(message) = promptKey message
-        member _.lastPromptIndex(messages) = lastPromptIndex messages
-        member _.hasResetSinceLastPrompt(messages) = hasResetSinceLastPrompt messages
-        member _.isScopePrompt(message) = isScopePrompt message
-        member _.endsWithSideRequest(messages) = endsWithSideRequest messages
         member _.isUnchanged(left, right) = sameElements left right
+        member _.budgetSuffix(budget) = budgetSuffix budget
         member _.turnBudget(sessionId) = (current sessionId).Budget
         member _.isInitialized(sessionId) = (current sessionId).Initialized
         member _.startTurn(sessionId) = (current sessionId).StartTurn()
-        member _.observePrompt(sessionId, message, hasReset) = observe sessionId message hasReset
-        member _.setInitialized(sessionId, initialized) = (current sessionId).MarkInitialized(initialized)
         member _.resetSession(sessionId, budget) = (current sessionId).Reset(budget)
         member _.clearSession(sessionId) = sessions.Remove sessionId |> ignore
-        member _.prepareRequest(sessionId, messages, injectExistingToolResults) =
-            request sessionId messages injectExistingToolResults
-        member _.toolResultFor(sessionId, name, content) =
-            let active = current sessionId
-            resultContent content name active.Initialized active.Budget
         member _.writeUserHint(message, texts) = writeUserHint message texts
         member _.writeToolResultHint(message, texts) = writeToolResultHint message texts
         member _.stripKnownHints(message, texts) = stripKnownHints message texts
         member _.userCanCarryHint(message) = userCanCarryHint message
-        member _.toolCanCarryHint(message) = toolCanCarryHint message }
+        member _.toolCanCarryHint(message) = toolCanCarryHint message
+        member _.planRequest(sessionId, messages) = preparedNeutralPlan (current sessionId) messages
+        member _.planFilter(messages) = neutralFilterPlan messages
+        member _.appendTailOnce(content, suffix) =
+            appendOnce content suffix (fun current -> current.StartsWith(suffix, StringComparison.Ordinal)) }
