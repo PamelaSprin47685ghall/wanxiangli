@@ -32,7 +32,7 @@ function succeed(result) {
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
 }
 
-for (const name of ['lifecycle', 'eventstore', 'process', 'trace', 'session', 'delivery', 'degeneration', 'spool', 'pty', 'ablation', 'sandbox', 'routing', 'projection', 'authority', 'permit', 'capacity', 'admission-queue', 'dispatch', 'borrowing', 'run-witness', 'git-porcelain', 'failure', 'attachment-lease', 'warm-start', 'handle-lifecycle', 'failure-budget', 'delegate-batch', 'fission-group', 'ordinal', 'bayes']) {
+for (const name of ['lifecycle', 'eventstore', 'runtime', 'trace', 'session', 'delivery', 'degeneration', 'ablation', 'routing', 'projection', 'authority', 'permit', 'capacity', 'admission-queue', 'dispatch', 'borrowing', 'run-witness', 'git-porcelain', 'failure', 'attachment-lease', 'warm-start', 'handle-lifecycle', 'failure-budget', 'delegate-batch', 'fission-group', 'ordinal', 'bayes']) {
   test(`SPEC[build-001] ${name} compiles and runs its own tests without any sibling source`, { timeout: 90000 }, t => {
     const directory = fixture(t, [name])
     assert.deepEqual(readdirSync(path.join(directory, 'src')), [name])
@@ -44,8 +44,8 @@ for (const name of ['lifecycle', 'eventstore', 'process', 'trace', 'session', 'd
       .map(file => path.join(directory, 'src', name, 'tests', file))
     succeed(run(directory, ['--test', ...tests]))
     assert.deepEqual(readdirSync(path.join(directory, 'dist')), [name])
-    if (name === 'process') {
-      const artifact = readFileSync(path.join(directory, 'dist/process/ProcessSession.js'), 'utf8')
+    if (name === 'runtime') {
+      const artifact = readFileSync(path.join(directory, 'dist/runtime/Runtime.js'), 'utf8')
       assert.doesNotMatch(artifact, /from ["']wanxiangli\//)
       assert.doesNotMatch(artifact, /WorkOpened|ConfirmationCommitted|journal_entries|node:sqlite|bun:sqlite/)
     }
@@ -63,12 +63,12 @@ test('SPEC[build-001] a selected build leaves another module output untouched', 
 })
 
 test('SPEC[build-001] the second cut builds without replacing any first-cut artifact', { timeout: 60000 }, t => {
-  const directory = fixture(t, ['process'])
+  const directory = fixture(t, ['runtime'])
   for (const name of ['lifecycle', 'eventstore', 'assembly', 'failure']) {
     mkdirSync(path.join(directory, 'dist', name), { recursive: true })
     writeFileSync(path.join(directory, 'dist', name, 'keep.txt'), name)
   }
-  succeed(run(directory, ['scripts/build.mjs', 'process']))
+  succeed(run(directory, ['scripts/build.mjs', 'runtime']))
   for (const name of ['lifecycle', 'eventstore', 'assembly', 'failure']) {
     assert.equal(readFileSync(path.join(directory, 'dist', name, 'keep.txt'), 'utf8'), name)
     assert.deepEqual(readdirSync(path.join(directory, 'dist', name)), ['keep.txt'])
@@ -90,12 +90,12 @@ test('SPEC[build-001] a real compiler error fails without replacing a previous a
 
 test('SPEC[build-001] the third cut leaves both earlier cuts untouched and has no sibling imports', { timeout: 60000 }, t => {
   const directory = fixture(t, ['trace'])
-  for (const name of ['lifecycle', 'eventstore', 'assembly', 'process', 'failure']) {
+  for (const name of ['lifecycle', 'eventstore', 'assembly', 'runtime', 'failure']) {
     mkdirSync(path.join(directory, 'dist', name), { recursive: true })
     writeFileSync(path.join(directory, 'dist', name, 'keep'), `unchanged-${name}`)
   }
   succeed(run(directory, ['scripts/build.mjs', 'trace']))
-  for (const name of ['lifecycle', 'eventstore', 'assembly', 'process', 'failure']) {
+  for (const name of ['lifecycle', 'eventstore', 'assembly', 'runtime', 'failure']) {
     assert.equal(readFileSync(path.join(directory, 'dist', name, 'keep'), 'utf8'), `unchanged-${name}`)
     assert.deepEqual(readdirSync(path.join(directory, 'dist', name)), ['keep'])
   }
@@ -114,12 +114,12 @@ test('SPEC[build-001] cross-project references are rejected by the same build en
 
 test('SPEC[build-001] ownership builds without the three earlier cuts and cannot import their services', { timeout: 60000 }, t => {
   const directory = fixture(t, ['session'])
-  for (const name of ['lifecycle', 'eventstore', 'assembly', 'process', 'trace', 'failure']) {
+  for (const name of ['lifecycle', 'eventstore', 'assembly', 'runtime', 'trace', 'failure']) {
     mkdirSync(path.join(directory, 'dist', name), { recursive: true })
     writeFileSync(path.join(directory, 'dist', name, 'keep'), `original-${name}`)
   }
   succeed(run(directory, ['scripts/build.mjs', 'session']))
-  for (const name of ['lifecycle', 'eventstore', 'assembly', 'process', 'trace', 'failure']) {
+  for (const name of ['lifecycle', 'eventstore', 'assembly', 'runtime', 'trace', 'failure']) {
     assert.equal(readFileSync(path.join(directory, 'dist', name, 'keep'), 'utf8'), `original-${name}`)
     assert.deepEqual(readdirSync(path.join(directory, 'dist', name)), ['keep'])
   }
@@ -200,4 +200,30 @@ test('SPEC[build-002] incremental build skips unchanged modules and rebuilds cha
   const forced = snapshot(path.join(directory, 'dist'))
   assert.deepEqual(cached, forced)
   assert.deepEqual(cold, forced)
+})
+
+test('SPEC[build-003] program compiles without runtime source and runs against its public artifact', { timeout: 90000 }, t => {
+  const directory = fixture(t, ['program'])
+  cpSync(path.join(root, 'dist/runtime'), path.join(directory, 'dist/runtime'), { recursive: true })
+  const before = snapshot(path.join(directory, 'dist/runtime'))
+  const built = run(directory, ['scripts/build.mjs', 'program'])
+  succeed(built)
+  assert.doesNotMatch(built.stdout + built.stderr, /Warning:|Error:/)
+  assert.deepEqual(readdirSync(path.join(directory, 'src')), ['program'])
+  assert.deepEqual(snapshot(path.join(directory, 'dist/runtime')), before)
+  const tests = readdirSync(path.join(directory, 'src/program/tests'))
+    .filter(file => file.endsWith('.test.mjs')).map(file => path.join(directory, 'src/program/tests', file))
+  succeed(run(directory, ['--test', ...tests]))
+  const artifact = readFileSync(path.join(directory, 'dist/program/Program.js'), 'utf8')
+  assert.match(artifact, /from ["']wanxiangli\/runtime["']/)
+})
+
+test('SPEC[build-003] full build removes retired output entries', { timeout: 60000 }, t => {
+  const directory = fixture(t, ['ordinal'])
+  for (const old of ['programming', 'sandbox', 'wait', 'fs', 'process', 'pty', 'spool', 'time']) {
+    mkdirSync(path.join(directory, 'dist', old), { recursive: true })
+    writeFileSync(path.join(directory, 'dist', old, 'obsolete.js'), 'export const obsolete = true')
+  }
+  succeed(run(directory, ['scripts/build.mjs']))
+  assert.deepEqual(readdirSync(path.join(directory, 'dist')), ['ordinal'])
 })

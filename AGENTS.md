@@ -98,7 +98,7 @@
 
 6. **每步形成真实闭环。** [LEMMA: 2, 6, 8, 9]
     一次改动围绕一项可说明的职责或增强，结束时有可运行能力、对应验证和剩余边界；不是只建了目录、接口或尚未接回的另一套实现。先跑最小相关验证，再检查受影响的真实组合；不以全量测试数量代替风险判断。迁移分期时，分别记录“独立能力完成”和“实际接线、旧职责退出完成”，不能混写。
-    - 证明：独立能力完成与 npm 消费已按各库测试与隔离构建验证，逐刀范围与通过项数统一见宿主 `wanxiangshu` 根目录 `AGENTS.md` 的迁移章节。宿主已经通过 npm 公开入口接线消费（`wanxiangli/work`、`eventstore`、`durable-work`、`process`、`trace`、`ownership` 等均有宿主 import 站点），旧职责是否全部退出仍按真实调用链逐项核对，不把“已接线”混写成“旧路径已删除”。
+    - 证明：独立能力完成与 npm 消费已按各库测试与隔离构建验证，逐刀范围与通过项数统一见宿主 `wanxiangshu` 根目录 `AGENTS.md` 的迁移章节。宿主已经通过 npm 公开入口接线消费（`wanxiangli/work`、`eventstore`、`durable-work`、`runtime`、`trace`、`ownership` 等均有宿主 import 站点），旧职责是否全部退出仍按真实调用链逐项核对，不把“已接线”混写成“旧路径已删除”。
 
 # 适用范围
 
@@ -126,3 +126,9 @@
 - 依赖方向单向：宿主通过 npm 公开入口依赖 wanxiangli，禁止反向依赖。宿主与 wanxiangli 两仓均已获本轮修改授权。
 - 生产实现使用 F# → JavaScript，职责用自治对象组织。构建入口是 `node scripts/build.mjs`；不用 `dotnet build`。注释和说明用中文，标识符和提交信息用英语。
 - 项目语义见 `src/AGENTS.md` 与各库规则；当前工作包、验收证据和未完成边界统一见宿主 `wanxiangshu` 根目录 `AGENTS.md` 的迁移章节。根规则的证明只覆盖已实现职责，不把其余草稿算为完成。
+
+### program/runtime 的永久基础依赖
+
+程序设施与物理设施分别经 `wanxiangli/program`、`wanxiangli/runtime` 交付。program → runtime 是本项目明确允许的永久单向基础依赖，不声明两者互不依赖，不登记为临时转发壳。此裁决明确根 LEMMA 4、5 的适用边界：program 只消费 runtime 公开产物，不跨源码编译；runtime 不反向依赖 program。
+
+程序状态、请求期限、恢复关系和结算归 program，实际进程、文件、输出与物理计量归 runtime。两包各自拥有状态和行为，不能复制另一方的账本。旧 programming/sandbox/fs/process/pty/spool/time/wait 八入口撤销，历史证明可保留来源名称，当前消费者使用新入口；Work、Journal、权限等独立领域不因此合并。

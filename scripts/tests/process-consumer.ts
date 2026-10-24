@@ -1,4 +1,4 @@
-import { ProcessSession, type ProcessOptions, type OutputSlice } from 'wanxiangli/process'
+import { ProcessSession, type ProcessOptions, type OutputSlice } from 'wanxiangli/runtime'
 
 declare const options: ProcessOptions
 const run = new ProcessSession(options)

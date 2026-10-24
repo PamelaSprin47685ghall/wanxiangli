@@ -21,7 +21,7 @@ if (mode === 'isolated') {
   console.log(JSON.stringify({ isolated: true, runtime }))
 } else {
   const { SqliteJournal } = await import('wanxiangli/eventstore')
-  const { ProcessSession } = await import('wanxiangli/process')
+  const { ProcessSession } = await import('wanxiangli/runtime')
   const connection = runtime === 'node'
     ? new (await import('node:sqlite')).DatabaseSync(database)
     : new (await import('bun:sqlite')).Database(database)

@@ -15,12 +15,12 @@ const succeed = result => {
   return result.stdout
 }
 
-test('SPEC[build-004] the installed second cut runs after removing every first-cut artifact', { timeout: 90000, skip: process.platform !== 'linux' }, async t => {
+test('SPEC[build-004] the installed runtime runs after removing unrelated work artifacts', { timeout: 90000, skip: process.platform !== 'linux' }, async t => {
   const directory = mkdtempSync(path.join(tmpdir(), 'wanxiangli-process-package-'))
   t.after(() => rmSync(directory, { recursive: true, force: true }))
   const packed = packedPackage(succeed(spawnSync('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', directory], { cwd: root, env, encoding: 'utf8', timeout: 30000 })))
-  assert.ok(packed.files.some(file => file.path === 'dist/process/ProcessSession.js'))
-  assert.ok(packed.files.some(file => file.path === 'src/process/index.d.ts'))
+  assert.ok(packed.files.some(file => file.path === 'dist/runtime/Runtime.js'))
+  assert.ok(packed.files.some(file => file.path === 'src/runtime/index.d.ts'))
   const consumer = path.join(directory, 'consumer')
   mkdirSync(consumer)
   writeFileSync(path.join(consumer, 'package.json'), JSON.stringify({ name: 'process-only-consumer', private: true, type: 'module' }))
@@ -33,9 +33,9 @@ test('SPEC[build-004] the installed second cut runs after removing every first-c
     rmSync(path.join(installed, 'src', module), { recursive: true, force: true })
   }
   assert.equal(existsSync(path.join(consumer, 'node_modules/@fable-org')), false)
-  assert.equal(existsSync(path.join(installed, 'src/process/ProcessSession.fs')), false)
+  assert.equal(existsSync(path.join(installed, 'src/runtime/process/ProcessSession.fs')), false)
   for (const name of ['process-consumer.mjs', 'process-consumer.ts']) copyFileSync(path.join(root, 'scripts/tests', name), path.join(consumer, name))
-  copyFileSync(path.join(root, 'src/process/tests/worker.mjs'), path.join(consumer, 'process-worker.mjs'))
+  copyFileSync(path.join(root, 'src/runtime/process/tests/worker.mjs'), path.join(consumer, 'process-worker.mjs'))
   succeed(spawnSync(process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), '--noEmit', '--strict', '--target', 'es2022', '--module', 'nodenext', 'process-consumer.ts'], { cwd: consumer, env, encoding: 'utf8', timeout: 30000 }))
   const runtimes = [['node', process.execPath]]
   if (spawnSync('bun', ['--version'], { encoding: 'utf8', env }).status === 0) runtimes.push(['bun', 'bun'])

@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net8.0</TargetFramework><IsPackable>false</IsPackable></PropertyGroup>
+  <ItemGroup>
+    <Compile Include="files/Native.fs" />
+    <Compile Include="files/GlobMatch.fs" />
+    <Compile Include="files/Anchor.fs" />
+    <Compile Include="files/Transaction.fs" />
+    <Compile Include="files/Utf8Fs.fs" />
+    <Compile Include="files/GlobFs.fs" />
+    <Compile Include="files/AnchorFs.fs" />
+    <Compile Include="files/MutationFs.fs" />
+    <Compile Include="files/Filesystem.fs" />
+    <Compile Include="process/Native.fs" />
+    <Compile Include="process/OutputTail.fs" />
+    <Compile Include="process/ProcessSession.fs" />
+    <Compile Include="pty/Native.fs" />
+    <Compile Include="pty/Terminal.fs" />
+    <Compile Include="spool/Native.fs" />
+    <Compile Include="spool/OutputSpool.fs" />
+    <Compile Include="time/Temporal.fs" />
+    <Compile Include="time/Deadline.fs" />
+    <Compile Include="time/NodeTiming.fs" />
+    <Compile Include="time/VirtualTiming.fs" />
+    <Compile Include="time/Time.fs" />
+    <Compile Include="Tools.fs" />
+    <Compile Include="FileSession.fs" />
+    <Compile Include="Worker.fs" />
+    <Compile Include="Runtime.fs" />
+    <PackageExport Include="files/Filesystem.fs" Member="Filesystem" />
+    <PackageExport Include="process/ProcessSession.fs" Member="ProcessSession" />
+    <PackageExport Include="pty/Terminal.fs" Member="Terminal" />
+    <PackageExport Include="spool/OutputSpool.fs" Member="OutputSpool" />
+    <PackageExport Include="time/Time.fs" Member="Time" />
+    <PackageExport Include="FileSession.fs" Member="FileSession" />
+    <PackageExport Include="Tools.fs" Member="RuntimeTools" />
+    <PackageExport Include="Runtime.fs" Member="Runtime" />
+  </ItemGroup>
+</Project>
