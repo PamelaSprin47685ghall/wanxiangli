@@ -113,6 +113,6 @@ node --test src/session/tests/*.test.mjs
 npm test
 ```
 
-公开类型见 `src/session/index.d.ts`，规则与证据见 `src/session/AGENTS.md`，本轮结果见 `施工顺序.md`。独立构建不提供前三刀源码；安装包验收在 Node/Bun 的真实组合之后，删除所有前三刀产物和类型，再验证 Ownership 单独使用。
+公开类型见 `src/session/index.d.ts`，规则与证据见 `src/session/AGENTS.md`；宿主迁移结果与限制统一见 wanxiangshu 仓库根目录的 `AGENTS_MIGRATION.md`。独立构建不提供前三刀源码；安装包验收在 Node/Bun 的真实组合之后，删除所有前三刀产物和类型，再验证 Ownership 单独使用。
 
 本库只能管理已登记资源，不能发现逃逸后代、伪造的外部事实或未登记任务。ProcessSession 的 Closed 不等于全部进程树退出；本轮组合只证明其受测物理范围。宿主已经通过 `wanxiangli/ownership` 公开入口消费本库（如 `src/Wanxiangshu/Execution/Delegation/Fork/Host/Runtime.fs`、`src/Wanxiangshu/OpenCode/Tools/ToolRuntimeScope.fs`、`src/Wanxiangshu/Mission/Lifecycle/DurableWorkHost.fs`）；旧代码退出、跨登记簿迁移与完整的物理监管仍按真实调用链逐项核对，不把库内受测范围冒充宿主全部能力已替代。

@@ -258,7 +258,6 @@
     "PROCESS.md",
     "TRACE.md",
     "OWNERSHIP.md",
-    "MIGRATION.md",
     "THIRD_PARTY_NOTICES",
     "src/programming/index.d.ts",
     "src/failure/index.d.ts",

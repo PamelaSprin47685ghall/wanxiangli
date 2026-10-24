@@ -104,4 +104,4 @@ node --test src/trace/tests/*.test.mjs
 npm test
 ```
 
-本库没有 npm 运行时依赖，不调用其他职责库。公开类型为 `src/trace/index.d.ts`，规则与证明在 `src/trace/AGENTS.md`；实际版本验收记在 `施工顺序.md`。本轮不读取或修改旧仓，不把当前新协议冒称旧事件格式兼容。
+本库没有 npm 运行时依赖，不调用其他职责库。公开类型为 `src/trace/index.d.ts`，规则与证明在 `src/trace/AGENTS.md`；宿主迁移的版本验收与限制统一记在 wanxiangshu 仓库根目录的 `AGENTS_MIGRATION.md`。本轮不读取或修改旧仓，不把当前新协议冒称旧事件格式兼容。

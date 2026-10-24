@@ -36,7 +36,7 @@ try {
 }
 ```
 
-Node 和 Bun 使用同一入口、同一实现，走各自的 `node:child_process` 兼容接口。构建仍用现有 npm Fable 工具链，不增加依赖或构建框架。实际验证的平台与运行时见 `施工顺序.md`。
+Node 和 Bun 使用同一入口、同一实现，走各自的 `node:child_process` 兼容接口。构建仍用现有 npm Fable 工具链，不增加依赖或构建框架。宿主迁移的历史平台收据与验证边界统一见 wanxiangshu 仓库根目录的 `AGENTS_MIGRATION.md`。
 
 ## 输入必须明确
 
