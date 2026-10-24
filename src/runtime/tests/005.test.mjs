@@ -1,4 +1,6 @@
 import test from 'node:test'
+import process from 'node:process'
+import { syncBuiltinESMExports } from 'node:module'
 import assert from 'node:assert/strict'
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -55,6 +57,23 @@ async function orphan(t,{ignoreTerm=false,lifetime=4000}={}) {
   await until(()=>existsSync(activity),'child must start writing')
   return {call,childPid,activity,settled:()=>settled}
 }
+test('Runtime: group permission denial cannot be replaced by an exited leader', { timeout: 5000 }, async () => {
+  const originalKill = process.kill
+  process.kill = (pid, signal) => {
+    if (pid < 0) throw Object.assign(new Error('group permission denied'), { code: 'EPERM' })
+    if (signal === 0) throw Object.assign(new Error('leader gone'), { code: 'ESRCH' })
+    return originalKill(pid, signal)
+  }
+  syncBuiltinESMExports()
+  try {
+    const call = Runtime().startCommand({ root: process.cwd(), command: 'exit 0' })
+    await assert.rejects(call.result, { code: 'EPERM' })
+    await assert.rejects(call.close(), { code: 'EPERM' })
+  } finally {
+    process.kill = originalKill
+    syncBuiltinESMExports()
+  }
+})
 test('Runtime: surviving group keeps command active after shell exits',{timeout:7000,skip:process.platform!=='linux'},async t=>{
   const run=await orphan(t,{lifetime:1000})
   assert.equal(running(run.childPid),true)
