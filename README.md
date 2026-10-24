@@ -86,7 +86,7 @@ npm pack
 
 发布包没有 npm 运行时依赖，Fable 运行库用到的部分已打入产物。消费者不需要 F# 源码、编译器、esbuild 或本仓路径。当前包标为 private，防止验收前意外发布；tarball 安装不受影响。Fable 的许可声明随包保留。
 
-独立安装包验收覆盖拆除兄弟产物、Node/Bun 真实进程、Trace 原件恢复，以及真实资源阻止 Work 退休和协调进程强杀后的未结算归属。这些测试不是完整宿主、进程树监管或原始来源认证的证明；宿主抽取与 HNI 迁移状态统一记录在 wanxiangshu 仓库根目录的 `AGENTS_MIGRATION.md`。
+独立安装包验收覆盖拆除兄弟产物、Node/Bun 真实进程、Trace 原件恢复，以及真实资源阻止 Work 退休和协调进程强杀后的未结算归属。这些测试不是完整宿主、进程树监管或原始来源认证的证明；宿主抽取与 HNI 迁移状态统一记录在 wanxiangshu 仓库根目录 `AGENTS.md` 的迁移章节。
 
 ## 独立内存用法
 
@@ -213,4 +213,4 @@ SQLite 使用 `BEGIN IMMEDIATE`、WAL、`synchronous=FULL` 和零等待竞争策
 
 `npm test` 分别运行无存储替身的 Work 测试、真实 SQLite 的事务测试、DurableWork 组合与故障测试、同一领域契约的两种整体、拆除兄弟源码及组合者后的独立验证，以及 Node/Bun 实际安装包的强杀恢复。测试还覆盖先完成内存工作再存档、逐笔提交后发布两种真实合作方式，A、B 的内部实现不变。
 
-宿主接线、接口切换与旧实现删除边界统一见 wanxiangshu 仓库根目录的 `AGENTS_MIGRATION.md`；本库不维护第二份迁移指南。宿主当前版本为 0.66.0，各公开入口见 `package.json` 的 `exports`。
+宿主接线、接口切换与旧实现删除边界统一见 wanxiangshu 仓库根目录 `AGENTS.md` 的迁移章节；本库不维护第二份迁移指南。宿主当前版本为 0.66.0，各公开入口见 `package.json` 的 `exports`。
