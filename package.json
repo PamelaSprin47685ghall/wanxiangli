@@ -180,6 +180,10 @@
       "types": "./src/program/index.d.ts",
       "import": "./dist/program/Program.js"
     },
+    "./provider-calibration": {
+      "types": "./src/provider-calibration/index.d.ts",
+      "import": "./dist/provider-calibration/ProviderCalibration.js"
+    },
     "./runtime": {
       "types": "./src/runtime/index.d.ts",
       "import": "./dist/runtime/Runtime.js"
@@ -235,6 +239,7 @@
     "src/failure/index.d.ts",
     "src/failure-budget/index.d.ts",
     "src/program/index.d.ts",
+    "src/provider-calibration/index.d.ts",
     "src/runtime/index.d.ts",
     "src/program/wait/types.d.ts",
     "src/runtime/files/types.d.ts",
