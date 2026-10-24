@@ -28,6 +28,7 @@ type private ScopeSession() =
     let mutable initialized = false
     let mutable promptKey = ""
     let mutable promptTime: float option = None
+    let toolTails = Dictionary<string, string>()
 
     member _.Budget = budget
     member _.Initialized = initialized
@@ -45,9 +46,18 @@ type private ScopeSession() =
 
     member _.MarkInitialized(value: bool) = initialized <- value
 
+    /// Once displayed, a terminal result is immutable within its prefix epoch.
+    member _.TerminalTail(identity: string, proposed: string, remember: bool) =
+        match toolTails.TryGetValue identity with
+        | true, earlier -> earlier
+        | false, _ ->
+            if remember then toolTails[identity] <- proposed
+            proposed
+
     member _.Reset(nextBudget: int) =
         budget <- max 0 nextBudget
         initialized <- true
+        toolTails.Clear()
 
 [<Literal>]
 let private Separator = "\u0000\uFEFF"
@@ -414,7 +424,8 @@ let private slotOf (message: NeutralMessage) (selection: int array option) =
 let private tailForTool (initialized: bool) (budget: int) (toolName: string) =
     if initialized || toolName = ResetTool then budgetSuffix budget else InitializeReminder
 
-let private toolHint (index: int) (part: int) (fieldName: string) (suffix: string) =
+let private toolHint (scope: ScopeSession) (remember: bool) (identity: string) (index: int) (part: int) (fieldName: string) (proposed: string) =
+    let suffix = scope.TerminalTail(identity, proposed, remember)
     createObj
         [ "kind" ==> "tool"
           "index" ==> index
@@ -430,17 +441,20 @@ let private userHint (index: int) =
           "field" ==> ""
           "tail" ==> InitializeReminder ]
 
-let private hintsAt (known: Dictionary<string, string>) (initialized: bool) (budget: int) (message: NeutralMessage) (selectedParts: int array option) =
+let private hintsAt (scope: ScopeSession) (known: Dictionary<string, string>) (remember: bool) (message: NeutralMessage) (selectedParts: int array option) =
+    let initialized, budget = scope.Initialized, scope.Budget
     if message.Kind = "user" && message.Operator then
         [| userHint message.Index |]
     elif message.Kind = "result" && message.ResultField <> "" then
         let name =
             if known.ContainsKey(message.ResultFor) then known[message.ResultFor] else ""
-        [| toolHint message.Index -1 message.ResultField (tailForTool initialized budget name) |]
+        let identity = if message.ResultFor <> "" then "call:" + message.ResultFor else "message:" + string message.Index + ":result"
+        [| toolHint scope remember identity message.Index -1 message.ResultField (tailForTool initialized budget name) |]
     elif message.Kind = "assistant" then
         [| for part in message.Calls do
                if part.Field <> "" && (selectedParts.IsNone || Array.contains part.Part selectedParts.Value) then
-                   yield toolHint message.Index part.Part part.Field (tailForTool initialized budget part.Tool) |]
+                   let identity = if part.Id <> "" then "call:" + part.Id else "message:" + string message.Index + ":part:" + string part.Part
+                   yield toolHint scope remember identity message.Index part.Part part.Field (tailForTool initialized budget part.Tool) |]
     else [||]
 
 let private neutralSelections (entries: NeutralMessage array) =
@@ -460,11 +474,11 @@ let private neutralFilterPlan (messages: obj) : obj =
 let private preparedNeutralPlan (scope: ScopeSession) (messages: obj) : obj =
     let entries = asArray messages |> Array.mapi neutralMessage
     let lastOperator = entries |> Array.tryFindIndexBack (fun m -> m.Kind = "user" && m.Operator)
-    let selected, known, weak, active =
+    let selected, known, weak, active, sideRequest =
         match lastOperator with
         | None ->
             let retained = entries |> Array.map (fun m -> m, Some None)
-            retained, allowedCalls retained, false, false
+            retained, allowedCalls retained, false, false, false
         | Some latest ->
             let hasReset =
                 entries |> Array.skip (latest + 1)
@@ -474,7 +488,7 @@ let private preparedNeutralPlan (scope: ScopeSession) (messages: obj) : obj =
             if not sideRequest then scope.Observe(prompt.Key, prompt.Stamp, hasReset)
             let retained, known = neutralSelections entries
             let alreadySteered = entries.Length > 0 && entries[entries.Length - 1].Kind = "user" && not entries[entries.Length - 1].Operator && not entries[entries.Length - 1].Side
-            retained, known, scope.Initialized && scope.Budget = 0 && not sideRequest && not alreadySteered, true
+            retained, known, scope.Initialized && scope.Budget = 0 && not sideRequest && not alreadySteered, true, sideRequest
     let slots =
         selected |> Array.choose (fun (m, selection) -> selection |> Option.map (slotOf m))
     let tails =
@@ -483,7 +497,7 @@ let private preparedNeutralPlan (scope: ScopeSession) (messages: obj) : obj =
             selected
             |> Array.collect (fun (m, selection) ->
                 match selection with
-                | Some partIndices -> hintsAt known scope.Initialized scope.Budget m partIndices
+                | Some partIndices -> hintsAt scope known (not sideRequest) m partIndices
                 | None -> [||])
     createObj
         [ "slots" ==> slots

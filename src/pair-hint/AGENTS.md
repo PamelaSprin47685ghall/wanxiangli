@@ -12,6 +12,7 @@
 1. [AXIOM 1] 最新 reset 是唯一清理边界。之前的用户消息与 reset 对保留，之后完整保留；同批工具调用在 reset 的块位置切分。
 2. [AXIOM 2] 用户消息和工具结果有两种独立的后缀写入位置，但只在模型即将收到的请求副本中呈现。真实工具返回值、用户原文与持久化历史保持原样；同一提示不重复添加。
 3. [AXIOM 1, 2] 未初始化时非 reset 结果只带初始化提醒；初始化后带预算，预算为零时可另加不打断工作的弱 steer。
+4. [AXIOM 1, 2] 已呈现的工具结果是同一 prefix epoch 内的历史字节，`ScopeSession` 按调用身份冻结首次提示尾巴；预算变动或新用户 steer 不回写旧结果，提交 reset 才清除本 epoch 的冻结记录。Side-request 不抢先冻结普通请求尚未呈现的结果。
 
 ## SPEC
 
@@ -22,6 +23,7 @@
 5. tests/005.test.mjs：持久化 Pair Hint 的用户载体与工具结果载体分别写入、剥离、去重；不原地改写 OpenCode envelope。
 
 6. tests/006.test.mjs：来自不同宿主的同一份 HNI 中立消息视图，得到相同的 reset 保留计划、用户提醒与工具结果后缀位置；旧原始消息不进入 ScopeSession。
+7. tests/007.test.mjs：先构造预算递减与新 steer 造成历史尾巴改字节的红态，再证明首次呈现冻结、冷重锚允许重建、side-request 不抢先冻结。
 
 ## 边界
 
