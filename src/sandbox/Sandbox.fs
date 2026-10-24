@@ -314,7 +314,7 @@ let private launch
         err.code = "ERR_SCRIPT_EXECUTION_TIMEOUT";
         throw err;
       }
-      var remaining = Math.max(1, Math.min(Number(deadlineMs), deadlineNow - now));
+      var remaining = Number(deadlineMs);
       kicked = false;
       runInContext("void 0", ctx, { timeout: remaining });
       if (box.done) break;
