@@ -189,6 +189,10 @@ module ToolSurface =
     /// 但仍是"可见即可做"的一份事实：schema 投影、请求工具表与执行准入读同一个判定。
     let utilityToolNames: string list = [ "skill"; "assume" ]
 
-    /// 现行角色都持有实用工具；矩阵之外的角色标签（含已退役的 distiller）一律拒绝。
+    /// 实用工具面只给可执行办公工作的角色；Advisor 只能使用
+    /// negotiate/resetScope 协议工具，不得通过 skill/assume 绕过无办公权能边界。
+    /// 矩阵之外的角色标签（含已退役的 distiller）一律拒绝。
     let admitsUtility (roleLabel: string) (name: string) : bool =
-        List.contains name utilityToolNames && List.contains roleLabel OfficeMatrix.roles
+        roleLabel <> "advisor"
+        && List.contains name utilityToolNames
+        && List.contains roleLabel OfficeMatrix.roles

@@ -22,6 +22,12 @@ type PairHintMessages =
     abstract planRequest: sessionId: string * neutralMessages: obj -> obj
     abstract planFilter: neutralMessages: obj -> obj
     abstract appendTailOnce: content: obj * tail: string -> obj
+    abstract bindDelegation: recipient: string * delegator: string -> unit
+    abstract askNegotiation: recipient: string * questions: string -> obj
+    abstract prepareNegotiationReply: receipt: string * answer: string -> obj
+    abstract completeNegotiationReply: receipt: string -> bool
+    abstract confirmNegotiationSteer: receipt: string * recipient: string -> bool
+    abstract negotiationRequired: recipient: string -> bool
 
 type private ScopeSession() =
     let mutable budget = 0
@@ -29,9 +35,13 @@ type private ScopeSession() =
     let mutable promptKey = ""
     let mutable promptTime: float option = None
     let toolTails = Dictionary<string, string>()
+    let mutable negotiateFirst = false
 
     member _.Budget = budget
     member _.Initialized = initialized
+    member _.NegotiationRequired = negotiateFirst
+    member _.BeginNegotiation() = negotiateFirst <- true; budget <- 0; initialized <- false
+    member _.NegotiationReplyAdmitted() = negotiateFirst <- false; budget <- 0; initialized <- false
 
     member _.StartTurn() = budget <- max 0 (budget - 1)
 
@@ -68,6 +78,10 @@ let private ResetTool = "resetScope"
 [<Literal>]
 let private InitializeReminder =
     "[System: Estimate the turnBudget for the first fine-grained task block (state closed-loop). Then call resetScope immediately, before doing anything else.]"
+
+[<Literal>]
+let private NegotiateReminder =
+    "[System: Before any resetScope initialization, call negotiate(questions: string) NOW. Ask the delegator all questions needed to clarify this assignment. Group related questions into the single plural questions argument. The call acknowledges sending immediately; continue your work without waiting. Until the delegator’s answer arrives as a user steer, do not call resetScope. After that answer, call resetScope promptly. You may negotiate again at any time; later calls never delay resetScope.]"
 
 [<Literal>]
 let private WeakReminder =
@@ -433,18 +447,21 @@ let private toolHint (scope: ScopeSession) (remember: bool) (identity: string) (
           "field" ==> fieldName
           "tail" ==> suffix ]
 
-let private userHint (index: int) =
+let private userHint (scope: ScopeSession) (index: int) (key: string) (remember: bool) =
+    let proposed = if scope.NegotiationRequired then NegotiateReminder else InitializeReminder
+    let suffix = scope.TerminalTail("prompt:" + key, proposed, remember)
     createObj
         [ "kind" ==> "user"
           "index" ==> index
           "part" ==> -1
           "field" ==> ""
-          "tail" ==> InitializeReminder ]
+          "tail" ==> suffix ]
 
 let private hintsAt (scope: ScopeSession) (known: Dictionary<string, string>) (remember: bool) (message: NeutralMessage) (selectedParts: int array option) =
     let initialized, budget = scope.Initialized, scope.Budget
     if message.Kind = "user" && message.Operator then
-        [| userHint message.Index |]
+        [| userHint scope message.Index message.Key remember |]
+    elif scope.NegotiationRequired then [||]
     elif message.Kind = "result" && message.ResultField <> "" then
         let name =
             if known.ContainsKey(message.ResultFor) then known[message.ResultFor] else ""
@@ -488,7 +505,7 @@ let private preparedNeutralPlan (scope: ScopeSession) (messages: obj) : obj =
             if not sideRequest then scope.Observe(prompt.Key, prompt.Stamp, hasReset)
             let retained, known = neutralSelections entries
             let alreadySteered = entries.Length > 0 && entries[entries.Length - 1].Kind = "user" && not entries[entries.Length - 1].Operator && not entries[entries.Length - 1].Side
-            retained, known, scope.Initialized && scope.Budget = 0 && not sideRequest && not alreadySteered, true, sideRequest
+            retained, known, scope.Initialized && not scope.NegotiationRequired && scope.Budget = 0 && not sideRequest && not alreadySteered, true, sideRequest
     let slots =
         selected |> Array.choose (fun (m, selection) -> selection |> Option.map (slotOf m))
     let tails =
@@ -505,10 +522,16 @@ let private preparedNeutralPlan (scope: ScopeSession) (messages: obj) : obj =
           "weak" ==> (if weak then box WeakReminder else null)
           "active" ==> active
           "budget" ==> scope.Budget
-          "initialized" ==> scope.Initialized ]
+          "initialized" ==> scope.Initialized
+          "negotiationRequired" ==> scope.NegotiationRequired ]
 
 let PairHint () : PairHintMessages =
     let sessions = Dictionary<string, ScopeSession>()
+    let bindings = Dictionary<string, string * int>()
+    let questionsByReceipt = Dictionary<string, string * string * int * string>()
+    let preparedReplies = HashSet<string>()
+    let mutable nextGeneration = 0
+    let mutable nextReceipt = 0
 
     let current (sessionId: string) : ScopeSession =
         match sessions.TryGetValue sessionId with
@@ -518,6 +541,64 @@ let PairHint () : PairHintMessages =
             sessions[sessionId] <- scope
             scope
 
+    let discardForRecipient (recipient: string) =
+        let abandoned =
+            questionsByReceipt
+            |> Seq.choose (fun item ->
+                let (owner, _, _, _) = item.Value
+                if owner = recipient then Some item.Key else None)
+            |> Seq.toArray
+        for receipt in abandoned do
+            questionsByReceipt.Remove receipt |> ignore
+            preparedReplies.Remove receipt |> ignore
+
+    let bind (recipient: string) (delegator: string) =
+        match bindings.TryGetValue recipient with
+        | true, (existing, _) when existing = delegator -> ()
+        | _ ->
+            discardForRecipient recipient
+            nextGeneration <- nextGeneration + 1
+            bindings[recipient] <- delegator, nextGeneration
+            (current recipient).BeginNegotiation()
+
+    let ask (recipient: string) (questions: string) : obj =
+        match bindings.TryGetValue recipient with
+        | false, _ -> createObj [ "ok" ==> false; "reason" ==> "not a delegated session" ]
+        | true, (delegator, generation) when String.IsNullOrWhiteSpace questions ->
+            createObj [ "ok" ==> false; "reason" ==> "questions must not be blank" ]
+        | true, (delegator, generation) ->
+            nextReceipt <- nextReceipt + 1
+            let receipt = recipient + ":" + string generation + ":" + string nextReceipt
+            questionsByReceipt[receipt] <- recipient, delegator, generation, questions
+            createObj [ "ok" ==> true; "receipt" ==> receipt; "delegator" ==> delegator; "questions" ==> questions ]
+
+    let prepare (receipt: string) (answer: string) : obj =
+        match questionsByReceipt.TryGetValue receipt with
+        | false, _ -> createObj [ "ok" ==> false; "reason" ==> "unknown or settled negotiation" ]
+        | true, (recipient, delegator, generation, _) ->
+            match bindings.TryGetValue recipient with
+            | true, (_, activeGeneration) when activeGeneration = generation && not (String.IsNullOrWhiteSpace answer) ->
+                preparedReplies.Add receipt |> ignore
+                createObj [ "ok" ==> true; "recipient" ==> recipient; "steer" ==> ("Delegator answered negotiate(questions):\n" + answer); "first" ==> (current recipient).NegotiationRequired ]
+            | _ -> createObj [ "ok" ==> false; "reason" ==> "stale delegation or empty reply" ]
+
+    let complete (receipt: string) =
+        match questionsByReceipt.TryGetValue receipt with
+        | false, _ -> false
+        | true, (recipient, delegator, generation, _) ->
+            match bindings.TryGetValue recipient with
+            | true, (_, activeGeneration) when activeGeneration = generation && preparedReplies.Contains receipt ->
+                questionsByReceipt.Remove receipt |> ignore
+                preparedReplies.Remove receipt |> ignore
+                if (current recipient).NegotiationRequired then (current recipient).NegotiationReplyAdmitted()
+                true
+            | _ -> false
+
+    let confirm (receipt: string) (recipient: string) =
+        match questionsByReceipt.TryGetValue receipt with
+        | true, (owner, _, _, _) when owner = recipient && preparedReplies.Contains receipt -> complete receipt
+        | _ -> false
+
     { new PairHintMessages with
         member _.isUnchanged(left, right) = sameElements left right
         member _.budgetSuffix(budget) = budgetSuffix budget
@@ -525,7 +606,10 @@ let PairHint () : PairHintMessages =
         member _.isInitialized(sessionId) = (current sessionId).Initialized
         member _.startTurn(sessionId) = (current sessionId).StartTurn()
         member _.resetSession(sessionId, budget) = (current sessionId).Reset(budget)
-        member _.clearSession(sessionId) = sessions.Remove sessionId |> ignore
+        member _.clearSession(sessionId) =
+            sessions.Remove sessionId |> ignore
+            bindings.Remove sessionId |> ignore
+            discardForRecipient sessionId
         member _.writeUserHint(message, texts) = writeUserHint message texts
         member _.writeToolResultHint(message, texts) = writeToolResultHint message texts
         member _.stripKnownHints(message, texts) = stripKnownHints message texts
@@ -533,5 +617,11 @@ let PairHint () : PairHintMessages =
         member _.toolCanCarryHint(message) = toolCanCarryHint message
         member _.planRequest(sessionId, messages) = preparedNeutralPlan (current sessionId) messages
         member _.planFilter(messages) = neutralFilterPlan messages
+        member _.bindDelegation(recipient, delegator) = bind recipient delegator
+        member _.askNegotiation(recipient, questions) = ask recipient questions
+        member _.prepareNegotiationReply(receipt, answer) = prepare receipt answer
+        member _.completeNegotiationReply(receipt) = complete receipt
+        member _.confirmNegotiationSteer(receipt, recipient) = confirm receipt recipient
+        member _.negotiationRequired(recipient) = (current recipient).NegotiationRequired
         member _.appendTailOnce(content, suffix) =
             appendOnce content suffix (fun current -> current.StartsWith(suffix, StringComparison.Ordinal)) }

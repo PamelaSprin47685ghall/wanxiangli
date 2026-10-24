@@ -24,6 +24,13 @@
 
 6. tests/006.test.mjs：来自不同宿主的同一份 HNI 中立消息视图，得到相同的 reset 保留计划、用户提醒与工具结果后缀位置；旧原始消息不进入 ScopeSession。
 7. tests/007.test.mjs：先构造预算递减与新 steer 造成历史尾巴改字节的红态，再证明首次呈现冻结、冷重锚允许重建、side-request 不抢先冻结。
+8. tests/008.test.mjs：受委托方首次问答到达前只提醒 negotiate(questions)，首次真实回答 steer 后才激活 resetScope；随后可选协商不暂停重置。同一委托者绑定复用不强制重问，换委托者时旧回执失效；未 prepare 或尚未真实送达的回答不可解锁。
+
+## 协商补充公理（2026-10-24）
+
+1. [使用者] 父→子、调用者→Advisor 只传当前任务指令；不复制历史背景。第一次澄清必须使用单参数 `negotiate(questions: string)`，一次可集中多个问题。工具调用仅返回已接纳异步传送，不等待真实回答。
+2. [AXIOM] 已绑定接收方在首次协商答复真实成为 user steer 之前不激活 `resetScope`；此后协商可选、随时且绝不暂停正常重置。同一接收方/委托者重用不会重复要求首次协商，代际更换时废弃旧回执。
+3. [AXIOM] `questions` 仅能路由给实际委托者，回答须与接收方、代际、回执身份匹配并经物理消息确认，才可 `completeNegotiationReply` / `confirmNegotiationSteer`。工具调用回执、空回答、旧委托、错误会话的回答不得解除初始约束。真正的 BTW 临时对话与 SDK 发消息、副作用工具拒绝属于宿主接缝，不进入中立库。
 
 ## 边界
 

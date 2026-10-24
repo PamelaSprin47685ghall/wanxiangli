@@ -32,6 +32,7 @@ export interface ScopeTail {
 export interface ScopePlan {
   readonly active: boolean
   readonly initialized: boolean
+  readonly negotiationRequired: boolean
   readonly budget: number
   readonly slots: readonly ScopeRetained[]
   readonly hints: readonly ScopeTail[]
@@ -54,5 +55,11 @@ export interface PairHintMessages {
   planRequest(sessionId: string, neutralMessages: readonly ScopeMessage[]): ScopePlan
   planFilter(neutralMessages: readonly ScopeMessage[]): readonly ScopeRetained[]
   appendTailOnce(content: unknown, tail: string): unknown
+  bindDelegation(recipient: string, delegator: string): void
+  askNegotiation(recipient: string, questions: string): {ok:boolean, receipt?: string, delegator?: string, questions?: string, reason?: string}
+  prepareNegotiationReply(receipt: string, answer: string): {ok:boolean, recipient?:string, steer?:string, first?:boolean, reason?:string}
+  completeNegotiationReply(receipt: string): boolean
+  confirmNegotiationSteer(receipt: string, recipient: string): boolean
+  negotiationRequired(recipient: string): boolean
 }
 export function PairHint(): PairHintMessages
