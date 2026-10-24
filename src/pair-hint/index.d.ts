@@ -61,5 +61,16 @@ export interface PairHintMessages {
   completeNegotiationReply(receipt: string): boolean
   confirmNegotiationSteer(receipt: string, recipient: string): boolean
   negotiationRequired(recipient: string): boolean
+  rememberModel(sessionId: string, model: unknown): void
+  modelFor(sessionId: string): unknown
+  rememberSystem(sessionId: string, system: readonly string[]): void
+  rememberMessages(sessionId: string, messages: readonly unknown[]): void
+  startTemporary(temporaryId: string, delegatorId: string): {ok:boolean, reason?:string}
+  finishTemporary(temporaryId: string): void
+  isTemporary(sessionId: string): boolean
+  recordToolViolation(sessionId: string): void
+  toolViolationCount(sessionId: string): number
+  projectSystem(sessionId: string): readonly string[]
+  projectMessages(sessionId: string, question: unknown): readonly unknown[]
 }
 export function PairHint(): PairHintMessages

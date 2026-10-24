@@ -28,6 +28,17 @@ type PairHintMessages =
     abstract completeNegotiationReply: receipt: string -> bool
     abstract confirmNegotiationSteer: receipt: string * recipient: string -> bool
     abstract negotiationRequired: recipient: string -> bool
+    abstract rememberModel: sessionId: string * model: obj -> unit
+    abstract modelFor: sessionId: string -> obj
+    abstract rememberSystem: sessionId: string * system: string array -> unit
+    abstract rememberMessages: sessionId: string * messages: obj array -> unit
+    abstract startTemporary: temporaryId: string * delegatorId: string -> obj
+    abstract finishTemporary: temporaryId: string -> unit
+    abstract isTemporary: sessionId: string -> bool
+    abstract recordToolViolation: sessionId: string -> unit
+    abstract toolViolationCount: sessionId: string -> int
+    abstract projectSystem: sessionId: string -> string array
+    abstract projectMessages: sessionId: string * question: obj -> obj array
 
 type private ScopeSession() =
     let mutable budget = 0
@@ -321,6 +332,91 @@ let private toolCanCarryHint (message: obj) : bool =
 [<Emit("typeof $0 === 'number' && Number.isFinite($0)")>]
 let private isFiniteNumber (_value: obj) : bool = jsNative
 
+[<Emit("structuredClone($0)")>]
+let private deepCopy (_value: obj) : obj = jsNative
+
+/// Provider-wire snapshot of the delegator that a temporary negotiation may reuse.
+type private NegotiationView =
+    { Delegator: string
+      Messages: obj array
+      System: string array }
+
+/// 临时协商会话的物理载体快照：只保存委托者最后一次出站请求的只读副本。
+type private NegotiationWire() =
+    let observedMessages = Dictionary<string, obj array>()
+    let observedSystems = Dictionary<string, string array>()
+    let observedModels = Dictionary<string, obj>()
+    let temporaries = Dictionary<string, NegotiationView>()
+    let violations = Dictionary<string, int>()
+
+    member _.RememberModel(sessionId: string, model: obj) =
+        if not (temporaries.ContainsKey sessionId) then
+            observedModels[sessionId] <- deepCopy model
+
+    member _.ModelFor(sessionId: string) : obj =
+        match observedModels.TryGetValue sessionId with
+        | true, model -> deepCopy model
+        | false, _ -> null
+
+    member _.RememberSystem(sessionId: string, system: string array) =
+        if not (temporaries.ContainsKey sessionId) then
+            observedSystems[sessionId] <- unbox<string array> (deepCopy (box system))
+
+    member _.RememberMessages(sessionId: string, messages: obj array) =
+        if not (temporaries.ContainsKey sessionId) then
+            observedMessages[sessionId] <- unbox<obj array> (deepCopy (box messages))
+
+    member _.StartTemporary(temporaryId: string, delegatorId: string) : obj =
+        match
+            observedMessages.TryGetValue delegatorId,
+            observedSystems.TryGetValue delegatorId,
+            observedModels.TryGetValue delegatorId
+        with
+        | (true, messages), (true, system), (true, _) when messages.Length > 0 && system.Length > 0 ->
+            temporaries[temporaryId] <-
+                { Delegator = delegatorId
+                  Messages = unbox<obj array> (deepCopy (box messages))
+                  System = unbox<string array> (deepCopy (box system)) }
+
+            createObj [ "ok" ==> true ]
+        | _ ->
+            createObj [ "ok" ==> false; "reason" ==> "delegator has no complete provider-wire snapshot (messages, system and actual model) to reuse" ]
+
+    member _.FinishTemporary(temporaryId: string) =
+        temporaries.Remove temporaryId |> ignore
+        violations.Remove temporaryId |> ignore
+
+    member _.IsTemporary(sessionId: string) : bool = temporaries.ContainsKey sessionId
+
+    member _.RecordToolViolation(sessionId: string) =
+        if temporaries.ContainsKey sessionId then
+            violations[sessionId] <- (match violations.TryGetValue sessionId with
+                                      | true, seen -> seen + 1
+                                      | false, _ -> 1)
+
+    member _.ToolViolationCount(sessionId: string) : int =
+        match violations.TryGetValue sessionId with
+        | true, seen -> seen
+        | false, _ -> 0
+
+    member _.ProjectSystem(sessionId: string) : string array =
+        match temporaries.TryGetValue sessionId with
+        | true, view -> unbox<string array> (deepCopy (box view.System))
+        | false, _ -> [||]
+
+    /// 被复用的委托者前缀 + 唯一实际提问，作为临时会话发往模型的完整消息。
+    member _.ProjectMessages(sessionId: string, question: obj) : obj array =
+        match temporaries.TryGetValue sessionId with
+        | true, view -> Array.append (unbox<obj array> (deepCopy (box view.Messages))) [| deepCopy question |]
+        | false, _ -> [||]
+
+    member _.ForgetSession(sessionId: string) =
+        observedMessages.Remove sessionId |> ignore
+        observedSystems.Remove sessionId |> ignore
+        observedModels.Remove sessionId |> ignore
+        temporaries.Remove sessionId |> ignore
+        violations.Remove sessionId |> ignore
+
 type private NeutralCall =
     { Part: int
       Id: string
@@ -527,6 +623,7 @@ let private preparedNeutralPlan (scope: ScopeSession) (messages: obj) : obj =
 
 let PairHint () : PairHintMessages =
     let sessions = Dictionary<string, ScopeSession>()
+    let wire = NegotiationWire()
     let bindings = Dictionary<string, string * int>()
     let questionsByReceipt = Dictionary<string, string * string * int * string>()
     let preparedReplies = HashSet<string>()
@@ -610,6 +707,7 @@ let PairHint () : PairHintMessages =
             sessions.Remove sessionId |> ignore
             bindings.Remove sessionId |> ignore
             discardForRecipient sessionId
+            wire.ForgetSession sessionId
         member _.writeUserHint(message, texts) = writeUserHint message texts
         member _.writeToolResultHint(message, texts) = writeToolResultHint message texts
         member _.stripKnownHints(message, texts) = stripKnownHints message texts
@@ -623,5 +721,16 @@ let PairHint () : PairHintMessages =
         member _.completeNegotiationReply(receipt) = complete receipt
         member _.confirmNegotiationSteer(receipt, recipient) = confirm receipt recipient
         member _.negotiationRequired(recipient) = (current recipient).NegotiationRequired
+        member _.rememberModel(sessionId, model) = wire.RememberModel(sessionId, model)
+        member _.modelFor(sessionId) = wire.ModelFor sessionId
+        member _.rememberSystem(sessionId, system) = wire.RememberSystem(sessionId, system)
+        member _.rememberMessages(sessionId, messages) = wire.RememberMessages(sessionId, messages)
+        member _.startTemporary(temporaryId, delegatorId) = wire.StartTemporary(temporaryId, delegatorId)
+        member _.finishTemporary(temporaryId) = wire.FinishTemporary temporaryId
+        member _.isTemporary(sessionId) = wire.IsTemporary sessionId
+        member _.recordToolViolation(sessionId) = wire.RecordToolViolation sessionId
+        member _.toolViolationCount(sessionId) = wire.ToolViolationCount sessionId
+        member _.projectSystem(sessionId) = wire.ProjectSystem sessionId
+        member _.projectMessages(sessionId, question) = wire.ProjectMessages(sessionId, question)
         member _.appendTailOnce(content, suffix) =
             appendOnce content suffix (fun current -> current.StartsWith(suffix, StringComparison.Ordinal)) }
