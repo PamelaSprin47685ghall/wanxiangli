@@ -1,5 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {spawnSync} from 'node:child_process';
+import {mkdtempSync,rmSync,writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {dirname,join} from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {Runtime} from '../../../dist/runtime/Runtime.js';
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const baseClass='class JsProgram { constructor(api){this._api=api;} async call(a,b){return await this._api.call(a,b);} async slow(v){return await this._api.slow(v);} write(v){return this._api.write(v);} }';
@@ -62,4 +67,36 @@ test('SPEC 1: cancellation runs reachable native finally',{timeout:5000},async()
 test('SPEC 1: members and SDK results do not expose the host realm',{timeout:5000},async()=>{
  const r=launch('class Js extends JsProgram {async run(){let blocked=false;try{this._api.write.constructor("return process")();}catch(_){blocked=true;}const v=await this.slow();let resultBlocked=false;try{v.constructor.constructor("return process")();}catch(_){resultBlocked=true;}return {blocked,resultBlocked,processType:typeof process,requireType:typeof require};}}',(m,reply)=>reply(m.id,{}));
  assert.deepEqual((await r.terminal).value,{blocked:true,resultBlocked:true,processType:'undefined',requireType:'undefined'});await r.unit.exited;
+});
+
+test('SPEC 1: a compiled Bun host starts a worker instead of re-executing itself',{timeout:20000},t=>{
+ const bun=spawnSync('bun',['--version'],{encoding:'utf8'});
+ if(bun.status!==0)return t.skip('Bun CLI is unavailable');
+ const root=mkdtempSync(join(tmpdir(),'runtime-compiled-host-'));
+ try{
+  const entry=join(root,'host.mjs'),executable=join(root,'host');
+  writeFileSync(entry,[
+   "import { Runtime } from "+JSON.stringify(fileURLToPath(new URL('../../../dist/runtime/Runtime.js',import.meta.url)))+";",
+   "if(process.argv.includes('--eval')) { console.error('compiled host is not a JavaScript interpreter'); process.exit(7); }",
+   "const messages=[];",
+   "let unit;",
+   "try { unit=Runtime().startUnit({program:'class Js extends JsProgram { async run() { return 42; } }',baseClass:'class JsProgram {}',members:[],executionBudgetMs:1000},message=>messages.push(message)); }",
+   "catch(error) { console.log(JSON.stringify({error:{code:error.code,reason:error.message}})); process.exit(0); }",
+   "const exit=await unit.exited;",
+   "console.log(JSON.stringify({messages,exit}));"
+  ].join('\n')+'\n');
+  const built=spawnSync('bun',['build','--compile',entry,'--outfile',executable],{encoding:'utf8'});
+  assert.equal(built.status,0,built.stderr);
+  const run=spawnSync(executable,[],{encoding:'utf8',timeout:5000});
+  assert.equal(run.status,0,run.stderr);
+  const result=JSON.parse(run.stdout.trim());
+  assert.deepEqual(result.messages,[{type:'completed',value:42}]);
+  assert.equal(result.exit.exitCode,0);
+  const nodeOnly=spawnSync(executable,[],{encoding:'utf8',timeout:5000,env:{...process.env,PATH:dirname(process.execPath)}});
+  assert.equal(nodeOnly.status,0,nodeOnly.stderr);
+  assert.deepEqual(JSON.parse(nodeOnly.stdout.trim()).messages,[{type:'completed',value:42}]);
+  const noInterpreter=spawnSync(executable,[],{encoding:'utf8',timeout:5000,env:{PATH:''}});
+  assert.equal(noInterpreter.status,0,noInterpreter.stderr);
+  assert.equal(JSON.parse(noInterpreter.stdout.trim()).error.code,'PROGRAM_RUNTIME_UNAVAILABLE');
+ }finally{rmSync(root,{recursive:true,force:true});}
 });

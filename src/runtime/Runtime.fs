@@ -30,8 +30,15 @@ let private nodeProcess: obj = importAll "node:process"
       throw errorWithCode('INVALID_PROGRAM', 'A program, base class, and member list are required.');
     }
     if (!Number.isFinite(spec.executionBudgetMs) || spec.executionBudgetMs <= 0) throw errorWithCode('INVALID_EXECUTION_BUDGET', 'The execution budget must be positive and finite.');
-    const args = nodeProcess.versions.bun ? ['--eval', workerSource] : ['--input-type=module', '--eval', workerSource];
-    const child = childProcess.spawn(nodeProcess.execPath, args, {
+    let executable = nodeProcess.execPath;
+    let useBun = Boolean(nodeProcess.versions.bun);
+    if (typeof Bun !== 'undefined' && Bun.isStandaloneExecutable) {
+      executable = Bun.which('bun');
+      if (!executable) { executable = Bun.which('node'); useBun = false; }
+      if (!executable) throw errorWithCode('PROGRAM_RUNTIME_UNAVAILABLE', 'Standalone Bun hosts need bun or node on PATH to execute isolated programs.');
+    }
+    const args = useBun ? ['--eval', workerSource] : ['--input-type=module', '--eval', workerSource];
+    const child = childProcess.spawn(executable, args, {
       stdio: ['pipe', 'pipe', 'pipe'], env: { PATH: nodeProcess.env.PATH || '', LANG: 'C.UTF-8' }
     });
     const allowedMembers = new Set(spec.members);
