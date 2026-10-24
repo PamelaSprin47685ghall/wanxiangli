@@ -4,6 +4,17 @@
 
 引用约定：根目录条目写作 `根 AXIOM 3`、`根 LEMMA 4`、`根 SPEC 2`；本文件写作 `总规则 LEMMA 4`、`总规则 SPEC 3`；子模块的规则与测试就近放置，不复制根 GUIDE。
 
+# 当前 program/runtime 职责索引
+
+| 公开入口 | 源码 | 状态与行为所有者 |
+| --- | --- | --- |
+| `wanxiangli/program` | `program/`、`program/wait/` | Program() 登记入口，ProgramSession 会话登记与重放，私有 Run 单次运行、暂停代际与结算，ProgramCatalog 投影，Wait 等待控制 |
+| `wanxiangli/runtime` | `runtime/` 及 files/process/pty/spool/time | Runtime 独立进程，RuntimeTools 原语与字面锚点，FileSession 读版本，各物理对象自己的资源和输出 |
+
+program → runtime 是根规则明确的永久单向基础依赖，仅消费公开产物。模型入口恰为 name/program/planB；顶层一次性期限约束本次所有 call/unpark，成员不能续期。独立 join() 无参数，编程内 join/dag 已删除。旧八入口退出。
+
+下方既有阶段清单与历史证明只记录当时范围，不作为当前 exports 或最终验收状态；当前构建、真实执行和安装均须独立验证。
+
 # AXIOM
 
 1. [使用者] 一次用户委托要能驱动多轮无人值守的工程工作，事后能逐轮说清这一轮为什么发生、什么已经成立、路因此怎么变。

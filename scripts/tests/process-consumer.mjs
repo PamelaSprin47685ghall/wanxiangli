@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
 import { readFileSync } from 'node:fs'
 import { setTimeout as delay } from 'node:timers/promises'
-import { ProcessSession } from 'wanxiangli/process'
+import { ProcessSession } from 'wanxiangli/runtime'
 
 const [runtime] = process.argv.slice(2)
 const runs = []
@@ -30,7 +30,7 @@ const closed = async run => {
   return result.state
 }
 
-assert.deepEqual(Object.keys(await import('wanxiangli/process')), ['ProcessSession'])
+assert.equal((await import('wanxiangli/runtime')).ProcessSession, ProcessSession)
 let grandchild
 try {
   const echo = make('echo', { tailBytes: 8 })

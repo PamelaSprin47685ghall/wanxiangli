@@ -174,10 +174,19 @@ for (const input of inputs) {
       }
     }
     const publicClass = path.basename(includes.at(-1), '.fs')
+    const declaration = readFileSync(project, 'utf8').replace(/<!--[\s\S]*?-->/g, '')
+    const exports = [...declaration.matchAll(/<PackageExport\s+([^>]+)\/?>/g)].map(match => {
+      const attributes = Object.fromEntries([...match[1].matchAll(/(Include|Member)\s*=\s*["']([^"']+)["']/g)].map(value => [value[1], value[2]]))
+      if (!includes.includes(attributes.Include) || !/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(attributes.Member ?? '')) {
+        throw new Error(`Invalid package export: ${name}`)
+      }
+      return `export { ${attributes.Member} } from ${JSON.stringify(path.join(temporary, attributes.Include.replace(/\.fs$/, '.js')))}`
+    })
     const entry = path.join(temporary, `${publicClass}.js`)
+    const contents = exports.length ? exports.join('\n') : `export { ${publicClass} } from ${JSON.stringify(entry)}`
     const bundle = path.join(temporary, 'package')
     await build({
-      stdin: { contents: `export { ${publicClass} } from ${JSON.stringify(entry)}`, resolveDir: root },
+      stdin: { contents, resolveDir: root },
       outfile: path.join(bundle, `${publicClass}.js`),
       bundle: true,
       external: ['wanxiangli/*'],
@@ -209,4 +218,13 @@ const finalProjects = discoverProjects()
 if ((allModules && finalProjects.size !== projects.size)
   || selected.some(name => finalProjects.get(name) !== projects.get(name))) {
   throw new Error('Inputs changed during build: module projects; run the build again')
+}
+
+if (allModules) {
+  for (const entry of readdirSync(path.join(root, 'dist'), { withFileTypes: true })) {
+    if (entry.isDirectory() && !projects.has(entry.name)) {
+      rmSync(path.join(root, 'dist', entry.name), { recursive: true, force: true })
+      dropStamp(entry.name)
+    }
+  }
 }

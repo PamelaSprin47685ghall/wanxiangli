@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Catalog.fs" />
+    <Compile Include="wait/CausalWait.fs" />
+    <Compile Include="wait/Registry.fs" />
+    <Compile Include="wait/CompletionMailbox.fs" />
+    <Compile Include="wait/Await.fs" />
+    <Compile Include="wait/Wait.fs" />
+    <Compile Include="Native.fs" />
+    <Compile Include="Window.fs" />
+    <Compile Include="Run.fs" />
+    <Compile Include="Program.fs" />
+    <PackageExport Include="Catalog.fs" Member="ProgramCatalog" />
+    <PackageExport Include="wait/Wait.fs" Member="Wait" />
+    <PackageExport Include="Program.fs" Member="ProgramSession" />
+    <PackageExport Include="Program.fs" Member="Program" />
+  </ItemGroup>
+</Project>

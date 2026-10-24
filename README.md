@@ -2,9 +2,26 @@
 
 逐步承接宿主职责的独立库。F# 实现，编译为独立 ESM，通过 npm 包使用。
 
-当前不是完整新宿主。`wanxiangli/work` 承接 **工作开立 → 评审 → 接力或交付 → 持久恢复**；`wanxiangli/process` 是独立的真实进程会话；`wanxiangli/trace` 是确认轨迹、字节原件和固定取材区间；`wanxiangli/ownership` 是资源归属与收尾。宿主已通过 npm 公开入口消费这些入口；`src/` 中只有说明、没有 fsproj 的目录仍是草稿。
+当前不是完整新宿主。`wanxiangli/work` 承接 **工作开立 → 评审 → 接力或交付 → 持久恢复**；`wanxiangli/runtime` 提供真实执行与物理资源；`wanxiangli/trace` 是确认轨迹、字节原件和固定取材区间；`wanxiangli/ownership` 是资源归属与收尾。宿主已通过 npm 公开入口消费这些入口；`src/` 中只有说明、没有 fsproj 的目录仍是草稿。
 
-进程入口是 `wanxiangli/process` / `ProcessSession`：真实启动、有界 stdin、双路原始输出尾部、独立等待和 POSIX 进程组信号。它不导入下面三个入口，下面三个入口也不导入它。完整用法、字节游标和监管边界见 `PROCESS.md`。
+## 程序设施与物理设施
+
+| 入口 | 公开对象 | 职责 |
+| --- | --- | --- |
+| `wanxiangli/program` | Program、ProgramSession、ProgramCatalog、Wait | 命名运行、请求期限、暂停与恢复、一次性结算和成员投影 |
+| `wanxiangli/runtime` | Runtime、RuntimeTools、FileSession、Filesystem、ProcessSession、Terminal、OutputSpool、Time | 独立进程、隔离、文件与字面锚点、读版本、命令与终端、输出和物理计量 |
+
+```js
+import { Program, ProgramSession, ProgramCatalog, Wait } from 'wanxiangli/program'
+import { Runtime, RuntimeTools, FileSession, Filesystem, ProcessSession, Terminal, OutputSpool, Time } from 'wanxiangli/runtime'
+```
+
+模型工具只接收三个必填字符串 `{ name, program, planB }`。准入时按 `UTF8Bytes(planB) × 50ms` 一次性确定请求期限；`call(command)`、`unpark(name, value?)` 不接收预算。连续命令、控制者及本次唤醒的全部目标共用剩余时间。到期保留命令并暂停续体；恢复控制者不会隐式再次恢复目标。
+
+program 通过 runtime 公开产物使用物理能力，是永久单向基础依赖。runtime 不裁决角色、评审或业务完成。旧 programming/sandbox/fs/process/pty/spool/time/wait 八入口已撤销，无兼容别名；其他领域入口继续独立。
+
+ProcessSession 仍提供真实启动、有界 stdin、双路原始输出、独立等待与 POSIX 进程组信号；其显式物理运行期限不等于模型请求窗口。当前 API 以 `src/program/index.d.ts`、`src/runtime/index.d.ts` 为准。
+
 
 轨迹入口是 `wanxiangli/trace` / `Trace`：稳定观察身份、只追加的已确认部件、原始字节和运行终态；边界同时绑定轨迹、游标和前缀摘要。原始观察、全部用户原件和当前区间消息是同一份事实的不同视图，不复制成可相互覆盖的账本。它不依赖前两刀，也不把存储服务换名后注入。完整用法及字节、恢复、来源可信度的限制见 `TRACE.md`。
 
@@ -67,8 +84,9 @@ node --test src/eventstore/tests/*.test.mjs
 npm run build -- assembly
 node --test src/assembly/tests/*.test.mjs
 
-npm run build -- process
-node --test src/process/tests/*.test.mjs
+npm run build -- runtime program
+node --test src/runtime/tests/*.test.mjs src/runtime/process/tests/*.test.mjs src/program/tests/*.test.mjs
+node --test scripts/tests/program-package.test.mjs scripts/tests/process-package.test.mjs
 
 npm run build -- trace
 node --test src/trace/tests/*.test.mjs
@@ -218,4 +236,4 @@ SQLite 使用 `BEGIN IMMEDIATE`、WAL、`synchronous=FULL` 和零等待竞争策
 
 `npm test` 分别运行无存储替身的 Work 测试、真实 SQLite 的事务测试、DurableWork 组合与故障测试、同一领域契约的两种整体、拆除兄弟源码及组合者后的独立验证，以及 Node/Bun 实际安装包的强杀恢复。测试还覆盖先完成内存工作再存档、逐笔提交后发布两种真实合作方式，A、B 的内部实现不变。
 
-宿主接线、接口切换与旧实现删除边界统一见 wanxiangshu 仓库根目录 `AGENTS.md` 的迁移章节；本库不维护第二份迁移指南。宿主当前版本为 0.66.0，各公开入口见 `package.json` 的 `exports`。
+宿主接线、接口切换与旧实现删除边界统一见 wanxiangshu 仓库根目录 `AGENTS.md` 的迁移章节；本库不维护第二份迁移指南。当前包版本为 0.67.0，各公开入口见 `package.json` 的 `exports`。
