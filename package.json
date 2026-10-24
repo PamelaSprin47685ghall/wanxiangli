@@ -180,6 +180,10 @@
       "types": "./src/program/index.d.ts",
       "import": "./dist/program/Program.js"
     },
+    "./external-namespaces": {
+      "types": "./src/external-namespaces/index.d.ts",
+      "import": "./dist/external-namespaces/ExternalNamespaces.js"
+    },
     "./provider-calibration": {
       "types": "./src/provider-calibration/index.d.ts",
       "import": "./dist/provider-calibration/ProviderCalibration.js"
@@ -239,6 +243,7 @@
     "src/failure/index.d.ts",
     "src/failure-budget/index.d.ts",
     "src/program/index.d.ts",
+    "src/external-namespaces/index.d.ts",
     "src/provider-calibration/index.d.ts",
     "src/runtime/index.d.ts",
     "src/program/wait/types.d.ts",
