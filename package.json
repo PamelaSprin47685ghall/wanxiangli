@@ -60,6 +60,10 @@
       "types": "./src/delivery/index.d.ts",
       "import": "./dist/delivery/Delivery.js"
     },
+    "./pair-hint": {
+      "types": "./src/pair-hint/index.d.ts",
+      "import": "./dist/pair-hint/PairHint.js"
+    },
     "./prefix": {
       "types": "./src/prefix/index.d.ts",
       "import": "./dist/prefix/Prefix.js"
@@ -221,6 +225,7 @@
     "src/time/index.d.ts",
     "src/wait/index.d.ts",
     "src/delivery/index.d.ts",
+    "src/pair-hint/index.d.ts",
     "src/prefix/index.d.ts",
     "src/degeneration/index.d.ts",
     "src/spool/index.d.ts",
