@@ -199,3 +199,31 @@ test('WHAT[host-boundary-terminal-001] TerminalBus 引用计数管理、first-wi
   // 6. 再次 release 已不存在的 key
   assert.equal(bus.Release('ws-1', candidate1), false)
 })
+
+test('WHAT[host-boundary-terminal-001] process 级 future 订阅不回放已有 sticky 历史，仅接收未来新事件', () => {
+  const registry = new TerminalRegistry(() => {})
+
+  // 1. 已产生两会话的 sticky 历史
+  registry.NotifyTerminal('ses-old-1', completed('run-1', 'res-1'))
+  registry.NotifyTerminal('ses-old-2', failed('err-2'))
+
+  // 2. SubscribeProcessTerminal 必须回放全部已有 sticky
+  const stickyAll = []
+  const subSticky = registry.SubscribeProcessTerminal((s, o) => stickyAll.push({ s, o }))
+  assert.equal(stickyAll.length, 2, 'sticky 进程级订阅必须回放全部已有 sticky')
+
+  // 3. SubscribeProcessFutureTerminal 严禁回放任何已有 sticky
+  const futureAll = []
+  const subFuture = registry.SubscribeProcessFutureTerminal((s, o) => futureAll.push({ s, o }))
+  assert.equal(futureAll.length, 0, 'future 进程级订阅严禁回放已有 sticky 历史')
+
+  // 4. 后续新事件到达时，sticky 与 future 订阅均能正常接收
+  registry.NotifyTerminal('ses-new', completed('run-new', 'res-new'))
+  assert.equal(stickyAll.length, 3)
+  assert.equal(futureAll.length, 1)
+  assert.equal(futureAll[0].s, 'ses-new')
+  assert.equal(futureAll[0].o.Kind, 'Completed')
+
+  subSticky.Dispose()
+  subFuture.Dispose()
+})
