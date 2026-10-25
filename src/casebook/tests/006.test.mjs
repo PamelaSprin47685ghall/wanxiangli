@@ -78,3 +78,14 @@ test('WHAT[knowledge-reuse-006] abort 幂等：删除后再 abort 不报错', ()
   assertError(staging.snapshot('t-abort'), MISSING, 'abort 后槽已消失')
   assert.equal(staging.touched('t-abort'), false)
 })
+
+test('WHAT[knowledge-reuse-006] apply(undefined, undefined) 保留原有 Q/A 且 touched 设为 true', () => {
+  const staging = bookkeeperStaging
+  staging.beginTransaction('t-null-preserve', '原问题', '原回答')
+  assert.equal(staging.touched('t-null-preserve'), false)
+  assertOk(staging.apply('t-null-preserve', undefined, undefined), undefined, 'apply 成功返回')
+  assert.equal(staging.touched('t-null-preserve'), true, 'touched 变为 true')
+  assertOk(staging.snapshot('t-null-preserve'), ['原问题', '原回答'], '原有 Q/A 严格保留不变')
+  assertOk(staging.take('t-null-preserve'), ['原问题', '原回答'], 'touched 为 true 可成功 take 出原值')
+  staging.abort('t-null-preserve')
+})
