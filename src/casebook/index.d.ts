@@ -54,34 +54,6 @@ export declare class CasebookIndex {
 /** 进程内唯一 Casebook 索引状态机实例；ES 模块缓存保证全进程同一实例。 */
 export declare const casebookIndex: CasebookIndex
 
-export interface CasebookIndexSnapshot {
-  readonly epoch: number | bigint
-  readonly cases: readonly IndexEntry[]
-}
-
-/** 进程内 Casebook 公开索引自治状态机；语义迁移自主仓原 CasebookIndex 模块。 */
-export declare class CasebookIndex {
-  constructor()
-  /** 读取当前冻结的公开快照，未完成首次冻结前返回 null。 */
-  tryGet(): CasebookIndexSnapshot | null
-  /** 标记公开索引已失效；促使下一次成功 freeze 推进 epoch。 */
-  invalidate(): void
-  /**
-   * 给定内部案例集合计算公开条目并冻结为新快照。
-   * 即使 cases 为空集合，首次成功冻结也产生 epoch = 0n, dirty = false；
-   * 后续仅在 dirty = true 或公开条目发生实质变化（含次序）时 epoch 推进 1。
-   * 返回防御性浅拷贝的原生快照对象。
-   */
-  freeze(cases: readonly IndexCase[]): CasebookIndexSnapshot
-  /** 定位 shelfmark 在输入 cases 中的索引，找不到返回 -1。 */
-  locate(cases: readonly IndexCase[], shelfmark: string): number
-  /** 稳定公开 shelfmark 计算。 */
-  shelfmarkFor(sessionId: string, question: string): string
-}
-
-/** 进程内唯一 Casebook 索引状态机实例；ES 模块缓存保证全进程同一实例。 */
-export declare const casebookIndex: CasebookIndex
-
 export declare class CasebookIndexLaw {
   /** 第一条非空行去掉行首 Markdown 记号、折叠空白；超过 72 个码元截为 71 加 “…”，绝不拆开代理对。 */
   compactTitle(question: string): string
