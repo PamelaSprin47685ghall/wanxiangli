@@ -36,6 +36,8 @@
 
 15. tests/015.test.mjs：冷重启后的历史 `resetScope` 只证明旧事件存在，未确证当前预算时必须持续通过强 agent steer 催重新 `resetScope`；不得把内存默认 0 当作已耗尽预算、发弱提示或改写工具尾巴。真正重置获得预算后仍按实际回合递减，只有真实 0 触发弱提醒。
 
+16. tests/016.test.mjs：OutboundViewStore 自治存储对象：渐进式封存、重入覆写重置、原生请求原子直封与残缺拒绝、深拷贝防外部篡改、discardSealed 单次排空、会话隔离清理、serializeSnapshot 契约（providerID, modelID, variant, toolsCaptured, nativePayload）与 startTemporaryFromFrozen 端到端消费。
+
 ## 协商补充公理（2026-10-24）
 
 1. [使用者] 父→子、调用者→Advisor 只传当前任务指令；不复制历史背景。第一次澄清必须使用单参数 `negotiate(questions: string)`，一次可集中多个问题。工具调用仅返回已接纳异步传送，不等待真实回答。

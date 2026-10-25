@@ -90,3 +90,34 @@ export interface PairHintMessages {
   confirmPreviousScopeSteer(receipt: string, sessionId: string): boolean
 }
 export function PairHint(): PairHintMessages
+
+export interface OutboundModel {
+  readonly providerID: string
+  readonly modelID: string
+  readonly variant: string | null
+}
+
+export interface OutboundSnapshot {
+  readonly sessionId: string
+  readonly messages: unknown
+  readonly system: readonly string[]
+  readonly model: OutboundModel
+  readonly toolsCaptured: boolean
+  readonly nativePayload: unknown | null
+}
+
+export class OutboundViewStore {
+  constructor()
+  recordMessagesFor(sessionId: string, messages: unknown): void
+  recordMessages(messages: unknown): void
+  recordSystem(sessionId: string, system: unknown): void
+  recordModel(sessionId: string, model: unknown): void
+recordNativeRequest(sessionId: string, payload: unknown, model: unknown): boolean;
+  checkAndSeal(sessionId: string): boolean;
+  tryGetSealed(sessionId: string): OutboundSnapshot | undefined
+  discardSealed(sessionId: string): void
+  clearSession(sessionId: string): void
+  serializeSnapshot(snapshot: OutboundSnapshot | unknown): string
+}
+
+export const outboundViewStore: OutboundViewStore

@@ -5,6 +5,10 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="OutboundViewStore.fs" />
     <Compile Include="PairHint.fs" />
+    <PackageExport Include="OutboundViewStore.fs" Member="OutboundViewStore" />
+    <PackageExport Include="OutboundViewStore.fs" Member="outboundViewStore" />
+    <PackageExport Include="PairHint.fs" Member="PairHint" />
   </ItemGroup>
 </Project>
