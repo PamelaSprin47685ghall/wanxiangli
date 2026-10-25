@@ -4,14 +4,14 @@
 
 ## AXIOM
 
-1. [使用者] 只有显式 resetScope 调用能清理旧上下文；原始用户消息与 reset 调用及结果必须保留。模型自行决定经验与原文的交接。
+1. [使用者] 只有显式 resetScope 调用能清理旧上下文；真实 operator 输入与 reset 调用及结果必须保留。以 user role 运输的 `attribution: agent` 答复不等于真实操作员，旧 epoch 的代理答复属于可清理过程；模型自行决定经验与原文交接。
 2. [使用者] 用户消息注入与工具结果注入是两条独立、明确的 API；OMP role/content 和 OpenCode info/parts/state.output 的真实载体不能混淆。
 
 ## LEMMA
 
 1. [AXIOM 1] 最新 reset 是唯一清理边界。之前的用户消息与 reset 对保留，之后完整保留；同批工具调用在 reset 的块位置切分。
 2. [AXIOM 2] 用户消息和工具结果有两种独立的后缀写入位置，但只在模型即将收到的请求副本中呈现。真实工具返回值、用户原文与持久化历史保持原样；同一提示不重复添加。
-3. [AXIOM 1, 2] 未初始化时非 reset 结果只带初始化提醒；初始化后带预算，预算为零时可另加不打断工作的弱 steer。
+3. [AXIOM 1, 2] 第一次 reset 前的所有正常 Provider 请求都由唯一 ScopeSession 输出一个**独立强 steer** 催促预算初始化；用户原文和工具结果绝不承载催重置命令。成功首次 reset 后沿用预算，之后任何真实用户消息和 agent 回答都不使预算归零；第二次及以后的 reset 才进入 askPreviousScope 强 steer 首问阶段。已初始化工具结果仅带预算观察，预算归零时可另加不打断工作的弱 steer。
 4. [AXIOM 1, 2] 已呈现的工具结果是同一 prefix epoch 内的历史字节，`ScopeSession` 按调用身份冻结首次提示尾巴；预算变动或新用户 steer 不回写旧结果，提交 reset 才清除本 epoch 的冻结记录。Side-request 不抢先冻结普通请求尚未呈现的结果。
 
 ## SPEC
@@ -30,6 +30,8 @@
 11. tests/011.test.mjs：assume、negotiate、askPreviousScope/askPrevious、advisor 原始工具调用和成对结果历次 reset 保留；未配对伪结果与普通旧调用不得混进来。
 12. tests/012.test.mjs：KPI 枚举乘法因子是单一自治预算计算函数，原始预算乘因子后向上取整，缺失未知枚举拒绝。
 13. tests/013.test.mjs：同一个只读临时会话协议可从旧 Provider 冻结上下文执行模型回问；receipt ID 只接受同问题、真实 steer 确认一次且删除会话后迟到回执无效。真实 steer 确认后只删除待确认答复标志，不清掉本轮查询身份；同一 toolCallId 以后重放仍须返回 replay，不可重做收费模型调用。
+
+14. tests/014.test.mjs：首次 reset 前每次请求独立 strong steer、绝不写用户/工具原文；首次 reset 后包括真人追加指令和任何 agent 载体消息都延续当前预算，不重新催 reset；旧 epoch 的 agent-attributed user 回复也不能伪装成永久保留的操作员消息；未完成首次 negotiate 与第二次起 askPreviousScope 义务只在强 steer 持续提示；冷历史已含 reset 时不能当首轮。
 
 
 ## 协商补充公理（2026-10-24）

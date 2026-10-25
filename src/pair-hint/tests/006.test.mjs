@@ -37,9 +37,10 @@ test('SPEC[pair-hint-006] the same session owns its budget and prompt transition
   plan = scope.planRequest(session, [user('1:begin', 1), assistant(part('reset', 'resetScope', 'output'))])
   assert.equal(plan.budget, 6)
   plan = scope.planRequest(session, [user('1:begin', 1), assistant(part('reset', 'resetScope', 'output')), user('2:new', 2)])
-  assert.equal(plan.budget, 0)
-  assert.equal(plan.initialized, false)
-  assert.equal(plan.hints.some(h => h.kind === 'user' && h.index === 2), true)
+  assert.equal(plan.budget, 6)
+  assert.equal(plan.initialized, true)
+  assert.equal(plan.strong, null)
+  assert.equal(plan.hints.some(h => h.kind === 'user' && h.index === 2), false)
   scope.clearSession(session)
 })
 

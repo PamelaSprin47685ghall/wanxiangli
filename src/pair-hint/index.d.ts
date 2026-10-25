@@ -38,6 +38,7 @@ export interface ScopePlan {
   readonly budget: number
   readonly slots: readonly ScopeRetained[]
   readonly hints: readonly ScopeTail[]
+  readonly strong: string | null
   readonly weak: string | null
 }
 
