@@ -23,8 +23,10 @@ test('SPEC[pair-hint-003] uninitialized active output gets the reminder and rese
   assert.match(initial.strong,/Then call resetScope immediately/)
   assert.deepEqual(initial.hints,[], 'initialization is an independent strong steer, not a tool suffix')
   const after=owner.planRequest(sid,[user('start'),assistant(call('read','read','output'),call('reset','resetScope','output'))])
-  assert.equal(after.hints.filter(h=>h.kind==='tool').length,1,'the read before reset has been purged')
-  assert.equal(after.hints.find(h=>h.kind==='tool').tail,'[Remaining turnBudget: 0]')
+  assert.equal(after.budgetKnown,false)
+  assert.equal(after.initialized,false)
+  assert.match(after.strong,/Then call resetScope immediately/,'cold reset history is not a budget observation')
+  assert.deepEqual(after.hints,[],'unknown budget must never emit a fake [Remaining turnBudget: 0]')
   owner.clearSession(sid)
 })
 

@@ -92,15 +92,15 @@ test('SPEC[pair-hint-014] old agent-attributed user replies are not operator mes
   const selected=owner.planFilter(history).map(x=>x.index)
   assert.deepEqual(selected,[0,2,3,4,5], 'previous epoch agent steer is old process, not an operator message')
   const plan=owner.planRequest('agent-authorship-014',history,'en')
-  assert.equal(plan.strong,null, 'even the later operator prompt does not reinitialize after a historical reset')
+  assert.match(plan.strong,/resetScope immediately/, 'a cold actor with no budget must strongly request a new reset')
   owner.clearSession('agent-authorship-014')
 })
 
-test('SPEC[pair-hint-014] persisted old reset in a cold session does not let a later operator message recreate first-boot initialization',()=>{
+test('SPEC[pair-hint-014] a cold session with reset history but no trustworthy budget repeats strong initialization',()=>{
   const owner=PairHint(), sid='cold-rehydrated-014'
   const outcome=owner.planRequest(sid,[user('old',1),call('reset','resetScope'),result('reset'),user('new',2)],'en')
-  assert.equal(outcome.strong,null)
-  assert.equal(outcome.initialized,true)
+  assert.match(outcome.strong,/resetScope immediately/)
+  assert.equal(outcome.initialized,false)
   assert.equal(outcome.hints.some(h=>h.kind==='user'),false)
   owner.clearSession(sid)
 })

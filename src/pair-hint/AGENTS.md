@@ -31,8 +31,10 @@
 12. tests/012.test.mjs：KPI 枚举乘法因子是单一自治预算计算函数，原始预算乘因子后向上取整，缺失未知枚举拒绝。
 13. tests/013.test.mjs：同一个只读临时会话协议可从旧 Provider 冻结上下文执行模型回问；receipt ID 只接受同问题、真实 steer 确认一次且删除会话后迟到回执无效。真实 steer 确认后只删除待确认答复标志，不清掉本轮查询身份；同一 toolCallId 以后重放仍须返回 replay，不可重做收费模型调用。
 
-14. tests/014.test.mjs：首次 reset 前每次请求独立 strong steer、绝不写用户/工具原文；首次 reset 后包括真人追加指令和任何 agent 载体消息都延续当前预算，不重新催 reset；旧 epoch 的 agent-attributed user 回复也不能伪装成永久保留的操作员消息；未完成首次 negotiate 与第二次起 askPreviousScope 义务只在强 steer 持续提示；冷历史已含 reset 时不能当首轮。
+14. tests/014.test.mjs：首次 reset 前每次请求独立 strong steer、绝不写用户/工具原文；首次 reset 后包括真人追加指令和任何 agent 载体消息都延续当前预算，不重新催 reset；旧 epoch 的 agent-attributed user 回复也不能伪装成永久保留的操作员消息；未完成首次 negotiate 与第二次起 askPreviousScope 义务只在强 steer 持续提示；冷历史虽含 reset 但本进程预算未恢复时必须像尚无预算那样持续强催真正重置，不能当已初始化并虚报 0。
 
+
+15. tests/015.test.mjs：冷重启后的历史 `resetScope` 只证明旧事件存在，未确证当前预算时必须持续通过强 agent steer 催重新 `resetScope`；不得把内存默认 0 当作已耗尽预算、发弱提示或改写工具尾巴。真正重置获得预算后仍按实际回合递减，只有真实 0 触发弱提醒。
 
 ## 协商补充公理（2026-10-24）
 
