@@ -29,7 +29,7 @@
 10. tests/010.test.mjs：negotiate 与 askPreviousScope 首问的相同时序冻结、不同解锁见证，首问后 budget 恢复和旧工具结果提示字节冻结。
 11. tests/011.test.mjs：assume、negotiate、askPreviousScope/askPrevious、advisor 原始工具调用和成对结果历次 reset 保留；未配对伪结果与普通旧调用不得混进来。
 12. tests/012.test.mjs：KPI 枚举乘法因子是单一自治预算计算函数，原始预算乘因子后向上取整，缺失未知枚举拒绝。
-13. tests/013.test.mjs：同一个只读临时会话协议可从旧 Provider 冻结上下文执行模型回问；receipt ID 只接受同问题、真实 steer 确认一次且删除会话后迟到回执无效。
+13. tests/013.test.mjs：同一个只读临时会话协议可从旧 Provider 冻结上下文执行模型回问；receipt ID 只接受同问题、真实 steer 确认一次且删除会话后迟到回执无效。真实 steer 确认后只删除待确认答复标志，不清掉本轮查询身份；同一 toolCallId 以后重放仍须返回 replay，不可重做收费模型调用。
 
 
 ## 协商补充公理（2026-10-24）

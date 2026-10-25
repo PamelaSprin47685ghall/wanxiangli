@@ -54,6 +54,10 @@ test('SPEC[pair-hint-013] previous-scope first ask is one real call, optional th
   assert.equal(owner.confirmPreviousScopeSteer(first.receipt,'other'),false)
   assert.equal(owner.confirmPreviousScopeSteer(first.receipt,session),true)
   assert.equal(owner.confirmPreviousScopeSteer(first.receipt,session),false)
+  assert.equal(owner.askPreviousScope(session,'What did we decide?','epoch-1:call-1').replayed,true,
+    'a physical reply must not erase the exact original question identity for later toolcall replay')
+  assert.equal(owner.preparePreviousScopeReply(first.receipt,session,'duplicate answer','zh-CN').ok,false,
+    'a physically accepted reply cannot be prepared a second time')
   owner.clearSession(session)
   assert.equal(owner.preparePreviousScopeReply(next.receipt,session,'late','zh-CN').ok,false,'deleted session cannot accept late reply')
 })

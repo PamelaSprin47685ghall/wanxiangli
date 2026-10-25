@@ -652,6 +652,7 @@ let PairHint () : PairHintMessages =
     let previousScopeQuestions = Dictionary<string, string * string>()
     let preparedReplies = HashSet<string>()
     let preparedPreviousReplies = HashSet<string>()
+    let confirmedPreviousReplies = HashSet<string>()
     let mutable nextGeneration = 0
     let mutable nextReceipt = 0
     let mutable nextAskReceipt = 0
@@ -784,6 +785,7 @@ let PairHint () : PairHintMessages =
         for r in abandonedAsks do
             previousScopeQuestions.Remove r |> ignore
             preparedPreviousReplies.Remove r |> ignore
+            confirmedPreviousReplies.Remove r |> ignore
         recordedSystems.Remove sessionId |> ignore
         recordedMessages.Remove sessionId |> ignore
         recordedModels.Remove sessionId |> ignore
@@ -865,7 +867,7 @@ let PairHint () : PairHintMessages =
 
     let preparePreviousScopeReply (receipt: string) (sessionId: string) (answer: string) (language: string) : obj =
         match previousScopeQuestions.TryGetValue receipt with
-        | true, (owner, _) when owner = sessionId && not (String.IsNullOrWhiteSpace answer) ->
+        | true, (owner, _) when owner = sessionId && not (String.IsNullOrWhiteSpace answer) && not (confirmedPreviousReplies.Contains receipt) ->
             preparedPreviousReplies.Add receipt |> ignore
             let origin = if isChinese language then "前一 Scope 的答复：\n" else "Previous Scope answered askPreviousScope(questions):\n"
             createObj [ "ok" ==> true; "recipient" ==> sessionId; "steer" ==> (origin + answer) ]
@@ -873,9 +875,9 @@ let PairHint () : PairHintMessages =
 
     let confirmPreviousScopeSteer (receipt: string) (sessionId: string) : bool =
         match previousScopeQuestions.TryGetValue receipt with
-        | true, (owner, _) when owner = sessionId && preparedPreviousReplies.Contains receipt ->
-            previousScopeQuestions.Remove receipt |> ignore
+        | true, (owner, _) when owner = sessionId && preparedPreviousReplies.Contains receipt && not (confirmedPreviousReplies.Contains receipt) ->
             preparedPreviousReplies.Remove receipt |> ignore
+            confirmedPreviousReplies.Add receipt |> ignore
             true
         | _ -> false
 
