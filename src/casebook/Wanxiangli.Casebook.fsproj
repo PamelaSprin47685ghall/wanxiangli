@@ -5,6 +5,10 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="BookkeeperStaging.fs" />
     <Compile Include="CasebookIndexLaw.fs" />
+    <PackageExport Include="BookkeeperStaging.fs" Member="BookkeeperStaging" />
+    <PackageExport Include="BookkeeperStaging.fs" Member="bookkeeperStaging" />
+    <PackageExport Include="CasebookIndexLaw.fs" Member="CasebookIndexLaw" />
   </ItemGroup>
 </Project>
