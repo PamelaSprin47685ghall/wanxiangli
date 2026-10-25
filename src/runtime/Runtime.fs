@@ -184,6 +184,10 @@ let private nodeProcess: obj = importAll "node:process"
       try { nodeProcess.kill(-child.pid, 0); }
       catch (error) {
         if (error.code === 'ESRCH') { groupGone = closed; return !groupGone; }
+        if (error.code === 'EPERM' && !closed) {
+          try { nodeProcess.kill(child.pid, 0); return true; }
+          catch (leaderError) { if (leaderError.code !== 'ESRCH') throw error; }
+        }
         throw error;
       }
       if (closed && nodeProcess.platform === 'linux') {
