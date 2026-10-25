@@ -59,6 +59,7 @@ type private PendingKind =
 
 type private ScopeSession() =
     let mutable budget = 0
+    let mutable budgetKnown = false
     let mutable initialized = false
     let mutable promptKey = ""
     let mutable promptTime: float option = None
@@ -67,6 +68,7 @@ type private ScopeSession() =
     let mutable hasPreviousScope = false
 
     member _.Budget = budget
+    member _.BudgetKnown = budgetKnown
     member _.Initialized = initialized
     member _.PendingKind =
         match pending with
@@ -81,12 +83,14 @@ type private ScopeSession() =
     member _.BeginNegotiation() =
         pending <- AwaitingNegotiation
         budget <- 0
+        budgetKnown <- false
         initialized <- false
 
     member _.NegotiationReplyAdmitted() =
         if pending = AwaitingNegotiation then
             pending <- NoPending
             budget <- 0
+            budgetKnown <- false
             initialized <- false
 
     member _.BeginAskPreviousScope() =
@@ -99,25 +103,25 @@ type private ScopeSession() =
     member _.AskPreviousScopeAdmitted() =
         if pending = AwaitingPreviousScope then
             pending <- NoPending
-            initialized <- true
+            initialized <- budgetKnown
 
     member _.StartTurn() =
         // pending 期间时序不前进，预算不递减
-        if pending = NoPending then
+        if pending = NoPending && budgetKnown then
             budget <- max 0 (budget - 1)
 
     member _.Observe(nextKey: string, nextTime: float option, hasReset: bool) =
         if promptKey = nextKey then
-            if pending = NoPending && hasReset then initialized <- true
+            if pending = NoPending && budgetKnown && hasReset then initialized <- true
         elif promptTime.IsNone || nextTime.IsNone || nextTime.Value >= promptTime.Value then
             promptKey <- nextKey
             promptTime <- nextTime
-            if pending = NoPending && hasReset then initialized <- true
+            if pending = NoPending && budgetKnown && hasReset then initialized <- true
         if hasReset then hasPreviousScope <- true
 
     member _.MarkInitialized(value: bool) =
         if pending = NoPending then
-            initialized <- value
+            initialized <- value && budgetKnown
 
     /// Once displayed, a terminal result is immutable within its prefix epoch.
     member _.TerminalTail(identity: string, proposed: string, remember: bool) =
@@ -131,6 +135,7 @@ type private ScopeSession() =
         // 协商期间 resetScope 自身拒绝执行（delegation [034] 要求首次答复到达前不得提交 ScopeReanchored）
         if pending <> AwaitingNegotiation then
             budget <- max 0 nextBudget
+            budgetKnown <- true
             initialized <- true
             hasPreviousScope <- true
             toolTails.Clear()
@@ -552,7 +557,7 @@ let private toolHint (scope: ScopeSession) (remember: bool) (identity: string) (
 
 let private hintsAt (scope: ScopeSession) (remember: bool) (message: NeutralMessage) (selectedParts: int array option) =
     let initialized, budget = scope.Initialized, scope.Budget
-    if not initialized || scope.IsPending then [||]
+    if not initialized || not scope.BudgetKnown || scope.IsPending then [||]
     elif message.Kind = "result" && message.ResultField <> "" then
         let identity = if message.ResultFor <> "" then "call:" + message.ResultFor else "message:" + string message.Index + ":result"
         [| toolHint scope remember identity message.Index -1 message.ResultField (budgetSuffix budget) |]
@@ -593,7 +598,7 @@ let private preparedNeutralPlan (scope: ScopeSession) (language: string) (messag
             if not sideRequest then scope.Observe(prompt.Key, prompt.Stamp, hasReset)
             let retained, known = neutralSelections entries
             let alreadySteered = entries.Length > 0 && entries[entries.Length - 1].Kind = "user" && not entries[entries.Length - 1].Operator && not entries[entries.Length - 1].Side
-            retained, known, scope.Initialized && not scope.IsPending && scope.Budget = 0 && not sideRequest && not alreadySteered, true, sideRequest
+            retained, known, scope.Initialized && scope.BudgetKnown && not scope.IsPending && scope.Budget = 0 && not sideRequest && not alreadySteered, true, sideRequest
     let slots =
         selected |> Array.choose (fun (m, selection) -> selection |> Option.map (slotOf m))
     let tails =
@@ -616,6 +621,7 @@ let private preparedNeutralPlan (scope: ScopeSession) (language: string) (messag
           "weak" ==> (if weak then box (weakReminder language) else null)
           "active" ==> active
           "budget" ==> scope.Budget
+          "budgetKnown" ==> scope.BudgetKnown
           "initialized" ==> scope.Initialized
           "negotiationRequired" ==> scope.NegotiationRequired
           "pendingKind" ==> scope.PendingKind

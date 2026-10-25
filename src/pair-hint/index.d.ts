@@ -36,6 +36,7 @@ export interface ScopePlan {
   readonly pendingKind: 'none' | 'negotiate' | 'askPreviousScope'
   readonly previousScopePending: boolean
   readonly budget: number
+  readonly budgetKnown: boolean
   readonly slots: readonly ScopeRetained[]
   readonly hints: readonly ScopeTail[]
   readonly strong: string | null
