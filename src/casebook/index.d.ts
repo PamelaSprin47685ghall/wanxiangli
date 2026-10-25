@@ -1,8 +1,13 @@
 /**
- * wanxiangli/casebook — Casebook 公开索引的纯投影（CUT-27 子范围①，knowledge-reuse-008/012）。
+ * wanxiangli/casebook — Casebook 公开索引的纯投影（CUT-27 子范围①，knowledge-reuse-008/012），
+ * Bookkeeper 暂存事务的进程内自治对象（knowledge-reuse-006），
+ * 以及会话草稿注册表的进程内自治对象（knowledge-reuse-010）。
  *
- * 纯计算：不读存储、不持有快照、不读时钟、不写事件。进程级冻结快照、“已失效”标记、
+ * 索引律是纯计算：不读存储、不持有快照、不读时钟、不写事件。进程级冻结快照、“已失效”标记、
  * epoch 的数值与 Case 本体都归调用方；这里只给出名字、次序与是否推进的判定。
+ * 暂存对象持有进程内事务槽状态：所有操作同步完成，不在状态变换中等待外部操作，
+ * 不承诺跨线程或跨进程共享；宿主全部消费者经由唯一实例 bookkeeperStaging。
+ * 草稿对象持有进程内委托会话的问答轮次：支持未答覆写、已答追加、覆写 A 及原子消费（tryTake）。
  */
 export interface IndexCase {
   readonly sessionId: string
@@ -21,6 +26,62 @@ export interface AccessCase {
   readonly accessOrder: number | bigint
 }
 
+export interface CasebookIndexSnapshot {
+  readonly epoch: number | bigint
+  readonly cases: readonly IndexEntry[]
+}
+
+/** 进程内 Casebook 公开索引自治状态机；语义迁移自主仓原 CasebookIndex 模块。 */
+export declare class CasebookIndex {
+  constructor()
+  /** 读取当前冻结的公开快照，未完成首次冻结前返回 null。 */
+  tryGet(): CasebookIndexSnapshot | null
+  /** 标记公开索引已失效；促使下一次成功 freeze 推进 epoch。 */
+  invalidate(): void
+  /**
+   * 给定内部案例集合计算公开条目并冻结为新快照。
+   * 即使 cases 为空集合，首次成功冻结也产生 epoch = 0n, dirty = false；
+   * 后续仅在 dirty = true 或公开条目发生实质变化（含次序）时 epoch 推进 1。
+   * 返回防御性浅拷贝的原生快照对象。
+   */
+  freeze(cases: readonly IndexCase[]): CasebookIndexSnapshot
+  /** 定位 shelfmark 在输入 cases 中的索引，找不到返回 -1。 */
+  locate(cases: readonly IndexCase[], shelfmark: string): number
+  /** 稳定公开 shelfmark 计算。 */
+  shelfmarkFor(sessionId: string, question: string): string
+}
+
+/** 进程内唯一 Casebook 索引状态机实例；ES 模块缓存保证全进程同一实例。 */
+export declare const casebookIndex: CasebookIndex
+
+export interface CasebookIndexSnapshot {
+  readonly epoch: number | bigint
+  readonly cases: readonly IndexEntry[]
+}
+
+/** 进程内 Casebook 公开索引自治状态机；语义迁移自主仓原 CasebookIndex 模块。 */
+export declare class CasebookIndex {
+  constructor()
+  /** 读取当前冻结的公开快照，未完成首次冻结前返回 null。 */
+  tryGet(): CasebookIndexSnapshot | null
+  /** 标记公开索引已失效；促使下一次成功 freeze 推进 epoch。 */
+  invalidate(): void
+  /**
+   * 给定内部案例集合计算公开条目并冻结为新快照。
+   * 即使 cases 为空集合，首次成功冻结也产生 epoch = 0n, dirty = false；
+   * 后续仅在 dirty = true 或公开条目发生实质变化（含次序）时 epoch 推进 1。
+   * 返回防御性浅拷贝的原生快照对象。
+   */
+  freeze(cases: readonly IndexCase[]): CasebookIndexSnapshot
+  /** 定位 shelfmark 在输入 cases 中的索引，找不到返回 -1。 */
+  locate(cases: readonly IndexCase[], shelfmark: string): number
+  /** 稳定公开 shelfmark 计算。 */
+  shelfmarkFor(sessionId: string, question: string): string
+}
+
+/** 进程内唯一 Casebook 索引状态机实例；ES 模块缓存保证全进程同一实例。 */
+export declare const casebookIndex: CasebookIndex
+
 export declare class CasebookIndexLaw {
   /** 第一条非空行去掉行首 Markdown 记号、折叠空白；超过 72 个码元截为 71 加 “…”，绝不拆开代理对。 */
   compactTitle(question: string): string
@@ -35,3 +96,60 @@ export declare class CasebookIndexLaw {
   /** LRU：容量 ≤ 0 或未超容量为空；否则按访问序升序（同序保留输入次序）给出最旧的 count - capacity 个 sessionId。 */
   evictionVictims(capacity: number, cases: readonly AccessCase[]): string[]
 }
+
+/** Fable 5 Result 的实际产物形状：tag 0 成功、tag 1 失败，fields 为 case 字段。 */
+export type FableResult<T> =
+  | { readonly tag: 0; readonly fields: [T] }
+  | { readonly tag: 1; readonly fields: [string] }
+
+/** 一笔 Bookkeeper 事务的进程内暂存 Case；语义迁移自主仓原 BookkeeperStaging 模块。 */
+export declare class BookkeeperStaging {
+  /** 开始暂存事务；同一 txId 重开直接覆盖，touched 归 false。 */
+  beginTransaction(txId: string, question: string, answer: string): void
+  /** 读取事务的 question/answer，不删除；缺失事务返回逐字错误。 */
+  snapshot(txId: string): FableResult<[string, string]>
+  /** 应用可选补丁；null/undefined 保留旧值。进入有效槽位即记为 touched。 */
+  apply(txId: string, question?: string | null, answer?: string | null): FableResult<void>
+  /** 取出并删除事务；本次 completion 未写入过则拒绝且不删除。 */
+  take(txId: string): FableResult<[string, string]>
+  /** 本次 completion 是否真正写入过；缺失事务为 false。 */
+  touched(txId: string): boolean
+  /** 不返回内容地移除事务；缺失也成功，幂等。 */
+  abort(txId: string): void
+}
+
+/** 进程内唯一暂存注册表；ES 模块缓存保证全进程同一实例。 */
+export declare const bookkeeperStaging: BookkeeperStaging
+
+/** 会话草稿的单个问答轮次。 */
+export interface CasebookDraftTurn {
+  readonly Q: string
+  readonly A?: string
+}
+
+/** 会话草稿对外暴露的只读快照；直接暴露为原生数组，不含 Fable 内部链表。 */
+export interface CasebookDraftSnapshot {
+  readonly turns: readonly CasebookDraftTurn[]
+}
+
+/** 进程内会话草稿自治存储对象；语义迁移自主仓原 SessionDraft 模块。 */
+export declare class SessionDraftStore {
+  constructor()
+  /** 设置当前轮次问题。若末轮未答则覆写其 Q，末轮已答则追加新轮。 */
+  setQ(sessionId: string, q: string): void
+  /** 设置当前轮次答案。若无轮次则补入空 Q 轮次，末轮存在则覆写其 A。 */
+  setA(sessionId: string, a: string): void
+  /** 原子取出并从内存移除指定会话的草稿快照；若不存在则返回 undefined。 */
+  tryTake(sessionId: string): CasebookDraftSnapshot | undefined
+  /** 幂等清除指定会话的草稿。 */
+  clear(sessionId: string): void
+  /** 获取草稿末轮问题，若草稿无轮次则返回空字符串。 */
+  lastQuestion(draft: CasebookDraftSnapshot): string
+  /** 逆向获取草稿中最后一个非空的回答，若无回答则返回 undefined。 */
+  lastAnswer(draft: CasebookDraftSnapshot): string | undefined
+  /** 按 Qn = ...\nAn = ... 格式化全部轮次文本，末尾无多余换行符。 */
+  transcript(draft: CasebookDraftSnapshot): string
+}
+
+/** 进程内唯一会话草稿注册表；ES 模块缓存保证全进程同一实例。 */
+export declare const sessionDraftStore: SessionDraftStore

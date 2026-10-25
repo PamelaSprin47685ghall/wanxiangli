@@ -178,3 +178,100 @@ type CasebookIndexLaw() =
             stableSorted items (fun (_, a) (_, b) -> compareOrder a b)
             |> Array.take (items.Length - limit)
             |> Array.map fst
+
+
+/// 进程内 Casebook 索引状态机（knowledge-reuse-008/011/012/013）。
+/// 独占持有私有 frozen 快照与 dirty 失效标记。
+/// 所有操作同步完成，无 IO、不读存储、不读时钟、不写事件。
+[<AttachMembers>]
+type CasebookIndex() =
+    let law = CasebookIndexLaw()
+
+    // DSL-MUTABLE: resource
+    let mutable frozen: obj = null
+    // DSL-MUTABLE: resource
+    let mutable dirty: bool = true
+
+    let entryObject (shelfmark: string) (question: string) : obj =
+        createObj [ "shelfmark", box shelfmark; "question", box question ]
+
+    let snapshotObject (epoch: obj) (cases: obj array) : obj =
+        createObj [ "epoch", epoch; "cases", box cases ]
+
+    let copyEntries (entries: obj array) : obj array =
+        entries |> Array.map (fun e -> entryObject (unbox<string> e?shelfmark) (unbox<string> e?question))
+
+    /// 读取当前冻结的公开快照，未完成首次冻结前返回 null/None。
+    member _.tryGet() : obj =
+        if isNull frozen then
+            null
+        else
+            let epoch = frozen?epoch
+            let cases = unbox<obj array> frozen?cases
+            snapshotObject epoch (copyEntries cases)
+
+    /// 标记公开索引已失效；促使下一次成功 freeze 推进 epoch。
+    member _.invalidate() : unit =
+        dirty <- true
+
+    /// 给定内部案例集合计算公开条目并冻结为新快照。
+    /// 即使 cases 为空集合，首次成功冻结也产生 epoch = 0n, dirty = false；
+    /// 后续仅在 dirty = true 或公开条目发生实质变化（含次序）时 epoch 推进 1。
+    /// 返回防御性浅拷贝的原生快照对象。
+    member _.freeze(cases: obj) : obj =
+        let caseList =
+            if isNull cases then
+                [||]
+            elif isArray cases then
+                unbox<obj array> cases
+            else
+                [||]
+
+        let publicEntries = law.entries caseList
+
+        let previous =
+            if isNull frozen then
+                null
+            else
+                unbox<obj array> frozen?cases
+
+        let advances = law.advancesEpoch (previous, dirty, publicEntries)
+
+        let previousEpoch: int64 =
+            if isNull frozen then
+                -1L
+            else
+                let ep = frozen?epoch
+                if jsTypeof ep = "bigint" then
+                    unbox<int64> ep
+                elif jsTypeof ep = "number" then
+                    int64 (unbox<float> ep)
+                else
+                    -1L
+
+        let epoch = if advances then previousEpoch + 1L else previousEpoch
+        dirty <- false
+
+        let frozenSnapshot = snapshotObject (box epoch) publicEntries
+        frozen <- frozenSnapshot
+
+        // 返回防御性浅拷贝快照
+        snapshotObject (box epoch) (copyEntries publicEntries)
+
+    /// 定位 shelfmark 在输入 cases 中的索引，找不到返回 -1。
+    member _.locate(cases: obj, shelfmark: string) : int =
+        let caseList =
+            if isNull cases then
+                [||]
+            elif isArray cases then
+                unbox<obj array> cases
+            else
+                [||]
+        law.locate (caseList, shelfmark)
+
+    /// 稳定公开 shelfmark 计算。
+    member _.shelfmarkFor(sessionId: string, question: string) : string =
+        law.shelfmarkFor (sessionId, question)
+
+/// 全局唯一单例
+let casebookIndex = CasebookIndex()

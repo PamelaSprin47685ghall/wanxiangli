@@ -1,6 +1,6 @@
 # casebook
 
-层：内核。纯计算，不得 import 宿主 SDK 或其它 wanxiangli 模块；不读存储、不持有快照、不读时钟、不写事件。npm 入口 `wanxiangli/casebook`。
+层：内核。同一入口并存两种职责：`CasebookIndexLaw` 是纯计算；`BookkeeperStaging` 是进程内自治暂存对象，持有事务槽状态，所有操作同步完成、不在状态变换中等待外部操作，无 IO、不读存储、不读时钟、不写事件。两者都不得 import 宿主 SDK 或其它 wanxiangli 模块。npm 入口 `wanxiangli/casebook`。
 
 # AXIOM
 
@@ -16,6 +16,8 @@
 3. [本模块 AXIOM 1] 公开条目按 shelfmark 码元序稳定排序；定位取同序中第一个同名者。条目对象只有 `shelfmark` 与 `question` 两个键。
 4. [本模块 AXIOM 1] epoch 只在无上一快照、调用方标记失效、或公开条目逐项（含次序）变化时推进；内部 Case 次序或字段变化而公开条目不变时不推进。
 5. [knowledge-reuse-008] LRU 淘汰：容量 ≤ 0 或未超容量不淘汰；否则按访问序升序淘汰最旧的 `count - capacity` 个，同序保留输入次序。
+6. [knowledge-reuse-006] 暂存事务状态机：beginTransaction 同名覆盖并把 Touched 归 false；apply 对有效槽一律记为 touched（补丁全空也记，原值保留）；take 必须 touched，未写拒绝且不删除事务，成功取出即删除；abort 幂等，缺失事务也成功；缺失事务上的 snapshot/apply/take 报逐字 `todowrite-for-bookkeeper: no staged transaction`，未写的 take 报逐字 `the staged transaction was not written by this completion`，touched 对缺失为 false。所有操作同步完成，不承诺跨线程或跨进程共享。
+    - 推理：LC-029——初始 Q/A 不能冒充本次交付，写入标志是交付与否的唯一凭据；两串错误文本是 provider 看到的话，改措辞即改协议。覆盖语义让 txId 重开无需先 abort，失败路径（拒绝、投递失败、身份校验失败）都以 abort 清槽而不留残桩。
 
 # SPEC
 
@@ -27,3 +29,16 @@
     - 证明：`tests/012.test.mjs`。
 4. [LEMMA 5] 淘汰与参考实现在固定种子随机输入上逐项相等（number 与 bigint 访问序），边界容量不淘汰。
     - 证明：`tests/008.test.mjs`。
+5. [LEMMA 6] 事务隔离、begin 覆盖归位未写、未写 take 拒绝且事务保留、全空 apply 记为写入、缺失事务逐字错误、成功 take 删除、abort 幂等。
+    - 证明：`tests/006.test.mjs`。未验证：该测试尚未运行，待库构建后由 DevOps 执行回填。
+
+7. [knowledge-reuse-010] 会话草稿状态机：setQ 末轮未答则原地覆写 Q，已答则追加新轮；setA 空草稿补空 Q 轮次，有轮次始终覆写末轮 A；tryTake 原子消费，取出即删，再次调用为 None，快照为只读原生数组；clear 幂等且按会话严格隔离；transcript 逐字格式化所有轮次且未答 A 为空串，无末尾换行符。所有操作同步完成，状态不随进程持久化。
+    - 推理：KR-010——草稿是委托期间进程内的临时工作记录，只有终结结算时才一次性转录并归档；原生数组快照隔绝 Fable 链表内部表示泄露。
+
+# SPEC (续)
+
+6. [LEMMA 7] 草稿多会话隔离、Q 覆写与追加、A 覆写与空补、tryTake 原子消费、clear 幂等、transcript 逐字等边界反例全部成立。
+    - 证明：`tests/010.test.mjs`。
+
+7. [knowledge-reuse-008/011/012/013] 公开索引状态机：独占持有私有 frozen 快照与 dirty 失效标记。首次冻结即使空 cases 也生成 epoch = 0n、dirty = false；后续无变化且非 dirty 时不推进 epoch；invalidate 或内容/顺序变动推进 epoch；返回防御性深/浅拷贝隔离外部修改；locate 与 shelfmarkFor 保持确定性；独立实例与单例相互隔离。
+    - 证明：`tests/014.test.mjs`.
