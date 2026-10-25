@@ -1,11 +1,13 @@
 /**
  * wanxiangli/casebook — Casebook 公开索引的纯投影（CUT-27 子范围①，knowledge-reuse-008/012），
- * 以及 Bookkeeper 暂存事务的进程内自治对象（knowledge-reuse-006）。
+ * Bookkeeper 暂存事务的进程内自治对象（knowledge-reuse-006），
+ * 以及会话草稿注册表的进程内自治对象（knowledge-reuse-010）。
  *
  * 索引律是纯计算：不读存储、不持有快照、不读时钟、不写事件。进程级冻结快照、“已失效”标记、
  * epoch 的数值与 Case 本体都归调用方；这里只给出名字、次序与是否推进的判定。
  * 暂存对象持有进程内事务槽状态：所有操作同步完成，不在状态变换中等待外部操作，
  * 不承诺跨线程或跨进程共享；宿主全部消费者经由唯一实例 bookkeeperStaging。
+ * 草稿对象持有进程内委托会话的问答轮次：支持未答覆写、已答追加、覆写 A 及原子消费（tryTake）。
  */
 export interface IndexCase {
   readonly sessionId: string
@@ -62,3 +64,36 @@ export declare class BookkeeperStaging {
 
 /** 进程内唯一暂存注册表；ES 模块缓存保证全进程同一实例。 */
 export declare const bookkeeperStaging: BookkeeperStaging
+
+/** 会话草稿的单个问答轮次。 */
+export interface CasebookDraftTurn {
+  readonly Q: string
+  readonly A?: string
+}
+
+/** 会话草稿对外暴露的只读快照；直接暴露为原生数组，不含 Fable 内部链表。 */
+export interface CasebookDraftSnapshot {
+  readonly turns: readonly CasebookDraftTurn[]
+}
+
+/** 进程内会话草稿自治存储对象；语义迁移自主仓原 SessionDraft 模块。 */
+export declare class SessionDraftStore {
+  constructor()
+  /** 设置当前轮次问题。若末轮未答则覆写其 Q，末轮已答则追加新轮。 */
+  setQ(sessionId: string, q: string): void
+  /** 设置当前轮次答案。若无轮次则补入空 Q 轮次，末轮存在则覆写其 A。 */
+  setA(sessionId: string, a: string): void
+  /** 原子取出并从内存移除指定会话的草稿快照；若不存在则返回 undefined。 */
+  tryTake(sessionId: string): CasebookDraftSnapshot | undefined
+  /** 幂等清除指定会话的草稿。 */
+  clear(sessionId: string): void
+  /** 获取草稿末轮问题，若草稿无轮次则返回空字符串。 */
+  lastQuestion(draft: CasebookDraftSnapshot): string
+  /** 逆向获取草稿中最后一个非空的回答，若无回答则返回 undefined。 */
+  lastAnswer(draft: CasebookDraftSnapshot): string | undefined
+  /** 按 Qn = ...\nAn = ... 格式化全部轮次文本，末尾无多余换行符。 */
+  transcript(draft: CasebookDraftSnapshot): string
+}
+
+/** 进程内唯一会话草稿注册表；ES 模块缓存保证全进程同一实例。 */
+export declare const sessionDraftStore: SessionDraftStore
