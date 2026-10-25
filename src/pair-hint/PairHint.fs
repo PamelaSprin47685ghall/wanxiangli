@@ -108,14 +108,12 @@ type private ScopeSession() =
 
     member _.Observe(nextKey: string, nextTime: float option, hasReset: bool) =
         if promptKey = nextKey then
-            if pending = NoPending then
-                initialized <- initialized || hasReset
+            if pending = NoPending && hasReset then initialized <- true
         elif promptTime.IsNone || nextTime.IsNone || nextTime.Value >= promptTime.Value then
             promptKey <- nextKey
             promptTime <- nextTime
-            if pending = NoPending then
-                initialized <- hasReset
-                budget <- 0
+            if pending = NoPending && hasReset then initialized <- true
+        if hasReset then hasPreviousScope <- true
 
     member _.MarkInitialized(value: bool) =
         if pending = NoPending then
@@ -502,7 +500,7 @@ let private neutralSelection (message: NeutralMessage) (barrier: (int * int) opt
         let keep = [| for index in 0 .. message.PartCount - 1 do
                            if index >= activePart || Set.contains index retained then yield index |]
         Some(Some keep)
-    | Some _ when message.Kind = "user" || (message.Kind = "custom" && message.Operator) -> Some None
+    | Some _ when message.Operator && (message.Kind = "user" || message.Kind = "custom") -> Some None
     | Some _ when message.Kind = "result" -> Some None
     | Some _ when message.Kind = "assistant" ->
         let retained = retainedPartIndices message.Calls
@@ -543,13 +541,6 @@ let private slotOf (message: NeutralMessage) (selection: int array option) =
         [ "index" ==> message.Index
           "parts" ==> (match selection with Some indexes -> box indexes | None -> null) ]
 
-let private tailForTool (scope: ScopeSession) (language: string) (initialized: bool) (budget: int) (toolName: string) =
-    match scope.PendingKind with
-    | "negotiate" -> negotiateReminder language
-    | "askPreviousScope" -> askPreviousScopeReminder language
-    | _ ->
-        if initialized || toolName = ResetTool then budgetSuffix budget else initializeReminder language
-
 let private toolHint (scope: ScopeSession) (remember: bool) (identity: string) (index: int) (part: int) (fieldName: string) (proposed: string) =
     let suffix = scope.TerminalTail(identity, proposed, remember)
     createObj
@@ -559,34 +550,17 @@ let private toolHint (scope: ScopeSession) (remember: bool) (identity: string) (
           "field" ==> fieldName
           "tail" ==> suffix ]
 
-let private userHint (scope: ScopeSession) (language: string) (index: int) (key: string) (remember: bool) =
-    let proposed =
-        match scope.PendingKind with
-        | "negotiate" -> negotiateReminder language
-        | "askPreviousScope" -> askPreviousScopeReminder language
-        | _ -> initializeReminder language
-    let suffix = scope.TerminalTail("prompt:" + key, proposed, remember)
-    createObj
-        [ "kind" ==> "user"
-          "index" ==> index
-          "part" ==> -1
-          "field" ==> ""
-          "tail" ==> suffix ]
-
-let private hintsAt (scope: ScopeSession) (language: string) (known: Dictionary<string, string>) (remember: bool) (message: NeutralMessage) (selectedParts: int array option) =
+let private hintsAt (scope: ScopeSession) (remember: bool) (message: NeutralMessage) (selectedParts: int array option) =
     let initialized, budget = scope.Initialized, scope.Budget
-    if message.Kind = "user" && message.Operator then
-        [| userHint scope language message.Index message.Key remember |]
+    if not initialized || scope.IsPending then [||]
     elif message.Kind = "result" && message.ResultField <> "" then
-        let name =
-            if known.ContainsKey(message.ResultFor) then known[message.ResultFor] else ""
         let identity = if message.ResultFor <> "" then "call:" + message.ResultFor else "message:" + string message.Index + ":result"
-        [| toolHint scope remember identity message.Index -1 message.ResultField (tailForTool scope language initialized budget name) |]
+        [| toolHint scope remember identity message.Index -1 message.ResultField (budgetSuffix budget) |]
     elif message.Kind = "assistant" then
         [| for part in message.Calls do
                if part.Field <> "" && (selectedParts.IsNone || Array.contains part.Part selectedParts.Value) then
                    let identity = if part.Id <> "" then "call:" + part.Id else "message:" + string message.Index + ":part:" + string part.Part
-                   yield toolHint scope remember identity message.Index part.Part part.Field (tailForTool scope language initialized budget part.Tool) |]
+                   yield toolHint scope remember identity message.Index part.Part part.Field (budgetSuffix budget) |]
     else [||]
 
 let private neutralSelections (entries: NeutralMessage array) =
@@ -606,15 +580,14 @@ let private neutralFilterPlan (messages: obj) : obj =
 let private preparedNeutralPlan (scope: ScopeSession) (language: string) (messages: obj) : obj =
     let entries = asArray messages |> Array.mapi neutralMessage
     let lastOperator = entries |> Array.tryFindIndexBack (fun m -> m.Kind = "user" && m.Operator)
-    let selected, known, weak, active, sideRequest =
+    let selected, _known, weak, active, sideRequest =
         match lastOperator with
         | None ->
             let retained = entries |> Array.map (fun m -> m, Some None)
             retained, allowedCalls retained, false, false, false
         | Some latest ->
             let hasReset =
-                entries |> Array.skip (latest + 1)
-                |> Array.exists (fun m -> m.Kind = "assistant" && Array.exists neutralIsReset m.Calls)
+                entries |> Array.exists (fun m -> m.Kind = "assistant" && Array.exists neutralIsReset m.Calls)
             let prompt = entries[latest]
             let sideRequest = entries.Length > 0 && entries[entries.Length - 1].Side
             if not sideRequest then scope.Observe(prompt.Key, prompt.Stamp, hasReset)
@@ -629,11 +602,17 @@ let private preparedNeutralPlan (scope: ScopeSession) (language: string) (messag
             selected
             |> Array.collect (fun (m, selection) ->
                 match selection with
-                | Some partIndices -> hintsAt scope language known (not sideRequest) m partIndices
+                | Some partIndices -> hintsAt scope (not sideRequest) m partIndices
                 | None -> [||])
     createObj
         [ "slots" ==> slots
           "hints" ==> tails
+          "strong" ==> (if active && not sideRequest && not scope.Initialized then
+                               box (match scope.PendingKind with
+                                    | "negotiate" -> negotiateReminder language
+                                    | "askPreviousScope" -> askPreviousScopeReminder language
+                                    | _ -> initializeReminder language)
+                           else null)
           "weak" ==> (if weak then box (weakReminder language) else null)
           "active" ==> active
           "budget" ==> scope.Budget

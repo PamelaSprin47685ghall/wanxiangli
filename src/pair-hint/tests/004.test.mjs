@@ -6,7 +6,7 @@ const owner=PairHint()
 const user=(key,time)=>({kind:'user',operator:true,key,timestamp:time,parts:[]})
 const reset=()=>({kind:'assistant',operator:false,parts:[{id:'r1',tool:'resetScope'}]})
 
-test('SPEC[pair-hint-004] new operator prompt invalidates budget until reset is committed',()=>{
+test('SPEC[pair-hint-004] a later operator prompt preserves the committed scope and remaining budget',()=>{
   const sid='state-next-prompt'
   const first=user('start',10)
   owner.planRequest(sid,[first])
@@ -14,8 +14,8 @@ test('SPEC[pair-hint-004] new operator prompt invalidates budget until reset is 
   assert.equal(owner.planRequest(sid,[first,reset()]).budget,5)
   owner.startTurn(sid)
   assert.equal(owner.turnBudget(sid),4)
-  assert.equal(owner.planRequest(sid,[first,reset(),user('change',20)]).budget,0)
-  assert.equal(owner.isInitialized(sid),false)
+  assert.equal(owner.planRequest(sid,[first,reset(),user('change',20)]).budget,4)
+  assert.equal(owner.isInitialized(sid),true)
   owner.resetSession(sid,3)
   assert.equal(owner.turnBudget(sid),3)
   owner.clearSession(sid)

@@ -20,9 +20,8 @@ test('SPEC[pair-hint-003] prefix separator is appended once and only to provider
 test('SPEC[pair-hint-003] uninitialized active output gets the reminder and reset output gets the new budget',()=>{
   const sid='neutral-init-tail'
   const initial=owner.planRequest(sid,[user('start'),assistant(call('read','read','output'))])
-  const readHint=initial.hints.find(h=>h.kind==='tool')
-  assert.match(readHint.tail,/Then call resetScope immediately/)
-  assert.doesNotMatch(readHint.tail,/Remaining turnBudget/)
+  assert.match(initial.strong,/Then call resetScope immediately/)
+  assert.deepEqual(initial.hints,[], 'initialization is an independent strong steer, not a tool suffix')
   const after=owner.planRequest(sid,[user('start'),assistant(call('read','read','output'),call('reset','resetScope','output'))])
   assert.equal(after.hints.filter(h=>h.kind==='tool').length,1,'the read before reset has been purged')
   assert.equal(after.hints.find(h=>h.kind==='tool').tail,'[Remaining turnBudget: 0]')
