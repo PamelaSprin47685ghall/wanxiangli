@@ -19,12 +19,12 @@ type PairHintMessages =
     abstract stripKnownHints: message: obj * texts: string array -> obj
     abstract userCanCarryHint: message: obj -> bool
     abstract toolCanCarryHint: message: obj -> bool
-    abstract planRequest: sessionId: string * neutralMessages: obj -> obj
+    abstract planRequest: sessionId: string * neutralMessages: obj * language: string -> obj
     abstract planFilter: neutralMessages: obj -> obj
     abstract appendTailOnce: content: obj * tail: string -> obj
     abstract bindDelegation: recipient: string * delegator: string -> unit
-    abstract askNegotiation: recipient: string * questions: string -> obj
-    abstract prepareNegotiationReply: receipt: string * answer: string -> obj
+    abstract askNegotiation: recipient: string * questions: string * language: string -> obj
+    abstract prepareNegotiationReply: receipt: string * answer: string * language: string -> obj
     abstract completeNegotiationReply: receipt: string -> bool
     abstract confirmNegotiationSteer: receipt: string * recipient: string -> bool
     abstract negotiationRequired: recipient: string -> bool
@@ -75,17 +75,28 @@ let private Separator = "\u0000\uFEFF"
 [<Literal>]
 let private ResetTool = "resetScope"
 
-[<Literal>]
-let private InitializeReminder =
-    "[System: Estimate the turnBudget for the first fine-grained task block (state closed-loop). Then call resetScope immediately, before doing anything else.]"
+let private isChinese (language: string) : bool =
+    if language = "zh-CN" then true
+    elif language = "en" || isNull (box language) then false
+    else invalidArg "language" "Expected explicit en or zh-CN provider language"
 
-[<Literal>]
-let private NegotiateReminder =
-    "[System: Before any resetScope initialization, call negotiate(questions: string) NOW. Ask the delegator all questions needed to clarify this assignment. Group related questions into the single plural questions argument. The call acknowledges sending immediately; continue your work without waiting. Until the delegator’s answer arrives as a user steer, do not call resetScope. After that answer, call resetScope promptly. You may negotiate again at any time; later calls never delay resetScope.]"
+let private initializeReminder (language: string) : string =
+    if isChinese language then
+        "[系统：估计第一个细粒度任务状态闭环所需的 turnBudget。先调用 resetScope 初始化该闭环，再执行其他工作。]"
+    else
+        "[System: Estimate the turnBudget for the first fine-grained task block (state closed-loop). Then call resetScope immediately, before doing anything else.]"
 
-[<Literal>]
-let private WeakReminder =
-    "[System: Weak, optional reminder — this scope's turnBudget is exhausted (0 remaining). If you are not busy and at a natural boundary, consider calling resetScope with a fresh budget. Do not interrupt, pause, or abandon your current work for this reminder. Keep going; reset when convenient.]"
+let private negotiateReminder (language: string) : string =
+    if isChinese language then
+        "[系统：先调用 negotiate(questions: string) 向委托者澄清本次任务。把需要确认的多个具体问题集中写入 questions 参数；调用受理后不必等待答复，可继续不依赖答复的工作。委托者的真实答复作为 steer 到达之前，不得调用 resetScope；收到后再初始化 scope。后续可以继续提问，不影响正常的 resetScope。]"
+    else
+        "[System: Before any resetScope initialization, call negotiate(questions: string) NOW. Ask the delegator all questions needed to clarify this assignment. Group related questions into the single plural questions argument. The call acknowledges sending immediately; continue your work without waiting. Until the delegator’s answer arrives as a user steer, do not call resetScope. After that answer, call resetScope promptly. You may negotiate again at any time; later calls never delay resetScope.]"
+
+let private weakReminder (language: string) : string =
+    if isChinese language then
+        "[系统：当前 scope 的 turnBudget 已用尽（剩余 0）。继续完成正在进行的工作，不得因本提醒中断、暂停或放弃任务；当前状态闭环完成后，请调用 resetScope 开启新的闭环。]"
+    else
+        "[System: This scope's turnBudget is exhausted (0 remaining). Continue the work already in progress. Do not interrupt, pause, or abandon it for this reminder. Call resetScope to begin the next scope after closing the current state loop.]"
 
 [<Emit("Array.isArray($0)")>]
 let private isArray (_value: obj) : bool = jsNative
@@ -435,8 +446,8 @@ let private slotOf (message: NeutralMessage) (selection: int array option) =
         [ "index" ==> message.Index
           "parts" ==> (match selection with Some indexes -> box indexes | None -> null) ]
 
-let private tailForTool (initialized: bool) (budget: int) (toolName: string) =
-    if initialized || toolName = ResetTool then budgetSuffix budget else InitializeReminder
+let private tailForTool (language: string) (initialized: bool) (budget: int) (toolName: string) =
+    if initialized || toolName = ResetTool then budgetSuffix budget else initializeReminder language
 
 let private toolHint (scope: ScopeSession) (remember: bool) (identity: string) (index: int) (part: int) (fieldName: string) (proposed: string) =
     let suffix = scope.TerminalTail(identity, proposed, remember)
@@ -447,8 +458,8 @@ let private toolHint (scope: ScopeSession) (remember: bool) (identity: string) (
           "field" ==> fieldName
           "tail" ==> suffix ]
 
-let private userHint (scope: ScopeSession) (index: int) (key: string) (remember: bool) =
-    let proposed = if scope.NegotiationRequired then NegotiateReminder else InitializeReminder
+let private userHint (scope: ScopeSession) (language: string) (index: int) (key: string) (remember: bool) =
+    let proposed = if scope.NegotiationRequired then negotiateReminder language else initializeReminder language
     let suffix = scope.TerminalTail("prompt:" + key, proposed, remember)
     createObj
         [ "kind" ==> "user"
@@ -457,21 +468,21 @@ let private userHint (scope: ScopeSession) (index: int) (key: string) (remember:
           "field" ==> ""
           "tail" ==> suffix ]
 
-let private hintsAt (scope: ScopeSession) (known: Dictionary<string, string>) (remember: bool) (message: NeutralMessage) (selectedParts: int array option) =
+let private hintsAt (scope: ScopeSession) (language: string) (known: Dictionary<string, string>) (remember: bool) (message: NeutralMessage) (selectedParts: int array option) =
     let initialized, budget = scope.Initialized, scope.Budget
     if message.Kind = "user" && message.Operator then
-        [| userHint scope message.Index message.Key remember |]
+        [| userHint scope language message.Index message.Key remember |]
     elif scope.NegotiationRequired then [||]
     elif message.Kind = "result" && message.ResultField <> "" then
         let name =
             if known.ContainsKey(message.ResultFor) then known[message.ResultFor] else ""
         let identity = if message.ResultFor <> "" then "call:" + message.ResultFor else "message:" + string message.Index + ":result"
-        [| toolHint scope remember identity message.Index -1 message.ResultField (tailForTool initialized budget name) |]
+        [| toolHint scope remember identity message.Index -1 message.ResultField (tailForTool language initialized budget name) |]
     elif message.Kind = "assistant" then
         [| for part in message.Calls do
                if part.Field <> "" && (selectedParts.IsNone || Array.contains part.Part selectedParts.Value) then
                    let identity = if part.Id <> "" then "call:" + part.Id else "message:" + string message.Index + ":part:" + string part.Part
-                   yield toolHint scope remember identity message.Index part.Part part.Field (tailForTool initialized budget part.Tool) |]
+                   yield toolHint scope remember identity message.Index part.Part part.Field (tailForTool language initialized budget part.Tool) |]
     else [||]
 
 let private neutralSelections (entries: NeutralMessage array) =
@@ -488,7 +499,7 @@ let private neutralFilterPlan (messages: obj) : obj =
     |> Array.choose (fun (message, partIndices) -> partIndices |> Option.map (slotOf message))
     |> box
 
-let private preparedNeutralPlan (scope: ScopeSession) (messages: obj) : obj =
+let private preparedNeutralPlan (scope: ScopeSession) (language: string) (messages: obj) : obj =
     let entries = asArray messages |> Array.mapi neutralMessage
     let lastOperator = entries |> Array.tryFindIndexBack (fun m -> m.Kind = "user" && m.Operator)
     let selected, known, weak, active, sideRequest =
@@ -514,12 +525,12 @@ let private preparedNeutralPlan (scope: ScopeSession) (messages: obj) : obj =
             selected
             |> Array.collect (fun (m, selection) ->
                 match selection with
-                | Some partIndices -> hintsAt scope known (not sideRequest) m partIndices
+                | Some partIndices -> hintsAt scope language known (not sideRequest) m partIndices
                 | None -> [||])
     createObj
         [ "slots" ==> slots
           "hints" ==> tails
-          "weak" ==> (if weak then box WeakReminder else null)
+          "weak" ==> (if weak then box (weakReminder language) else null)
           "active" ==> active
           "budget" ==> scope.Budget
           "initialized" ==> scope.Initialized
@@ -561,26 +572,26 @@ let PairHint () : PairHintMessages =
             bindings[recipient] <- delegator, nextGeneration
             (current recipient).BeginNegotiation()
 
-    let ask (recipient: string) (questions: string) : obj =
+    let ask (recipient: string) (questions: string) (language: string) : obj =
         match bindings.TryGetValue recipient with
-        | false, _ -> createObj [ "ok" ==> false; "reason" ==> "not a delegated session" ]
+        | false, _ -> createObj [ "ok" ==> false; "reason" ==> (if isChinese language then "不是受委托会话" else "not a delegated session") ]
         | true, (delegator, generation) when String.IsNullOrWhiteSpace questions ->
-            createObj [ "ok" ==> false; "reason" ==> "questions must not be blank" ]
+            createObj [ "ok" ==> false; "reason" ==> (if isChinese language then "questions 不得为空" else "questions must not be blank") ]
         | true, (delegator, generation) ->
             nextReceipt <- nextReceipt + 1
             let receipt = recipient + ":" + string generation + ":" + string nextReceipt
             questionsByReceipt[receipt] <- recipient, delegator, generation, questions
             createObj [ "ok" ==> true; "receipt" ==> receipt; "delegator" ==> delegator; "questions" ==> questions ]
 
-    let prepare (receipt: string) (answer: string) : obj =
+    let prepare (receipt: string) (answer: string) (language: string) : obj =
         match questionsByReceipt.TryGetValue receipt with
-        | false, _ -> createObj [ "ok" ==> false; "reason" ==> "unknown or settled negotiation" ]
+        | false, _ -> createObj [ "ok" ==> false; "reason" ==> (if isChinese language then "未知或已结算的协商" else "unknown or settled negotiation") ]
         | true, (recipient, delegator, generation, _) ->
             match bindings.TryGetValue recipient with
             | true, (_, activeGeneration) when activeGeneration = generation && not (String.IsNullOrWhiteSpace answer) ->
                 preparedReplies.Add receipt |> ignore
-                createObj [ "ok" ==> true; "recipient" ==> recipient; "steer" ==> ("Delegator answered negotiate(questions):\n" + answer); "first" ==> (current recipient).NegotiationRequired ]
-            | _ -> createObj [ "ok" ==> false; "reason" ==> "stale delegation or empty reply" ]
+                createObj [ "ok" ==> true; "recipient" ==> recipient; "steer" ==> ((if isChinese language then "委托者已回答 negotiate(questions)：\n" else "Delegator answered negotiate(questions):\n") + answer); "first" ==> (current recipient).NegotiationRequired ]
+            | _ -> createObj [ "ok" ==> false; "reason" ==> (if isChinese language then "委托代际已过期或答复为空" else "stale delegation or empty reply") ]
 
     let complete (receipt: string) =
         match questionsByReceipt.TryGetValue receipt with
@@ -615,11 +626,11 @@ let PairHint () : PairHintMessages =
         member _.stripKnownHints(message, texts) = stripKnownHints message texts
         member _.userCanCarryHint(message) = userCanCarryHint message
         member _.toolCanCarryHint(message) = toolCanCarryHint message
-        member _.planRequest(sessionId, messages) = preparedNeutralPlan (current sessionId) messages
+        member _.planRequest(sessionId, messages, language) = preparedNeutralPlan (current sessionId) language messages
         member _.planFilter(messages) = neutralFilterPlan messages
         member _.bindDelegation(recipient, delegator) = bind recipient delegator
-        member _.askNegotiation(recipient, questions) = ask recipient questions
-        member _.prepareNegotiationReply(receipt, answer) = prepare receipt answer
+        member _.askNegotiation(recipient, questions, language) = ask recipient questions language
+        member _.prepareNegotiationReply(receipt, answer, language) = prepare receipt answer language
         member _.completeNegotiationReply(receipt) = complete receipt
         member _.confirmNegotiationSteer(receipt, recipient) = confirm receipt recipient
         member _.negotiationRequired(recipient) = (current recipient).NegotiationRequired

@@ -52,12 +52,12 @@ export interface PairHintMessages {
   stripKnownHints(message: unknown, texts: readonly string[]): unknown
   userCanCarryHint(message: unknown): boolean
   toolCanCarryHint(message: unknown): boolean
-  planRequest(sessionId: string, neutralMessages: readonly ScopeMessage[]): ScopePlan
+  planRequest(sessionId: string, neutralMessages: readonly ScopeMessage[], language?: 'en' | 'zh-CN'): ScopePlan
   planFilter(neutralMessages: readonly ScopeMessage[]): readonly ScopeRetained[]
   appendTailOnce(content: unknown, tail: string): unknown
   bindDelegation(recipient: string, delegator: string): void
-  askNegotiation(recipient: string, questions: string): {ok:boolean, receipt?: string, delegator?: string, questions?: string, reason?: string}
-  prepareNegotiationReply(receipt: string, answer: string): {ok:boolean, recipient?:string, steer?:string, first?:boolean, reason?:string}
+  askNegotiation(recipient: string, questions: string, language?: 'en' | 'zh-CN'): {ok:boolean, receipt?: string, delegator?: string, questions?: string, reason?: string}
+  prepareNegotiationReply(receipt: string, answer: string, language?: 'en' | 'zh-CN'): {ok:boolean, recipient?:string, steer?:string, first?:boolean, reason?:string}
   completeNegotiationReply(receipt: string): boolean
   confirmNegotiationSteer(receipt: string, recipient: string): boolean
   negotiationRequired(recipient: string): boolean
