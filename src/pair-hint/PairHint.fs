@@ -9,6 +9,7 @@ open Fable.Core.JsInterop
 type PairHintMessages =
     abstract isUnchanged: left: obj array * right: obj array -> bool
     abstract budgetSuffix: budget: int -> string
+    abstract adjustBudgetForKpi: estimatedNextScopeBudget: int * kpiCompletion: string -> int
     abstract turnBudget: sessionId: string -> int
     abstract isInitialized: sessionId: string -> bool
     abstract startTurn: sessionId: string -> unit
@@ -28,6 +29,33 @@ type PairHintMessages =
     abstract completeNegotiationReply: receipt: string -> bool
     abstract confirmNegotiationSteer: receipt: string * recipient: string -> bool
     abstract negotiationRequired: recipient: string -> bool
+    abstract rememberSystem: sessionId: string * system: string array -> unit
+    abstract rememberMessages: sessionId: string * messages: obj array -> unit
+    abstract rememberModel: sessionId: string * model: obj -> unit
+    abstract modelFor: sessionId: string -> obj
+    abstract startTemporary: tempId: string * delegatorId: string -> obj
+    abstract startTemporaryFromFrozen: tempId: string * snapshot: obj -> obj
+    abstract modelForTemporary: tempId: string -> obj
+    abstract isTemporary: sessionId: string -> bool
+    abstract finishTemporary: tempId: string -> unit
+    abstract recordToolViolation: tempId: string -> unit
+    abstract toolViolationCount: tempId: string -> int
+    abstract forgetSession: sessionId: string -> unit
+    abstract projectSystem: tempId: string * system: string array -> obj
+    abstract projectMessages: tempId: string * question: obj -> obj
+    abstract pendingKind: sessionId: string -> string
+    abstract isPreviousScopePending: sessionId: string -> bool
+    abstract hasPreviousScope: sessionId: string -> bool
+    abstract setHasPreviousScope: sessionId: string * value: bool -> unit
+    abstract beginAskPreviousScope: sessionId: string -> unit
+    abstract askPreviousScope: sessionId: string * questions: string * ?receipt: string -> obj
+    abstract preparePreviousScopeReply: receipt: string * sessionId: string * answer: string * language: string -> obj
+    abstract confirmPreviousScopeSteer: receipt: string * sessionId: string -> bool
+
+type private PendingKind =
+    | NoPending
+    | AwaitingNegotiation
+    | AwaitingPreviousScope
 
 type private ScopeSession() =
     let mutable budget = 0
@@ -35,26 +63,63 @@ type private ScopeSession() =
     let mutable promptKey = ""
     let mutable promptTime: float option = None
     let toolTails = Dictionary<string, string>()
-    let mutable negotiateFirst = false
+    let mutable pending = NoPending
+    let mutable hasPreviousScope = false
 
     member _.Budget = budget
     member _.Initialized = initialized
-    member _.NegotiationRequired = negotiateFirst
-    member _.BeginNegotiation() = negotiateFirst <- true; budget <- 0; initialized <- false
-    member _.NegotiationReplyAdmitted() = negotiateFirst <- false; budget <- 0; initialized <- false
+    member _.PendingKind =
+        match pending with
+        | NoPending -> "none"
+        | AwaitingNegotiation -> "negotiate"
+        | AwaitingPreviousScope -> "askPreviousScope"
+    member _.PreviousScopePending = pending = AwaitingPreviousScope
+    member _.NegotiationRequired = pending = AwaitingNegotiation
+    member _.IsPending = pending <> NoPending
+    member _.HasPreviousScope with get() = hasPreviousScope and set v = hasPreviousScope <- v
 
-    member _.StartTurn() = budget <- max 0 (budget - 1)
+    member _.BeginNegotiation() =
+        pending <- AwaitingNegotiation
+        budget <- 0
+        initialized <- false
+
+    member _.NegotiationReplyAdmitted() =
+        if pending = AwaitingNegotiation then
+            pending <- NoPending
+            budget <- 0
+            initialized <- false
+
+    member _.BeginAskPreviousScope() =
+        // 显式让 AwaitingNegotiation 压过 reset 意图，不被隐式转换
+        if pending <> AwaitingNegotiation then
+            pending <- AwaitingPreviousScope
+            initialized <- false
+            hasPreviousScope <- true
+
+    member _.AskPreviousScopeAdmitted() =
+        if pending = AwaitingPreviousScope then
+            pending <- NoPending
+            initialized <- true
+
+    member _.StartTurn() =
+        // pending 期间时序不前进，预算不递减
+        if pending = NoPending then
+            budget <- max 0 (budget - 1)
 
     member _.Observe(nextKey: string, nextTime: float option, hasReset: bool) =
         if promptKey = nextKey then
-            initialized <- initialized || hasReset
+            if pending = NoPending then
+                initialized <- initialized || hasReset
         elif promptTime.IsNone || nextTime.IsNone || nextTime.Value >= promptTime.Value then
             promptKey <- nextKey
             promptTime <- nextTime
-            initialized <- hasReset
-            budget <- 0
+            if pending = NoPending then
+                initialized <- hasReset
+                budget <- 0
 
-    member _.MarkInitialized(value: bool) = initialized <- value
+    member _.MarkInitialized(value: bool) =
+        if pending = NoPending then
+            initialized <- value
 
     /// Once displayed, a terminal result is immutable within its prefix epoch.
     member _.TerminalTail(identity: string, proposed: string, remember: bool) =
@@ -65,9 +130,27 @@ type private ScopeSession() =
             proposed
 
     member _.Reset(nextBudget: int) =
-        budget <- max 0 nextBudget
-        initialized <- true
-        toolTails.Clear()
+        // 协商期间 resetScope 自身拒绝执行（delegation [034] 要求首次答复到达前不得提交 ScopeReanchored）
+        if pending <> AwaitingNegotiation then
+            budget <- max 0 nextBudget
+            initialized <- true
+            hasPreviousScope <- true
+            toolTails.Clear()
+
+let private kpiAdjustedBudget (estimate: int) (completion: string) : int =
+    if estimate < 0 then invalidArg "estimatedNextScopeBudget" "Next scope budget cannot be negative"
+    let numerator, denominator =
+        match completion with
+        | "not_started" -> 1, 2
+        | "far_below" -> 3, 4
+        | "partially_met" -> 9, 10
+        | "met" | "not_applicable" -> 1, 1
+        | "exceeded" -> 5, 4
+        | _ -> invalidArg "kpiCompletion" "Unknown KPI completion level"
+    if estimate <= 0 then 0
+    else
+        let adjusted = Math.Ceiling(float estimate * float numerator / float denominator)
+        int (min adjusted (float Int32.MaxValue))
 
 [<Literal>]
 let private Separator = "\u0000\uFEFF"
@@ -91,6 +174,12 @@ let private negotiateReminder (language: string) : string =
         "[系统：先调用 negotiate(questions: string) 向委托者澄清本次任务。把需要确认的多个具体问题集中写入 questions 参数；调用受理后不必等待答复，可继续不依赖答复的工作。委托者的真实答复作为 steer 到达之前，不得调用 resetScope；收到后再初始化 scope。后续可以继续提问，不影响正常的 resetScope。]"
     else
         "[System: Before any resetScope initialization, call negotiate(questions: string) NOW. Ask the delegator all questions needed to clarify this assignment. Group related questions into the single plural questions argument. The call acknowledges sending immediately; continue your work without waiting. Until the delegator’s answer arrives as a user steer, do not call resetScope. After that answer, call resetScope promptly. You may negotiate again at any time; later calls never delay resetScope.]"
+
+let private askPreviousScopeReminder (language: string) : string =
+    if isChinese language then
+        "[系统：你已经收到前一 Scope 的交接。现在必须先调用 askPreviousScope(questions)，由你根据交接及当前目标，自行向前一 Scope 确认需要澄清的具体问题。调用受理后不必等待答复，可继续工作；回答随后作为 steer 到达。]"
+    else
+        "[System: You have received the handoff from the previous scope. You must now call askPreviousScope(questions) first to clarify specific questions with the previous scope based on the handoff and current objective. The call acknowledges sending immediately; continue your work without waiting. Answers will arrive later as a user steer.]"
 
 let private weakReminder (language: string) : string =
     if isChinese language then
@@ -379,12 +468,20 @@ let private neutralMessage (index: int) (value: obj) : NeutralMessage =
 
 let private neutralIsReset (part: NeutralCall) : bool = part.Tool = ResetTool
 
-let private resetPartIndices (parts: NeutralCall array) : int array =
-    let resets = parts |> Array.filter neutralIsReset
-    let resetIds = resets |> Array.map _.Id |> Set.ofArray
+let private isAlwaysRetained (part: NeutralCall) : bool =
+    match part.Tool with
+    | "resetScope" | "assume" | "negotiate" | "askPreviousScope" | "askPrevious" | "advisor" -> true
+    | _ -> false
+
+let private retainedPartIndices (parts: NeutralCall array) : int array =
+    let retainedIds =
+        parts
+        |> Array.filter isAlwaysRetained
+        |> Array.map _.Id
+        |> Set.ofArray
     parts
     |> Array.choose (fun item ->
-        if neutralIsReset item || (item.ResultFor <> "" && Set.contains item.ResultFor resetIds) then
+        if isAlwaysRetained item || (item.ResultFor <> "" && Set.contains item.ResultFor retainedIds) then
             Some item.Part
         else None)
 
@@ -399,17 +496,17 @@ let private latestReset (messages: NeutralMessage array) : (int * int) option =
 let private neutralSelection (message: NeutralMessage) (barrier: (int * int) option) : int array option option =
     match barrier with
     | None -> Some None
-    | Some(activeMessage, activePart) when message.Index > activeMessage -> Some None
+    | Some(activeMessage, _) when message.Index > activeMessage -> Some None
     | Some(activeMessage, activePart) when message.Index = activeMessage ->
-        let resetIndices = resetPartIndices message.Calls |> Set.ofArray
+        let retained = retainedPartIndices message.Calls |> Set.ofArray
         let keep = [| for index in 0 .. message.PartCount - 1 do
-                           if index >= activePart || Set.contains index resetIndices then yield index |]
+                           if index >= activePart || Set.contains index retained then yield index |]
         Some(Some keep)
     | Some _ when message.Kind = "user" || (message.Kind = "custom" && message.Operator) -> Some None
     | Some _ when message.Kind = "result" -> Some None
     | Some _ when message.Kind = "assistant" ->
-        let resetParts = resetPartIndices message.Calls
-        if resetParts.Length = 0 then None else Some(Some resetParts)
+        let retained = retainedPartIndices message.Calls
+        if retained.Length = 0 then None else Some(Some retained)
     | _ -> None
 
 let private candidateSelections (messages: NeutralMessage array) (barrier: (int * int) option) =
@@ -446,8 +543,12 @@ let private slotOf (message: NeutralMessage) (selection: int array option) =
         [ "index" ==> message.Index
           "parts" ==> (match selection with Some indexes -> box indexes | None -> null) ]
 
-let private tailForTool (language: string) (initialized: bool) (budget: int) (toolName: string) =
-    if initialized || toolName = ResetTool then budgetSuffix budget else initializeReminder language
+let private tailForTool (scope: ScopeSession) (language: string) (initialized: bool) (budget: int) (toolName: string) =
+    match scope.PendingKind with
+    | "negotiate" -> negotiateReminder language
+    | "askPreviousScope" -> askPreviousScopeReminder language
+    | _ ->
+        if initialized || toolName = ResetTool then budgetSuffix budget else initializeReminder language
 
 let private toolHint (scope: ScopeSession) (remember: bool) (identity: string) (index: int) (part: int) (fieldName: string) (proposed: string) =
     let suffix = scope.TerminalTail(identity, proposed, remember)
@@ -459,7 +560,11 @@ let private toolHint (scope: ScopeSession) (remember: bool) (identity: string) (
           "tail" ==> suffix ]
 
 let private userHint (scope: ScopeSession) (language: string) (index: int) (key: string) (remember: bool) =
-    let proposed = if scope.NegotiationRequired then negotiateReminder language else initializeReminder language
+    let proposed =
+        match scope.PendingKind with
+        | "negotiate" -> negotiateReminder language
+        | "askPreviousScope" -> askPreviousScopeReminder language
+        | _ -> initializeReminder language
     let suffix = scope.TerminalTail("prompt:" + key, proposed, remember)
     createObj
         [ "kind" ==> "user"
@@ -472,17 +577,16 @@ let private hintsAt (scope: ScopeSession) (language: string) (known: Dictionary<
     let initialized, budget = scope.Initialized, scope.Budget
     if message.Kind = "user" && message.Operator then
         [| userHint scope language message.Index message.Key remember |]
-    elif scope.NegotiationRequired then [||]
     elif message.Kind = "result" && message.ResultField <> "" then
         let name =
             if known.ContainsKey(message.ResultFor) then known[message.ResultFor] else ""
         let identity = if message.ResultFor <> "" then "call:" + message.ResultFor else "message:" + string message.Index + ":result"
-        [| toolHint scope remember identity message.Index -1 message.ResultField (tailForTool language initialized budget name) |]
+        [| toolHint scope remember identity message.Index -1 message.ResultField (tailForTool scope language initialized budget name) |]
     elif message.Kind = "assistant" then
         [| for part in message.Calls do
                if part.Field <> "" && (selectedParts.IsNone || Array.contains part.Part selectedParts.Value) then
                    let identity = if part.Id <> "" then "call:" + part.Id else "message:" + string message.Index + ":part:" + string part.Part
-                   yield toolHint scope remember identity message.Index part.Part part.Field (tailForTool language initialized budget part.Tool) |]
+                   yield toolHint scope remember identity message.Index part.Part part.Field (tailForTool scope language initialized budget part.Tool) |]
     else [||]
 
 let private neutralSelections (entries: NeutralMessage array) =
@@ -516,7 +620,7 @@ let private preparedNeutralPlan (scope: ScopeSession) (language: string) (messag
             if not sideRequest then scope.Observe(prompt.Key, prompt.Stamp, hasReset)
             let retained, known = neutralSelections entries
             let alreadySteered = entries.Length > 0 && entries[entries.Length - 1].Kind = "user" && not entries[entries.Length - 1].Operator && not entries[entries.Length - 1].Side
-            retained, known, scope.Initialized && not scope.NegotiationRequired && scope.Budget = 0 && not sideRequest && not alreadySteered, true, sideRequest
+            retained, known, scope.Initialized && not scope.IsPending && scope.Budget = 0 && not sideRequest && not alreadySteered, true, sideRequest
     let slots =
         selected |> Array.choose (fun (m, selection) -> selection |> Option.map (slotOf m))
     let tails =
@@ -534,15 +638,119 @@ let private preparedNeutralPlan (scope: ScopeSession) (language: string) (messag
           "active" ==> active
           "budget" ==> scope.Budget
           "initialized" ==> scope.Initialized
-          "negotiationRequired" ==> scope.NegotiationRequired ]
+          "negotiationRequired" ==> scope.NegotiationRequired
+          "pendingKind" ==> scope.PendingKind
+          "previousScopePending" ==> scope.PreviousScopePending ]
+
+[<Emit("structuredClone($0)")>]
+let private cloneWire (_value: obj) : obj = jsNative
 
 let PairHint () : PairHintMessages =
     let sessions = Dictionary<string, ScopeSession>()
     let bindings = Dictionary<string, string * int>()
     let questionsByReceipt = Dictionary<string, string * string * int * string>()
+    let previousScopeQuestions = Dictionary<string, string * string>()
     let preparedReplies = HashSet<string>()
+    let preparedPreviousReplies = HashSet<string>()
     let mutable nextGeneration = 0
     let mutable nextReceipt = 0
+    let mutable nextAskReceipt = 0
+    let recordedSystems = Dictionary<string, string array>()
+    let recordedMessages = Dictionary<string, obj array>()
+    let recordedModels = Dictionary<string, obj>()
+    let temporaryNegotiations = Dictionary<string, obj>()
+    let temporaryToolViolations = Dictionary<string, int>()
+
+    let rememberSystem (sessionId: string) (system: string array) =
+        if not (temporaryNegotiations.ContainsKey sessionId) && not (isNull (box system)) then
+            recordedSystems[sessionId] <- unbox<string array> (cloneWire (box system))
+
+    let rememberMessages (sessionId: string) (messages: obj array) =
+        if not (temporaryNegotiations.ContainsKey sessionId) && not (isNull (box messages)) && messages.Length > 0 then
+            recordedMessages[sessionId] <- unbox<obj array> (cloneWire (box messages))
+
+    let rememberModel (sessionId: string) (model: obj) =
+        if not (temporaryNegotiations.ContainsKey sessionId) && not (isNull model) then
+            recordedModels[sessionId] <- cloneWire model
+
+    let modelFor (sessionId: string) : obj =
+        match recordedModels.TryGetValue sessionId with
+        | true, model -> cloneWire model
+        | false, _ -> null
+
+    let startTemporary (tempId: string) (delegatorId: string) : obj =
+        match recordedMessages.TryGetValue delegatorId, recordedSystems.TryGetValue delegatorId, recordedModels.TryGetValue delegatorId with
+        | (true, messages), (true, system), (true, model) when messages.Length > 0 && system.Length > 0 && not (isNull model) ->
+            let view =
+                createObj
+                    [ "delegator", box delegatorId
+                      "messages", cloneWire (box messages)
+                      "system", cloneWire (box system)
+                      "model", cloneWire model ]
+            temporaryNegotiations[tempId] <- view
+            createObj [ "ok" ==> true ]
+        | _ ->
+            createObj
+                [ "ok" ==> false
+                  "reason" ==> "delegator has no complete provider-wire snapshot (messages, system and actual model) to reuse" ]
+
+    let startTemporaryFromFrozen (tempId: string) (snapshot: obj) : obj =
+        let system = if isNull snapshot then null else snapshot?system
+        let messages = if isNull snapshot then null else snapshot?messages
+        let model = if isNull snapshot then null else snapshot?model
+        if not (isArray system && isArray messages) || isNull model then
+            createObj [ "ok" ==> false; "reason" ==> "incomplete frozen provider request" ]
+        else
+            let sys = unbox<string array> system
+            let msgs = unbox<obj array> messages
+            let provider = fieldText model "providerID"
+            let modelId = fieldText model "modelID"
+            let complete = sys.Length > 0 && msgs.Length > 0 && provider <> "" && modelId <> ""
+            if not complete then
+                createObj [ "ok" ==> false; "reason" ==> "missing frozen provider system, messages or model identity" ]
+            else
+                temporaryNegotiations[tempId] <- createObj
+                    [ "delegator", box (fieldText snapshot "sessionId")
+                      "messages", cloneWire messages
+                      "system", cloneWire system
+                      "model", cloneWire model ]
+                createObj [ "ok" ==> true ]
+
+    let modelForTemporary (tempId: string) : obj =
+        match temporaryNegotiations.TryGetValue tempId with
+        | true, view -> cloneWire view?model
+        | _ -> null
+
+    let isTemporary (sessionId: string) : bool =
+        temporaryNegotiations.ContainsKey sessionId
+
+    let finishTemporary (tempId: string) =
+        temporaryNegotiations.Remove tempId |> ignore
+        temporaryToolViolations.Remove tempId |> ignore
+
+    let recordToolViolation (tempId: string) =
+        if temporaryNegotiations.ContainsKey tempId then
+            match temporaryToolViolations.TryGetValue tempId with
+            | true, count -> temporaryToolViolations[tempId] <- count + 1
+            | false, _ -> temporaryToolViolations[tempId] <- 1
+
+    let toolViolationCount (tempId: string) : int =
+        match temporaryToolViolations.TryGetValue tempId with
+        | true, count -> count
+        | false, _ -> 0
+
+    let projectSystem (tempId: string) (system: string array) : obj =
+        match temporaryNegotiations.TryGetValue tempId with
+        | true, view -> cloneWire view?system
+        | false, _ -> null
+
+    let projectMessages (tempId: string) (question: obj) : obj =
+        match temporaryNegotiations.TryGetValue tempId with
+        | true, view ->
+            let prefix = unbox<obj array> (cloneWire view?messages)
+            let q = cloneWire question
+            box (Array.append prefix [| q |])
+        | false, _ -> null
 
     let current (sessionId: string) : ScopeSession =
         match sessions.TryGetValue sessionId with
@@ -562,6 +770,25 @@ let PairHint () : PairHintMessages =
         for receipt in abandoned do
             questionsByReceipt.Remove receipt |> ignore
             preparedReplies.Remove receipt |> ignore
+
+    let forgetSession (sessionId: string) =
+        sessions.Remove sessionId |> ignore
+        bindings.Remove sessionId |> ignore
+        discardForRecipient sessionId
+        let abandonedAsks =
+            previousScopeQuestions
+            |> Seq.choose (fun item ->
+                let (owner, _) = item.Value
+                if owner = sessionId then Some item.Key else None)
+            |> Seq.toArray
+        for r in abandonedAsks do
+            previousScopeQuestions.Remove r |> ignore
+            preparedPreviousReplies.Remove r |> ignore
+        recordedSystems.Remove sessionId |> ignore
+        recordedMessages.Remove sessionId |> ignore
+        recordedModels.Remove sessionId |> ignore
+        temporaryNegotiations.Remove sessionId |> ignore
+        temporaryToolViolations.Remove sessionId |> ignore
 
     let bind (recipient: string) (delegator: string) =
         match bindings.TryGetValue recipient with
@@ -610,17 +837,58 @@ let PairHint () : PairHintMessages =
         | true, (owner, _, _, _) when owner = recipient && preparedReplies.Contains receipt -> complete receipt
         | _ -> false
 
+    let askPreviousScope (sessionId: string) (questions: string) (providedReceipt: string option) : obj =
+        let scope = current sessionId
+        if scope.NegotiationRequired then
+            createObj [ "ok" ==> false; "reason" ==> "negotiation is required before scope operations" ]
+        elif not scope.HasPreviousScope then
+            createObj [ "ok" ==> false; "reason" ==> "NoPreviousScope" ]
+        elif String.IsNullOrWhiteSpace questions then
+            createObj [ "ok" ==> false; "reason" ==> "questions must not be blank" ]
+        else
+            let receipt =
+                match providedReceipt with
+                | Some r when not (String.IsNullOrWhiteSpace r) -> r
+                | _ ->
+                    nextAskReceipt <- nextAskReceipt + 1
+                    sessionId + ":ask:" + string nextAskReceipt
+            match previousScopeQuestions.TryGetValue receipt with
+            | true, (owner, sameQuestions) when owner = sessionId && sameQuestions = questions ->
+                createObj [ "ok" ==> true; "receipt" ==> receipt; "replayed" ==> true; "first" ==> false ]
+            | true, _ ->
+                createObj [ "ok" ==> false; "reason" ==> "receipt already belongs to different questions" ]
+            | false, _ ->
+                previousScopeQuestions[receipt] <- sessionId, questions
+                let first = scope.PreviousScopePending
+                if first then scope.AskPreviousScopeAdmitted()
+                createObj [ "ok" ==> true; "receipt" ==> receipt; "first" ==> first ]
+
+    let preparePreviousScopeReply (receipt: string) (sessionId: string) (answer: string) (language: string) : obj =
+        match previousScopeQuestions.TryGetValue receipt with
+        | true, (owner, _) when owner = sessionId && not (String.IsNullOrWhiteSpace answer) ->
+            preparedPreviousReplies.Add receipt |> ignore
+            let origin = if isChinese language then "前一 Scope 的答复：\n" else "Previous Scope answered askPreviousScope(questions):\n"
+            createObj [ "ok" ==> true; "recipient" ==> sessionId; "steer" ==> (origin + answer) ]
+        | _ -> createObj [ "ok" ==> false; "reason" ==> "stale scope inquiry or empty answer" ]
+
+    let confirmPreviousScopeSteer (receipt: string) (sessionId: string) : bool =
+        match previousScopeQuestions.TryGetValue receipt with
+        | true, (owner, _) when owner = sessionId && preparedPreviousReplies.Contains receipt ->
+            previousScopeQuestions.Remove receipt |> ignore
+            preparedPreviousReplies.Remove receipt |> ignore
+            true
+        | _ -> false
+
     { new PairHintMessages with
         member _.isUnchanged(left, right) = sameElements left right
         member _.budgetSuffix(budget) = budgetSuffix budget
+        member _.adjustBudgetForKpi(estimatedNextScopeBudget, kpiCompletion) =
+            kpiAdjustedBudget estimatedNextScopeBudget kpiCompletion
         member _.turnBudget(sessionId) = (current sessionId).Budget
         member _.isInitialized(sessionId) = (current sessionId).Initialized
         member _.startTurn(sessionId) = (current sessionId).StartTurn()
         member _.resetSession(sessionId, budget) = (current sessionId).Reset(budget)
-        member _.clearSession(sessionId) =
-            sessions.Remove sessionId |> ignore
-            bindings.Remove sessionId |> ignore
-            discardForRecipient sessionId
+        member _.clearSession(sessionId) = forgetSession sessionId
         member _.writeUserHint(message, texts) = writeUserHint message texts
         member _.writeToolResultHint(message, texts) = writeToolResultHint message texts
         member _.stripKnownHints(message, texts) = stripKnownHints message texts
@@ -634,5 +902,27 @@ let PairHint () : PairHintMessages =
         member _.completeNegotiationReply(receipt) = complete receipt
         member _.confirmNegotiationSteer(receipt, recipient) = confirm receipt recipient
         member _.negotiationRequired(recipient) = (current recipient).NegotiationRequired
+        member _.rememberSystem(sessionId, system) = rememberSystem sessionId system
+        member _.rememberMessages(sessionId, messages) = rememberMessages sessionId messages
+        member _.rememberModel(sessionId, model) = rememberModel sessionId model
+        member _.modelFor(sessionId) = modelFor sessionId
+        member _.startTemporary(tempId, delegatorId) = startTemporary tempId delegatorId
+        member _.startTemporaryFromFrozen(tempId, snapshot) = startTemporaryFromFrozen tempId snapshot
+        member _.modelForTemporary(tempId) = modelForTemporary tempId
+        member _.isTemporary(sessionId) = isTemporary sessionId
+        member _.finishTemporary(tempId) = finishTemporary tempId
+        member _.recordToolViolation(tempId) = recordToolViolation tempId
+        member _.toolViolationCount(tempId) = toolViolationCount tempId
+        member _.forgetSession(sessionId) = forgetSession sessionId
+        member _.projectSystem(tempId, system) = projectSystem tempId system
+        member _.projectMessages(tempId, question) = projectMessages tempId question
         member _.appendTailOnce(content, suffix) =
-            appendOnce content suffix (fun current -> current.StartsWith(suffix, StringComparison.Ordinal)) }
+            appendOnce content suffix (fun current -> current.StartsWith(suffix, StringComparison.Ordinal))
+        member _.pendingKind(sessionId) = (current sessionId).PendingKind
+        member _.isPreviousScopePending(sessionId) = (current sessionId).PreviousScopePending
+        member _.hasPreviousScope(sessionId) = (current sessionId).HasPreviousScope
+        member _.setHasPreviousScope(sessionId, value) = (current sessionId).HasPreviousScope <- value
+        member _.beginAskPreviousScope(sessionId) = (current sessionId).BeginAskPreviousScope()
+        member _.askPreviousScope(sessionId, questions, ?receipt) = askPreviousScope sessionId questions receipt
+        member _.preparePreviousScopeReply(receipt, sessionId, answer, language) = preparePreviousScopeReply receipt sessionId answer language
+        member _.confirmPreviousScopeSteer(receipt, sessionId) = confirmPreviousScopeSteer receipt sessionId }

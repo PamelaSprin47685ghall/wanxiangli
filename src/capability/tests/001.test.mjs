@@ -50,7 +50,7 @@ test('SPEC[capability-003] the manager gate reads exact lifecycle facts', () => 
   assert.equal(reviewed.includes('Glob'), false)
   assert.equal(reviewed.includes('Grep'), false)
   assert.equal(reviewed.includes('ReviewAssessment'), true)
-  assert.deepEqual(capability.managerFinishPermissions(), ['Finality', 'Glob', 'Grep', 'Horizon', 'Join', 'Read', 'ReviewAssessment'])
+  assert.deepEqual(capability.managerFinishPermissions(), expected.manager)
 })
 
 test('SPEC[capability-003] malformed manager facts grant nothing', () => {

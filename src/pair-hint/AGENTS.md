@@ -26,6 +26,11 @@
 7. tests/007.test.mjs：先构造预算递减与新 steer 造成历史尾巴改字节的红态，再证明首次呈现冻结、冷重锚允许重建、side-request 不抢先冻结。
 8. tests/008.test.mjs：受委托方首次问答到达前只提醒 negotiate(questions)，首次真实回答 steer 后才激活 resetScope；随后可选协商不暂停重置。同一委托者绑定复用不强制重问，换委托者时旧回执失效；未 prepare 或尚未真实送达的回答不可解锁。
 9. tests/009.test.mjs：动态初始化、首次协商、零预算弱提醒与协商回答经实见语言呈现；中文请求不混英语 `[System:]` 行为指令，非法语言不静默退回英文；同 epoch 的已呈现结果字节不因语言切换而漂移。宿主 HNI 在 cognitive-environment/018 验证真实语言权威。
+10. tests/010.test.mjs：negotiate 与 askPreviousScope 首问的相同时序冻结、不同解锁见证，首问后 budget 恢复和旧工具结果提示字节冻结。
+11. tests/011.test.mjs：assume、negotiate、askPreviousScope/askPrevious、advisor 原始工具调用和成对结果历次 reset 保留；未配对伪结果与普通旧调用不得混进来。
+12. tests/012.test.mjs：KPI 枚举乘法因子是单一自治预算计算函数，原始预算乘因子后向上取整，缺失未知枚举拒绝。
+13. tests/013.test.mjs：同一个只读临时会话协议可从旧 Provider 冻结上下文执行模型回问；receipt ID 只接受同问题、真实 steer 确认一次且删除会话后迟到回执无效。
+
 
 ## 协商补充公理（2026-10-24）
 

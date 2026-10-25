@@ -13,7 +13,8 @@ test('SPEC[pair-hint-008] a delegated assignment requires questions before any r
   assert.equal(plan.negotiationRequired,true)
   assert.match(plan.hints[0].tail,/negotiate\(questions: string\) NOW/)
   assert.equal(plan.hints.some(x=>/resetScope immediately/.test(x.tail)),false)
-  assert.equal(plan.hints.filter(x=>x.kind==='tool').length,0)
+  assert.equal(plan.hints.filter(x=>x.kind==='tool').length,1)
+  assert.match(plan.hints.find(x=>x.kind==='tool').tail,/negotiate\(questions: string\) NOW/)
   const receipt=owner.askNegotiation(id,'Which module? What invariant?')
   assert.equal(receipt.ok,true)
   assert.equal(receipt.delegator,'parent')
@@ -108,4 +109,57 @@ test('SPEC[pair-hint-008] reusing the same delegator does not demand a second ma
   assert.equal(follow.ok, true)
   assert.equal(owner.negotiationRequired(recipient), false)
   owner.clearSession(recipient)
+})
+
+test('SPEC[pair-hint-008] prefix snapshot recording and temporary session lifecycle', () => {
+  const delegator = 'parent-prefix-001', temp = 'temp-grandchild-001'
+  const sys = ['Parent common law', 'Provider configuration']
+  const msgs = [
+    { role: 'user', content: 'parent task' },
+    { role: 'assistant', content: 'parent answer' }
+  ]
+  const originalMsgsBytes = JSON.stringify(msgs)
+  const model = { providerID: 'anthropic', modelID: 'claude-3-5', variant: 'high' }
+
+  // 1. Without model or system, startTemporary fails
+  owner.rememberMessages(delegator, msgs)
+  assert.equal(owner.startTemporary(temp, delegator).ok, false, 'cannot start temporary session without complete snapshot')
+
+  owner.rememberSystem(delegator, sys)
+  assert.equal(owner.startTemporary(temp, delegator).ok, false, 'cannot start without model')
+
+  owner.rememberModel(delegator, model)
+  assert.deepEqual(owner.modelFor(delegator), model)
+
+  // 2. Complete snapshot succeeds
+  assert.equal(owner.startTemporary(temp, delegator).ok, true)
+  assert.equal(owner.isTemporary(temp), true)
+  assert.equal(owner.isTemporary(delegator), false)
+
+  // 3. System and messages projection
+  const projectedSys = owner.projectSystem(temp, ['temporary sys'])
+  assert.deepEqual(projectedSys, sys)
+
+  const question = { role: 'user', content: 'clarification question' }
+  const projectedMsgs = owner.projectMessages(temp, question)
+  assert.equal(projectedMsgs.length, msgs.length + 1)
+  assert.deepEqual(projectedMsgs.slice(0, msgs.length), msgs)
+  assert.deepEqual(projectedMsgs.at(-1), question)
+  assert.equal(JSON.stringify(msgs), originalMsgsBytes, 'parent messages array is immutable')
+
+  // 4. Tool violation counting
+  assert.equal(owner.toolViolationCount(temp), 0)
+  owner.recordToolViolation(temp)
+  owner.recordToolViolation(temp)
+  assert.equal(owner.toolViolationCount(temp), 2)
+
+  // 5. finishTemporary cleans up
+  owner.finishTemporary(temp)
+  assert.equal(owner.isTemporary(temp), false)
+  assert.equal(owner.toolViolationCount(temp), 0)
+
+  // 6. forgetSession cleans up delegator
+  owner.forgetSession(delegator)
+  assert.equal(owner.modelFor(delegator), null)
+  assert.equal(owner.startTemporary(temp, delegator).ok, false)
 })

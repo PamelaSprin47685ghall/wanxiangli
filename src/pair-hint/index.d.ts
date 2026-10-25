@@ -33,6 +33,8 @@ export interface ScopePlan {
   readonly active: boolean
   readonly initialized: boolean
   readonly negotiationRequired: boolean
+  readonly pendingKind: 'none' | 'negotiate' | 'askPreviousScope'
+  readonly previousScopePending: boolean
   readonly budget: number
   readonly slots: readonly ScopeRetained[]
   readonly hints: readonly ScopeTail[]
@@ -42,6 +44,7 @@ export interface ScopePlan {
 export interface PairHintMessages {
   isUnchanged(left: readonly unknown[], right: readonly unknown[]): boolean
   budgetSuffix(budget: number): string
+  adjustBudgetForKpi(estimatedNextScopeBudget: number, kpiCompletion: 'not_started' | 'far_below' | 'partially_met' | 'met' | 'exceeded' | 'not_applicable'): number
   turnBudget(sessionId: string): number
   isInitialized(sessionId: string): boolean
   startTurn(sessionId: string): void
@@ -61,5 +64,27 @@ export interface PairHintMessages {
   completeNegotiationReply(receipt: string): boolean
   confirmNegotiationSteer(receipt: string, recipient: string): boolean
   negotiationRequired(recipient: string): boolean
+  rememberSystem(sessionId: string, system: readonly string[]): void
+  rememberMessages(sessionId: string, messages: readonly unknown[]): void
+  rememberModel(sessionId: string, model: unknown): void
+  modelFor(sessionId: string): unknown
+  startTemporary(tempId: string, delegatorId: string): { ok: boolean, reason?: string }
+  startTemporaryFromFrozen(tempId: string, snapshot: unknown): { ok: boolean, reason?: string }
+  modelForTemporary(tempId: string): unknown
+  isTemporary(sessionId: string): boolean
+  finishTemporary(tempId: string): void
+  recordToolViolation(tempId: string): void
+  toolViolationCount(tempId: string): number
+  forgetSession(sessionId: string): void
+  projectSystem(tempId: string, system: readonly string[]): readonly string[] | null
+  projectMessages(tempId: string, question: unknown): readonly unknown[] | null
+  pendingKind(sessionId: string): 'none' | 'negotiate' | 'askPreviousScope'
+  isPreviousScopePending(sessionId: string): boolean
+  hasPreviousScope(sessionId: string): boolean
+  setHasPreviousScope(sessionId: string, value: boolean): void
+  beginAskPreviousScope(sessionId: string): void
+  askPreviousScope(sessionId: string, questions: string, receipt?: string): { ok: boolean, receipt?: string, first?: boolean, replayed?: boolean, reason?: string }
+  preparePreviousScopeReply(receipt: string, sessionId: string, answer: string, language?: 'en' | 'zh-CN'): { ok: boolean, recipient?: string, steer?: string, reason?: string }
+  confirmPreviousScopeSteer(receipt: string, sessionId: string): boolean
 }
 export function PairHint(): PairHintMessages

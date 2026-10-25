@@ -87,19 +87,15 @@ module OfficeMatrix =
     let managerReviewReadOnly: Set<Permission> =
         set [ Permission.Read; Permission.Glob; Permission.Grep ]
 
-    /// capability-enforcement-025：最终在任者的收口面——保留读、horizon、join
-    /// 与 deliver 终局，并保留 ReviewAssessment 以便在终局前更新或清空义务账；
-    /// 去掉新工作能力（fork、resume）。
-    let managerFinish: Set<Permission> =
-        set
-            [ Permission.Read; Permission.Glob; Permission.Grep; Permission.Horizon; Permission.Join
-              Permission.Finality; Permission.ReviewAssessment ]
-
+    /// 末任即使已通过空账评审，也保留全部 Manager 工作与委派能力。
+    /// 是否真正交付仍由 durable obligations / blockers 与 deliver 决定。
     let private manager: Set<Permission> =
         set
             [ Permission.Fork; Permission.Resume; Permission.Join; Permission.Horizon; Permission.Advisor
               Permission.ReviewAssessment; Permission.Finality; Permission.Read; Permission.Glob; Permission.Grep
               Permission.ResetScope ]
+
+    let managerFinish: Set<Permission> = manager
 
     /// 矩阵认得的角色标签（现行角色）。其余标签（历史角色、内部槽位、未知名）失败关闭。
     let roles: string list = [ "advisor"; "manager"; "orchestrator"; "engineer"; "devops"; "plan" ]
@@ -131,7 +127,7 @@ module OfficeMatrix =
     let permissionsForManagerFacts (facts: ManagerFacts): Set<Permission> =
         if not facts.HasActiveIncumbency then Set.empty
         elif facts.HasCleanupBlocker then set [ Permission.Join; Permission.Finality ]
-        elif facts.IsFinalIncumbent then managerFinish
+        elif facts.IsFinalIncumbent then manager
         elif facts.HasAssessment then Set.difference manager managerReviewReadOnly
         else manager
 
