@@ -39,3 +39,6 @@
 
 6. [LEMMA 7] 草稿多会话隔离、Q 覆写与追加、A 覆写与空补、tryTake 原子消费、clear 幂等、transcript 逐字等边界反例全部成立。
     - 证明：`tests/010.test.mjs`。
+
+7. [knowledge-reuse-008/011/012/013] 公开索引状态机：独占持有私有 frozen 快照与 dirty 失效标记。首次冻结即使空 cases 也生成 epoch = 0n、dirty = false；后续无变化且非 dirty 时不推进 epoch；invalidate 或内容/顺序变动推进 epoch；返回防御性深/浅拷贝隔离外部修改；locate 与 shelfmarkFor 保持确定性；独立实例与单例相互隔离。
+    - 证明：`tests/014.test.mjs`.

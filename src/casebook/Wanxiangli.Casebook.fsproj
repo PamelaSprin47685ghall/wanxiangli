@@ -12,6 +12,8 @@
     <PackageExport Include="BookkeeperStaging.fs" Member="bookkeeperStaging" />
     <PackageExport Include="SessionDraftStore.fs" Member="SessionDraftStore" />
     <PackageExport Include="SessionDraftStore.fs" Member="sessionDraftStore" />
+    <PackageExport Include="CasebookIndexLaw.fs" Member="CasebookIndex" />
+    <PackageExport Include="CasebookIndexLaw.fs" Member="casebookIndex" />
     <PackageExport Include="CasebookIndexLaw.fs" Member="CasebookIndexLaw" />
   </ItemGroup>
 </Project>
