@@ -76,6 +76,16 @@ module internal Wire =
         require (isArray value) "Expected an array"
         (unbox<obj array> value) |> Array.map text
 
+    let updates (value: obj) =
+        require (isArray value) "Expected an array"
+        unbox<obj array> value
+        |> Array.toList
+        |> List.map (fun update ->
+            fields [ "key"; "value" ] [] update
+            let key = text (get update "key")
+            let raw = get update "value"
+            key, (if isNull raw then None else Some(text raw)))
+
     let optionalText (value: obj) key =
         if not (has value key) || isNull (get value key) then None
         else Some(text (get value key))
@@ -100,5 +110,9 @@ module internal Wire =
 
     let objectOf (pairs: (string * obj) list) = createObj pairs
     let nullable (value: string option): obj = value |> Option.map box |> Option.defaultValue null
+    let encodeUpdates updates =
+        updates
+        |> List.map (fun (key, value) -> objectOf [ "key", box key; "value", nullable value ])
+        |> List.toArray
     let nullableCursor (value: float option): obj = value |> Option.map box |> Option.defaultValue null
     let identity tag (parts: string list) = sha256 (canonical (box (tag :: parts |> List.toArray)))

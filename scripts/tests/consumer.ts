@@ -5,7 +5,7 @@ import { DurableWork, type Journal } from 'wanxiangli/durable-work'
 declare const connection: SqliteConnection
 const journal: Journal = new SqliteJournal(connection)
 const local = new Work('typed-work')
-const command: Command = { type: 'Open', root: 'root', sequence: ['S4'], ownerId: 'manager', openingCursor: 0 }
+const command: Command = { type: 'Review', office: 'Plan', providerRunId: 'run', toolCallId: 'call-1', updates: [{ key: 'gap', value: 'fix' }] }
 const localResult = local.execute('request', command)
 if (localResult.status === 'Applied') {
   const body: string = localResult.record
@@ -22,8 +22,6 @@ if (localResult.status === 'Conflict') {
   void badResult
 }
 
-// Exhaustiveness: a consumer handling only Applied, Replayed, and Observed
-// fails compilation because Conflict is a declared variant of ExecutionResult.
 function exhaustivelyHandle(res: ExecutionResult): string {
   switch (res.status) {
     case 'Applied': return res.record
@@ -35,14 +33,15 @@ function exhaustivelyHandle(res: ExecutionResult): string {
 void exhaustivelyHandle
 const work = new DurableWork('typed-work', journal)
 const response = work.execute('request', command)
-if (response.status === 'Committed' && response.result.kind === 'Opened') {
+if (response.status === 'Committed' && response.result.kind === 'Reviewed' && response.result.incumbencyId) {
   const tenure: string = response.result.incumbencyId
-  work.execute('review', { type: 'Review', incumbencyId: tenure, reviewerId: 'reviewer', updates: [] })
+  void tenure
+  work.execute('clear', { type: 'Review', office: 'Plan', providerRunId: 'run', toolCallId: 'call-2', updates: [{ key: 'gap', value: null }] })
 }
 const recovery = work.recover()
 if (recovery.next !== 'ObserveCommit') {
-  const writable: boolean = recovery.state.canWriteSource
-  void writable
+  const milestone: string | null = recovery.state.milestone
+  void milestone
 }
 new Work('typed-work', work.records())
 
@@ -55,6 +54,6 @@ work.execute('invalid', { type: 'suicide' })
 // @ts-expect-error A plan cannot contain an arbitrary sequence.
 local.execute('invalid', { type: 'Open', root: 'root', sequence: ['S1'], ownerId: 'manager', openingCursor: 0 })
 // @ts-expect-error Findings must be text, not unchecked objects.
-work.execute('invalid', { type: 'Review', incumbencyId: 'tenure', reviewerId: 'reviewer', updates: [{}] })
+work.execute('invalid', { type: 'Review', office: 'Plan', providerRunId: 'run', toolCallId: 'bad', updates: [{}] })
 // @ts-expect-error The composition needs atomic append, not read alone.
 new DurableWork('invalid', { read: () => [] })

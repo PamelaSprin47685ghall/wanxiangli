@@ -1,31 +1,54 @@
-export type Sequence = readonly ['S1', 'S2', 'S3'] | readonly ['S4'];
-export type Stage = 'S1' | 'S2' | 'S3' | 'S4';
-export interface Draft { digest: string; path: string }
+export type Office = 'Plan' | 'Manager';
+export type Milestone =
+  | '事实与取舍'
+  | '理解与路径'
+  | '流程与伪代码'
+  | '待执行'
+  | '执行'
+  | '收尾'
+  | '已完成';
+export interface Obligation { readonly key: string; readonly value: string }
+export interface EffectAsk { readonly kind: 'Ask'; readonly id: string; readonly text: string; readonly incumbencyId: string }
+export interface EffectDispatch {
+  readonly kind: 'Dispatch';
+  readonly id: string;
+  readonly promptKind: 'Successor' | 'Advance';
+  readonly milestone: string;
+  readonly text: string;
+  readonly incumbencyId: string;
+}
+export interface EffectLaunch {
+  readonly kind: 'Launch';
+  readonly id: string;
+  readonly phase: 'Create' | 'Send';
+  readonly digest: string;
+  readonly providerRunId: string;
+  readonly toolCallId: string;
+  readonly execSessionId: string | null;
+}
+export interface EffectStop { readonly kind: 'Stop'; readonly id: string; readonly incumbencyId: string }
+export type Effect = EffectAsk | EffectDispatch | EffectLaunch | EffectStop;
+export type ConfirmOutcome = 'Parked' | 'Sent' | 'Unknown' | 'Requested' | 'Observed' | 'SessionCreated' | 'Admitted' | 'NotStarted';
 export type Command =
-  | { type: 'Open'; root: string; sequence: Sequence; ownerId: string; openingCursor: number }
-  | { type: 'Review'; incumbencyId: string; reviewerId: string; updates: readonly { key: string; value: string | null }[] }
-  | { type: 'BindDevOps'; incumbencyId: string; trigger: 'Ask' | 'Resume' | 'Horizon'; devopsId: string; target: string | null }
-  | { type: 'Advance'; incumbencyId: string; expected: string; next: string }
-  | { type: 'Reopen'; retirementId: string; ownerId: string; openingCursor: number; blockers: readonly string[] }
-  | { type: 'Deliver'; incumbencyId: string; providerRunId: string; toolCallId: string; cursor: number; blockers: readonly string[]; nextOwnerId?: string; draft?: Draft }
-  | { type: 'ResolveDelivery'; operationId: string; outcome: 'SessionCreated'; execSessionId: string }
-  | { type: 'ResolveDelivery'; operationId: string; outcome: 'Accepted'; execSessionId: string; digest: string; path: string; blockers: readonly string[] }
-  | { type: 'ResolveDelivery'; operationId: string; outcome: 'NotStarted'; reason: string }
-  | { type: 'ResolveDelivery'; operationId: string; outcome: 'Unknown' };
-export type Decision =
-  | { kind: 'Opened' | 'Reopened'; incumbencyId: string }
-  | { kind: 'Reviewed'; outcome: 'Promoted' | 'Stayed'; stage: Stage; firstReview: boolean; obligations: { key: string; value: string }[] }
-  | { kind: 'DevOpsBound'; devopsId: string }
-  | { kind: 'Advanced'; authority: string }
-  | { kind: 'Blocked'; blockerDigest: string }
-  | { kind: 'DeliveryRequested'; operationId: string; digest: string; path: string }
-  | { kind: 'ObserveExecution'; operationId: string; digest: string; path: string; execSessionId: string | null }
-  | { kind: 'ExecutionSessionBound'; operationId: string; execSessionId: string; digest: string; path: string }
-  | { kind: 'ExecutionRejected'; operationId: string; reason: string }
-  | { kind: 'Delivered'; retirementId: string; incumbencyId: string }
-  | { kind: 'Promoted'; stage: Stage; retirementId: string; incumbencyId: string; successorId: string }
-  | { kind: 'Authorized'; incumbencyId: string }
-  | { kind: 'Relayed'; retirementId: string; incumbencyId: string; successorId: string; autoDispatch: boolean };
+  | { type: 'Review'; office: Office; providerRunId: string; toolCallId: string; updates: readonly { key: string; value: string | null }[]; blockers?: readonly string[]; digest?: string }
+  | { type: 'OperatorAnswer'; messageId: string }
+  | { type: 'OperatorMessage'; kind: 'Operator' | 'Advisor' | 'Agent'; messageId: string }
+  | { type: 'Confirm'; effectId: string; outcome: ConfirmOutcome; execSessionId?: string; reason?: string }
+  | { type: 'BindDevOps'; trigger: 'Ask' | 'Resume' | 'Horizon'; devopsId: string; target: string | null };
+export interface Decision {
+  readonly kind: string;
+  readonly incumbencyId: string | null;
+  readonly milestone: string | null;
+  readonly wait: string;
+  readonly effect: Effect | null;
+  readonly obligations: readonly Obligation[];
+  readonly successorId?: string;
+  readonly retirementId?: string;
+  readonly barrierId?: string;
+  readonly operationId?: string;
+  readonly messageId?: string;
+  readonly blockers?: readonly string[];
+}
 export type ExecutionResult =
   | { status: 'Applied'; revision: number; result: Decision; record: string; reason: null }
   | { status: 'Replayed' | 'Observed'; revision: number; result: Decision; record: null; reason: null }
@@ -33,39 +56,40 @@ export type ExecutionResult =
 export interface Round {
   readonly incumbencyId: string;
   readonly ownerId: string;
-  readonly openingStage: Stage;
-  readonly closingStage: Stage;
-  readonly openingCursor: number;
-  readonly retirementCursor: number | null;
-  readonly reviewOutcome: 'Promoted' | 'Stayed' | null;
-  readonly obligations: { key: string; value: string }[];
-  readonly outcome: 'Relayed' | 'Delivered';
+  readonly origin: 'Originator' | 'Successor';
+  readonly milestone: string;
+  readonly outcome: 'Relayed' | 'Completed';
   readonly retirementId: string;
 }
 export interface Snapshot {
   readonly workId: string;
-  readonly opened: boolean;
-  readonly root: string | null;
-  readonly sequence: Sequence | null;
-  readonly stage: Stage | null;
-  readonly authority: string | null;
+  readonly office: Office | null;
+  readonly milestone: string | null;
   readonly revision: number;
-  readonly deliveryAuthorized: boolean;
+  readonly phase: string;
+  readonly wait: string;
   readonly active: null | {
     readonly id: string;
     readonly ownerId: string;
-    readonly openingStage: Stage;
-    readonly openingCursor: number;
-    readonly reviewOutcome: 'Promoted' | 'Stayed' | null;
-    readonly obligations: { key: string; value: string }[];
+    readonly origin: 'Originator' | 'Successor';
+    readonly milestone: string;
+    readonly substantive: boolean;
+    readonly obligations: readonly Obligation[];
   };
-  readonly devopsId: string | null;
-  readonly canWriteSource: boolean;
-  readonly canDispatchDevOps: boolean;
-  readonly pendingDelivery: null | { readonly kind: 'ObserveExecution'; readonly operationId: string; readonly digest: string; readonly path: string; readonly execSessionId: string | null };
   readonly rounds: readonly Round[];
+  readonly devopsId: string | null;
+  readonly devopsTarget: string | null;
+  readonly pending: Effect | null;
+  readonly launches: readonly { readonly id: string; readonly status: string; readonly digest: string; readonly providerRunId: string; readonly toolCallId: string; readonly execSessionId: string | null }[];
+  readonly obligations: readonly Obligation[];
+  readonly completed: boolean;
 }
-export type Recovery = { next: 'Open' | 'Review' | 'Continue' | 'ObserveExecution' | 'Done'; state: Snapshot };
+export type Recovery = {
+  next: 'Review' | 'OperatorAnswer' | 'OperatorMessage' | 'ConfirmEffect';
+  wait: 'AwaitReview' | 'AwaitOperatorAnswer' | 'AwaitEmptyReview' | 'AwaitOperatorMessage' | 'ConfirmEffect';
+  effect: Effect | null;
+  state: Snapshot;
+};
 export interface Frame {
   readonly requestId: string;
   readonly requestHash: string;
@@ -79,3 +103,4 @@ export interface Work {
   recover(): Recovery;
 }
 export const Work: { new(workId: string, records?: readonly string[]): Work };
+export function abandonLocalState(directory: string): void;

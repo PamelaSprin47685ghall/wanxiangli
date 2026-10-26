@@ -1,109 +1,61 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { Work } from 'wanxiangli/work'
-import { Rig } from './support.mjs'
+import { Rig, reachReady } from './support.mjs'
 
-test('SPEC[lifecycle-005] a new reservation is a domain fact, not a durable dispatch permit', () => {
+test('SPEC[lifecycle-005] one replay starts one manager and three calls start three', () => {
   const rig = new Rig()
-  const { command, reply, operationId } = rig.reserve()
-  assert.equal(reply.status, 'Applied')
-  assert.equal(reply.result.kind, 'DeliveryRequested')
-  const state = rig.work.inspect()
-  assert.equal(state.pendingDelivery.operationId, operationId)
-  assert.equal(state.pendingDelivery.execSessionId, null)
-  assert.equal(state.canWriteSource, false)
-  assert.ok(state.active)
-  assert.equal(rig.work.history().at(-1).events[0].type, 'DeliveryRequested')
-  assert.equal(rig.call(command, 'reserve').result.kind, 'ObserveExecution')
-  assert.equal(rig.call(command, 'same-fence-another-request').result.kind, 'ObserveExecution')
-  const restored = new Work('work-a', rig.work.records())
-  assert.equal(restored.recover().next, 'ObserveExecution')
-  assert.equal(restored.execute('reserve', command).result.kind, 'ObserveExecution')
+  reachReady(rig)
+  const command = { type: 'Review', office: 'Plan', providerRunId: 'run-1', toolCallId: 'launch-same', updates: [] }
+  const first = rig.apply(command, 'launch-same')
+  assert.equal(first.kind, 'Launched')
+  assert.equal(first.effect.phase, 'Create')
+  const replay = rig.call(command, 'launch-same')
+  assert.equal(replay.status, 'Replayed')
+  assert.equal(replay.result.effect.id, first.effect.id)
+  assert.equal(rig.work.inspect().launches.length, 1)
+  const ids = ['launch-a', 'launch-b', 'launch-c'].map(toolCallId => rig.review([], { toolCallId }).effect.id)
+  assert.equal(new Set(ids).size, 3)
+  assert.equal(rig.work.inspect().launches.length, 4)
+  assert.equal(rig.work.inspect().milestone, '待执行')
+  assert.equal(rig.work.inspect().phase, 'Ready')
+  rig.restored()
 })
 
-test('SPEC[lifecycle-005] an unknown execution remains pending and produces no new fact', () => {
+test('SPEC[lifecycle-005] session binding, admission and unknown do not retire 待执行', () => {
   const rig = new Rig()
-  const { operationId } = rig.reserve()
-  const count = rig.count
-  const reply = rig.call({ type: 'ResolveDelivery', operationId, outcome: 'Unknown' })
-  assert.equal(reply.status, 'Observed')
-  assert.equal(reply.result.kind, 'ObserveExecution')
-  assert.equal(rig.count, count)
-  assert.throws(() => rig.deliver({ draft: { digest: 'another', path: '/new' } }), /pending/)
+  reachReady(rig)
+  const launched = rig.review([], { toolCallId: 'create-1' })
+  const bound = rig.confirm(launched.effect, 'SessionCreated', { execSessionId: 'session-1' })
+  assert.equal(bound.kind, 'Confirmed')
+  assert.equal(bound.effect.phase, 'Send')
+  assert.equal(bound.effect.execSessionId, 'session-1')
+  const admitted = rig.confirm(bound.effect, 'Admitted', { execSessionId: 'session-1' })
+  assert.equal(admitted.effect, null)
+  assert.equal(rig.work.inspect().launches[0].status, 'Admitted')
+  assert.equal(rig.work.inspect().phase, 'Ready')
+  const second = rig.review([], { toolCallId: 'create-2' })
+  const unknown = rig.confirm(second.effect, 'Unknown')
+  assert.equal(unknown.effect, null)
+  assert.equal(rig.work.inspect().launches[1].status, 'Unknown')
+  assert.equal(rig.work.recover().effect, null)
+  const third = rig.review([], { toolCallId: 'create-3' })
+  assert.notEqual(third.effect.id, second.effect.id)
+  const rejected = rig.confirm(third.effect, 'NotStarted', { reason: 'refused' })
+  assert.equal(rejected.kind, 'Confirmed')
+  assert.equal(rig.work.inspect().milestone, '待执行')
+  rig.restored()
 })
 
-test('SPEC[lifecycle-005] the physical session identity is committed before prompt acceptance and survives recovery', () => {
+test('SPEC[lifecycle-005] a late confirmation does not write a second time', () => {
   const rig = new Rig()
-  const { command, operationId } = rig.reserve()
-  const bound = rig.bindSession(operationId, 'execution-session-42')
-  assert.equal(bound.kind, 'ExecutionSessionBound')
-  assert.equal(bound.execSessionId, 'execution-session-42')
-  assert.equal(rig.work.inspect().pendingDelivery.execSessionId, 'execution-session-42')
-  const restored = new Work('work-a', rig.work.records())
-  assert.equal(restored.recover().next, 'ObserveExecution')
-  assert.equal(restored.inspect().pendingDelivery.execSessionId, 'execution-session-42')
-  assert.equal(restored.execute('reserve', command).result.execSessionId, 'execution-session-42')
-  assert.throws(
-    () => rig.call({ type: 'ResolveDelivery', operationId, outcome: 'SessionCreated', execSessionId: 'other-session' }),
-    /session mismatch/i,
-  )
-})
-
-test('SPEC[lifecycle-005] an accepted receipt must identify the reserved operation and draft', () => {
-  const rig = new Rig()
-  const { operationId } = rig.reserve()
-  const count = rig.count
-  assert.throws(() => rig.call(rig.accepted('different-operation')), /mismatch/)
-  assert.throws(() => rig.call(rig.accepted(operationId)), /durably bound/)
-  const bound = rig.bindSession(operationId)
-  assert.equal(bound.kind, 'ExecutionSessionBound')
-  assert.equal(rig.work.inspect().pendingDelivery.execSessionId, 'execution-session')
-  assert.throws(() => rig.call(rig.accepted(operationId, { digest: 'changed' })), /mismatch/)
-  assert.equal(rig.count, count + 1)
-  const delivered = rig.apply(rig.accepted(operationId), 'accepted')
-  assert.equal(delivered.kind, 'Delivered')
-  assert.equal(rig.work.inspect().active, null)
-  assert.equal(rig.work.recover().next, 'Done')
-  assert.equal(rig.work.history().at(-1).events[0].execSessionId, 'execution-session')
-  assert.equal(rig.call(rig.accepted(operationId), 'accepted').status, 'Replayed')
-})
-
-test('SPEC[lifecycle-005] pending execution does not bypass live-resource retirement blockers', () => {
-  const rig = new Rig()
-  const { operationId } = rig.reserve()
-  rig.bindSession(operationId)
-  assert.equal(rig.apply(rig.accepted(operationId, { blockers: ['live-owned-process'] })).kind, 'Blocked')
-  assert.equal(rig.work.inspect().pendingDelivery.operationId, operationId)
-  assert.ok(rig.work.inspect().active)
-  assert.equal(rig.apply(rig.accepted(operationId)).kind, 'Delivered')
-})
-
-test('SPEC[lifecycle-005] a known not-started result unlocks only an explicit new attempt', () => {
-  const rig = new Rig()
-  const { command, operationId } = rig.reserve()
-  const rejected = rig.apply({ type: 'ResolveDelivery', operationId, outcome: 'NotStarted', reason: 'The host rejected before starting.' })
-  assert.equal(rejected.kind, 'ExecutionRejected')
-  assert.equal(rig.work.inspect().pendingDelivery, null)
-  assert.equal(rig.call(command, 'reserve').result.kind, 'ExecutionRejected')
-  const next = rig.deliver({ draft: { digest: 'draft-digest', path: '/plans/approved.md' } })
-  assert.equal(next.kind, 'DeliveryRequested')
-  assert.notEqual(next.operationId, operationId)
-})
-
-test('SPEC[lifecycle-005] a late accepted receipt is idempotent and cannot settle a later delivery', () => {
-  const rig = new Rig()
-  const { operationId } = rig.reserve()
-  rig.bindSession(operationId)
-  const retired = rig.apply(rig.accepted(operationId))
-  const cursor = rig.work.history().at(-1).events[0].retirementCursor
-  rig.apply({ type: 'Reopen', retirementId: retired.retirementId, ownerId: 'manager', openingCursor: cursor + 1, blockers: [] })
-  rig.review()
-  // Deliver authorizes the reopened S3 tenure first, then a drafted deliver reserves.
-  assert.equal(rig.deliver().kind, 'Authorized')
-  const next = rig.deliver({ draft: { digest: 'next-draft', path: '/next-plan' } })
-  const count = rig.count
-  assert.equal(rig.call(rig.accepted(operationId), 'late-accepted').result.retirementId, retired.retirementId)
-  assert.equal(rig.work.inspect().pendingDelivery.operationId, next.operationId)
-  assert.equal(rig.count, count)
-  assert.throws(() => rig.call(rig.accepted(operationId, { execSessionId: 'different-session' })), /conflict|mismatch/i)
+  reachReady(rig)
+  const launched = rig.review([], { toolCallId: 'create-late' })
+  const command = { type: 'Confirm', effectId: launched.effect.id, outcome: 'SessionCreated', execSessionId: 'session-late' }
+  const bound = rig.apply(command, 'bind-late')
+  const replay = rig.call(command, 'bind-late')
+  assert.equal(replay.status, 'Replayed')
+  assert.deepEqual(replay.result, bound)
+  const late = rig.call({ ...command }, 'bind-late-2')
+  assert.equal(late.status, 'Observed')
+  assert.equal(rig.work.inspect().launches.length, 1)
 })

@@ -1,5 +1,16 @@
-import type { Command, Decision, Frame, Recovery, Snapshot } from 'wanxiangli/work';
+import type { Command, Decision, Effect, EffectAsk, EffectDispatch, EffectLaunch, EffectStop, Frame, Recovery, Snapshot } from 'wanxiangli/work';
 import type { AppendResult } from 'wanxiangli/eventstore';
+
+export interface EffectPorts {
+  ask(effect: EffectAsk): 'Parked' | 'Unknown';
+  dispatch(effect: EffectDispatch): 'Sent' | 'Unknown';
+  createSession(effect: EffectLaunch):
+    | { status: 'SessionCreated'; execSessionId: string }
+    | { status: 'Unknown' }
+    | { status: 'NotStarted'; reason: string };
+  sendDraft(effect: EffectLaunch): 'Admitted' | 'Unknown';
+  stop(effect: EffectStop): 'Requested' | 'Unknown';
+}
 
 export interface Journal {
   read(stream: string): string[];
@@ -19,4 +30,5 @@ export interface DurableWork {
   records(): string[];
   recover(): DurableRecovery;
 }
-export const DurableWork: { new(workId: string, journal: Journal): DurableWork };
+export const DurableWork: { new(workId: string, journal: Journal, effects?: EffectPorts): DurableWork };
+export type { Effect };

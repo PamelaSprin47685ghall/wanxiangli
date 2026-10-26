@@ -11,54 +11,71 @@ export function canonical(value) {
 
 export class Rig {
   serial = 0
-  constructor(sequence = ['S1', 'S2', 'S3']) {
-    this.work = new Work('work-a')
-    this.sequence = sequence
+  constructor(office = 'Plan', workId = 'work-a') {
+    this.office = office
+    this.workId = workId
+    this.work = new Work(workId)
   }
   get count() { return this.work.records().length }
-  call(command, requestId = `request-${++this.serial}`) { return this.work.execute(requestId, command) }
+  call(command, requestId = `request-${++this.serial}`) {
+    return this.work.execute(requestId, command)
+  }
   apply(command, requestId) {
     const reply = this.call(command, requestId)
-    assert.equal(reply.status, 'Applied', JSON.stringify(reply))
+    assert.equal(reply.status, 'Applied', `${reply.status} ${reply.reason ?? ''} ${JSON.stringify(reply.result)}`)
     assert.equal(reply.record, this.work.records().at(-1))
     return reply.result
   }
-  open(overrides = {}) {
-    this.openCommand = { type: 'Open', root: '用户的工作 🧭\n第二行', sequence: this.sequence, ownerId: 'manager', openingCursor: 0, ...overrides }
-    return this.apply(this.openCommand, 'open')
-  }
-  review(updates = [], overrides = {}) {
-    return this.apply({ type: 'Review', incumbencyId: this.work.inspect().active.id, reviewerId: 'reviewer', updates, ...overrides })
-  }
-  delivery(overrides = {}) {
-    const state = this.work.inspect()
-    return { type: 'Deliver', incumbencyId: state.active?.id ?? 'retired', providerRunId: 'run-1', toolCallId: `call-${++this.serial}`,
-      cursor: Math.max(state.revision + 1, (state.active?.openingCursor ?? 0) + 1), blockers: [], nextOwnerId: 'manager', ...overrides }
-  }
-  deliver(overrides = {}) {
-    this.lastDelivery = this.delivery(overrides)
-    return this.apply(this.lastDelivery)
-  }
-  authorizePlan() {
-    this.open()
-    for (let index = 0; index < 3; index++) {
-      this.review()
-      this.deliver()
+  review(updates = [], overrides = {}, requestId) {
+    const command = {
+      type: 'Review',
+      office: this.office,
+      providerRunId: 'run-1',
+      toolCallId: `call-${++this.serial}`,
+      updates,
+      ...overrides,
     }
-    assert.equal(this.work.inspect().deliveryAuthorized, true)
+    this.lastCommand = command
+    return this.apply(command, requestId)
   }
-  reserve() {
-    this.authorizePlan()
-    const command = this.delivery({ draft: { digest: 'draft-digest', path: '/plans/approved.md' } })
-    const reply = this.call(command, 'reserve')
-    assert.equal(reply.status, 'Applied')
-    return { command, reply, operationId: reply.result.operationId }
+  answer(messageId = `msg-${++this.serial}`) {
+    return this.apply({ type: 'OperatorAnswer', messageId })
   }
-  accepted(operationId, overrides = {}) {
-    return { type: 'ResolveDelivery', operationId, outcome: 'Accepted', execSessionId: 'execution-session', digest: 'draft-digest', path: '/plans/approved.md', blockers: [], ...overrides }
+  confirm(effect, outcome, extra = {}, requestId) {
+    return this.apply({ type: 'Confirm', effectId: effect.id, outcome, ...extra }, requestId)
   }
-  bindSession(operationId, execSessionId = 'execution-session') {
-    return this.apply({ type: 'ResolveDelivery', operationId, outcome: 'SessionCreated', execSessionId }, 'bind-session')
+  park(result) {
+    assert.equal(result.kind, 'Asked')
+    assert.equal(result.effect.text, '我需要干什么？')
+    this.confirm(result.effect, 'Parked')
+    return this.answer()
   }
-  eventTypes() { return this.work.history().flatMap(frame => frame.events.map(event => event.type)) }
+  send(result) {
+    assert.equal(result.effect.kind, 'Dispatch')
+    return this.confirm(result.effect, 'Sent')
+  }
+  restored() {
+    const copy = new Work(this.workId, this.work.records())
+    assert.deepEqual(copy.inspect(), this.work.inspect())
+    assert.deepEqual(copy.recover().wait, this.work.recover().wait)
+    assert.deepEqual(copy.recover().next, this.work.recover().next)
+    assert.deepEqual(copy.recover().effect, this.work.recover().effect)
+    return copy
+  }
+}
+
+export function reachReady(rig) {
+  for (const next of ['理解与路径', '流程与伪代码', '待执行']) {
+    rig.review([{ key: 'item', value: 'keep' }])
+    const relay = rig.review([{ key: 'item', value: null }])
+    assert.equal(relay.kind, 'Relayed')
+    rig.send(relay)
+    const advanced = rig.review([])
+    assert.equal(advanced.kind, 'Advanced')
+    assert.equal(advanced.milestone, next)
+    assert.equal(advanced.incumbencyId, relay.successorId)
+    rig.send(advanced)
+  }
+  assert.equal(rig.work.inspect().milestone, '待执行')
+  assert.equal(rig.work.inspect().phase, 'Ready')
 }

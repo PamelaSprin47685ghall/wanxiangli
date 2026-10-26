@@ -64,11 +64,20 @@ if (mode === 'isolated') {
       const work = new DurableWork('consumer-work', journal)
       function workCommit(id, message) {
         const response = work.execute(id, message)
-        assert.equal(response.status, 'Committed')
+        assert.equal(response.status, 'Committed', JSON.stringify(response))
         return response.result
       }
-      const opened = workCommit('open', { type: 'Open', root: '真实资源收尾', sequence: ['S4'], ownerId: 'manager', openingCursor: 0 })
-      const scope = opened.incumbencyId
+      function confirmEffect(effect, outcome, extra = {}) {
+        workCommit(`confirm-${effect.id}-${outcome}`, { type: 'Confirm', effectId: effect.id, outcome, ...extra })
+      }
+      workCommit('open', { type: 'Review', office: 'Manager', providerRunId: 'run', toolCallId: 'open', updates: [{ key: 'job', value: 'run' }] })
+      const relay = workCommit('clear', { type: 'Review', office: 'Manager', providerRunId: 'run', toolCallId: 'clear', updates: [{ key: 'job', value: null }] })
+      assert.equal(relay.kind, 'Relayed')
+      confirmEffect(relay.effect, 'Sent')
+      const advanced = workCommit('advance', { type: 'Review', office: 'Manager', providerRunId: 'run', toolCallId: 'advance', updates: [] })
+      assert.equal(advanced.milestone, '收尾')
+      confirmEffect(advanced.effect, 'Sent')
+      const scope = advanced.incumbencyId
       commit('root', { type: 'OpenScope', scopeId: 'work', parentId: null })
       commit('tenure', { type: 'OpenScope', scopeId: scope, parentId: 'work' })
       const fixed = commit('fixed', { type: 'Reserve', resourceId: 'fixed-devops', scopeId: 'work', kind: 'session' }).result.lease
@@ -86,10 +95,6 @@ if (mode === 'isolated') {
       assert.equal((await ready()).instance, lease.token)
       const binding = { externalId: String(begun.pid), incarnationId: lease.token }
       commit('started', { type: 'Started', lease, binding })
-      workCommit('review', { type: 'Review', incumbencyId: scope, reviewerId: 'reviewer', updates: [] })
-      // Single delivery: no pre-confirmation step. When blockers are present,
-      // deliver returns Blocked and keeps the tenure active until settled.
-      const delivery = { type: 'Deliver', incumbencyId: scope, providerRunId: 'run', cursor: 10, blockers: [] }
       commit('drain', { type: 'Drain', scopeId: scope })
       commit('cancel', { type: 'Cancel', lease })
       assert.equal(child.signal('SIGTERM').kind, 'Requested')
@@ -97,7 +102,9 @@ if (mode === 'isolated') {
       assert.equal(commit('unknown', { type: 'Unknown', lease }).status, 'Observed')
       const blockers = owner.blockers(scope).map(resource => resource.lease.token)
       assert.equal(blockers.length, 1)
-      assert.equal(workCommit('blocked', { ...delivery, toolCallId: 'blocked', blockers }).kind, 'Blocked')
+      const blocked = work.execute('blocked', { type: 'Review', office: 'Manager', providerRunId: 'run', toolCallId: 'blocked', updates: [], blockers })
+      assert.equal(blocked.status, 'Observed')
+      assert.equal(blocked.result.kind, 'Blocked')
       assert.equal(work.inspect().active.id, scope)
       assert.equal(child.signal('SIGKILL').kind, 'Requested')
       const stopped = await child.wait(5000)
@@ -108,7 +115,7 @@ if (mode === 'isolated') {
       assert.deepEqual(owner.blockers(scope), [])
       assert.deepEqual(owner.blockers('work').map(resource => resource.lease), [fixed])
       assert.equal(owner.resource(fixed).cancellationRequested, false)
-      assert.equal(workCommit('delivered', { ...delivery, toolCallId: 'delivered', blockers: owner.blockers(scope).map(resource => resource.lease.token) }).kind, 'Delivered')
+      assert.equal(workCommit('delivered', { type: 'Review', office: 'Manager', providerRunId: 'run', toolCallId: 'delivered', updates: [], blockers: [] }).kind, 'Completed')
       console.log(JSON.stringify({ runtime, retired: true, blockedBeforePhysicalEnd: true, parentReservationRetained: true }))
     } else if (mode === 'crash-start') {
       commit('open', { type: 'OpenScope', scopeId: 'work', parentId: null })

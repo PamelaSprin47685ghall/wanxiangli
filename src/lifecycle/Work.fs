@@ -1,9 +1,25 @@
 module Wanxiangli.Lifecycle.Work
 
+open System.Collections.Generic
 open Fable.Core
 open Fable.Core.JsInterop
 open Wanxiangli.Lifecycle
 open Wire
+
+[<ImportAll("node:fs")>]
+let private nodeFs: obj = jsNative
+
+[<ImportAll("node:path")>]
+let private nodePath: obj = jsNative
+
+let abandonLocalState (directory: string) =
+    let resolve (value: string): string = nodePath?resolve(value)
+    let real (value: string): string =
+        if nodeFs?existsSync(value) then nodeFs?realpathSync(value) else resolve value
+    let target = real directory
+    let forbidden = real (resolve (nodePath?join(".", ".Herdchestra")))
+    require (target <> forbidden) "Refusing to delete the workspace .Herdchestra"
+    nodeFs?rmSync(target, objectOf [ "recursive", box true; "force", box true ])
 
 type IWork =
     abstract inspect: unit -> obj
@@ -12,195 +28,226 @@ type IWork =
     abstract recover: unit -> obj
     abstract execute: requestId: string * command: obj -> obj
 
-type private Decision = Write of Fact list | Observe of obj | Refuse of string
+type private Choice =
+    | Write of Fact list
+    | Observe of obj
+    | Refuse of string
 
 module private Commands =
-    let private retire (workId: string) (state: WorkState) (tenure: string) (fence: Fence) delivered retirementCursor operation session draft =
-        let tag = if state.Sequence = WorkSequence.Plan then "oneshot-retirement-v1" else "retirement-v1"
-        { Id = identity tag [ workId; fence.Run; fence.Call; Vocabulary.ending delivered; state.Authority ]
-          Tenure = tenure; Delivered = delivered; Fence = fence; Expected = state.Authority
-          Cursor = retirementCursor; Operation = operation; Session = session; Draft = draft }
+    let private blockersOf (command: obj) =
+        if not (has command "blockers") || isNull (get command "blockers") then []
+        else strings (get command "blockers") |> Array.toList
 
-    let decide (workId: string) (requestId: string) (state: WorkState) (command: obj) =
-        let read key = text (get command key)
-        let id key = identifier (get command key)
-        let exact required optional = fields ("type" :: required) optional command
-        let blockers () = strings (get command "blockers") |> Array.distinct |> Array.sort
-        let blocked tenure reasons = Write [ Fact.RetirementBlocked(tenure, sha256 (canonical (box reasons))) ]
-        match read "type" with
-        | "Open" ->
-            exact [ "root"; "sequence"; "ownerId"; "openingCursor" ] []
-            // A second open on an existing work is a foreseeable refusal, not a
-            // fold failure: leave the durable state untouched and return a typed
-            // Conflict instead of writing a fact the fold must reject.
-            if state.Opened then
-                Refuse "Work is already open"
+    let private digestOf (command: obj) =
+        if not (has command "digest") || isNull (get command "digest") then "待执行"
+        else text (get command "digest")
+
+    let private optionalId (command: obj) key =
+        if not (has command key) || isNull (get command key) then None
+        else Some(identifier (get command key))
+
+    let private optionalReason (command: obj) =
+        if not (has command "reason") || isNull (get command "reason") then None
+        else Some(text (get command "reason"))
+
+    let private decision kind incumbency milestone wait effect obligations extra =
+        objectOf ([
+            "kind", box kind
+            "incumbencyId", incumbency
+            "milestone", milestone
+            "wait", box wait
+            "effect", effect
+            "obligations", obligations
+        ] @ extra)
+
+    let private blocked (ledger: Ledger) blockers =
+        decision "Blocked" (ledger.ActiveId |> Option.map box |> Option.defaultValue null) (box ledger.Milestone) ledger.WaitName null (box (View.obligations ledger.Obligations)) [
+            "blockers", box (blockers |> List.toArray)
+        ]
+
+    let private ignored messageId (ledger: Ledger) =
+        decision "Ignored" (ledger.ActiveId |> Option.map box |> Option.defaultValue null) (box ledger.Milestone) ledger.WaitName null (box (View.obligations ledger.Obligations)) [
+            "messageId", box messageId
+        ]
+
+    let private confirmed outcome effectId (ledger: Ledger) =
+        decision "Confirmed" (ledger.ActiveId |> Option.map box |> Option.defaultValue null) (if ledger.Milestone = "" then null else box ledger.Milestone) ledger.WaitName (match ledger.PendingEffect with Some effect -> effect | None -> null) (box (View.obligations ledger.Obligations)) [
+            "effectId", box effectId
+            "outcome", box outcome
+        ]
+
+    let private opening workId office =
+        let milestone = Program.firstMilestone office
+        [ Fact.WorkOpened(workId, office)
+          Fact.IncumbencyOpened(Identities.originator workId, "Originator", milestone, None) ]
+
+    let private prependOpening workId office (ledger: Ledger) facts =
+        if ledger.Opened then facts else opening workId office @ facts
+
+    let private tenureOf workId (ledger: Ledger) =
+        if ledger.Opened then ledger.ActiveId |> Option.defaultWith (fun () -> fail "No active tenure")
+        else Identities.originator workId
+
+    let private emptyLedger (ledger: Ledger) updates =
+        Map.isEmpty (View.applyUpdates ledger.Obligations updates)
+
+    let private effectOf program value =
+        Program.step (Program.continueWith program value)
+
+    let private decideReview (workId: string) (ledger: Ledger) (command: obj) =
+        fields [ "type"; "office"; "providerRunId"; "toolCallId"; "updates" ] [ "blockers"; "digest" ] command
+        let office = text (get command "office")
+        require (office = "Plan" || office = "Manager") "Unknown office"
+        let run = identifier (get command "providerRunId")
+        let call = identifier (get command "toolCallId")
+        let claimed = updates (get command "updates")
+        let blockers = blockersOf command
+        let digest = digestOf command
+        match ledger.TryFence call with
+        | Some result -> Observe result
+        | None ->
+            if ledger.Opened && ledger.Office <> office then Refuse "Office is fixed"
             else
-                let sequence = Vocabulary.readSequence (get command "sequence")
-                let firstStage = if sequence = WorkSequence.Plan then 0 else 3
-                Write [ Fact.WorkOpened(workId, read "root", sequence, identity "authority-initial-v1" [ workId ])
-                        Fact.IncumbencyOpened(workId, identity "first-incumbency-v1" [ workId ], id "ownerId", firstStage, cursor (get command "openingCursor")) ]
-        | "Review" ->
-            exact [ "incumbencyId"; "reviewerId"; "updates" ] []
-            let updates =
-                (get command "updates" |> unbox<obj array>)
-                |> Array.map (fun update ->
-                    { Key = text (get update "key")
-                      Value = optionalText update "value" })
-                |> Array.toList
-            let tenure = state.RequireTenure(id "incumbencyId")
-            require (id "reviewerId" <> tenure.Owner) "An owner cannot review its own incumbency"
-            // First review fixes eligibility: an empty resulting ledger is the
-            // promotion eligibility, never the promotion itself. Later reviews
-            // keep the recorded eligibility and only apply keyed updates.
-            let promoted =
-                match tenure.Review with
-                | Some existing -> existing.Promoted
-                | None ->
-                    updates
-                    |> List.fold (fun acc update ->
-                        match update.Value with
-                        | None -> Map.remove update.Key acc
-                        | Some value -> Map.add update.Key value acc) Map.empty
-                    |> Map.isEmpty
-            Write [ Fact.Reviewed(tenure.Id, { Stage = state.Stage; Promoted = promoted }, updates) ]
-        | "BindDevOps" ->
-            exact [ "incumbencyId"; "trigger"; "devopsId"; "target" ] []
-            state.RequireTenure(id "incumbencyId") |> ignore
-            state.NoDelivery()
-            let trigger = read "trigger"
-            require ((state.Sequence = WorkSequence.Plan && trigger = "Ask") || (state.Sequence = WorkSequence.Execution && (trigger = "Resume" || trigger = "Horizon"))) "Bind trigger does not match the sequence"
-            let devopsId, target = id "devopsId", optionalText command "target"
-            match state.DevOps with
-            | Some existing ->
-                require (existing = (devopsId, target)) "DevOps binding conflict"
-                Observe(Vocabulary.result "DevOpsBound" [ "devopsId", box devopsId ])
-            | None -> Write [ Fact.DevOpsBound(devopsId, target) ]
-        | "Advance" ->
-            exact [ "incumbencyId"; "expected"; "next" ] []
-            Write [ Fact.AdvanceCommitted(id "incumbencyId", id "expected", id "next") ]
-        | "Reopen" ->
-            exact [ "retirementId"; "ownerId"; "openingCursor"; "blockers" ] []
-            require (Array.isEmpty (blockers ())) "Live resources block reopen"
-            let retirementId = id "retirementId"
-            Write [ Fact.Reopened retirementId
-                    Fact.IncumbencyOpened(workId, identity "reopened-incumbency-v1" [ retirementId; requestId ], id "ownerId", state.Stage, cursor (get command "openingCursor")) ]
-        | "Deliver" ->
-            exact [ "incumbencyId"; "providerRunId"; "toolCallId"; "cursor"; "blockers" ] [ "nextOwnerId"; "draft" ]
-            let tenureId, fence = id "incumbencyId", Vocabulary.fence command
-            let observedCursor = cursor (get command "cursor")
-            let reasons = blockers ()
-            let nextOwner = optionalText command "nextOwnerId"
-            let draft =
-                if not (has command "draft") || isNull (get command "draft") then None
+                let phase = if ledger.Opened then ledger.Phase else "Unopened"
+                let milestone = if ledger.Opened then ledger.Milestone else Program.firstMilestone office
+                let empty = emptyLedger ledger claimed
+                // A completed work has retired its tenure. Refuse before looking it up.
+                if phase = "Completed" then Refuse "Work is complete"
+                elif phase = "AwaitingAnswer" then Refuse "Awaiting operator answer"
                 else
-                    let value = get command "draft"
-                    fields [ "digest"; "path" ] [] value
-                    Some(Vocabulary.draft value)
-            require (state.Sequence = WorkSequence.Plan || draft.IsNone) "S4 does not accept a delivery draft"
-            match state.TryFence fence with
+                    let tenure = tenureOf workId ledger
+                    if ledger.HasBlockingPending then Refuse "Effect pending"
+                    elif phase = "Ready" && not empty then Refuse "Ready accepts only an empty review"
+                    elif phase = "Cleanup" && empty && not (List.isEmpty blockers) then Observe(blocked ledger blockers)
+                    else
+                        let program = Program.entry phase milestone
+                        match Program.step program with
+                        | Program.Step.AwaitReview ->
+                            match effectOf program (box empty) with
+                            | Program.Step.Ask text ->
+                                let questionId = Identities.ask workId tenure call
+                                Write(prependOpening workId office ledger [ Fact.QuestionRequested(questionId, tenure, run, call, text, claimed) ])
+                            | Program.Step.Commit ->
+                                Write(prependOpening workId office ledger [ Fact.Reviewed(tenure, run, call, claimed) ])
+                            | Program.Step.Relay(same, _) ->
+                                let retirementId = Identities.relay workId tenure call
+                                let successorId = Identities.successor retirementId
+                                Write [ Fact.IncumbencyRetired(retirementId, tenure, "Relayed", run, call, claimed)
+                                        Fact.ContextBarrier(Identities.barrier workId call, run, call, successorId)
+                                        Fact.IncumbencyOpened(successorId, "Successor", same, None)
+                                        Fact.PromptObliged(Identities.successorPrompt retirementId, "Successor", same, Program.successorPrompt same, successorId) ]
+                            | Program.Step.Advance(next, text) ->
+                                Write [ Fact.MilestoneAdvanced(tenure, milestone, next, run, call, claimed)
+                                        Fact.PromptObliged(Identities.advancePrompt tenure next, "Advance", next, text, tenure) ]
+                            | Program.Step.Complete ->
+                                let retirementId = Identities.complete workId tenure call
+                                Write [ Fact.IncumbencyRetired(retirementId, tenure, "Completed", run, call, claimed)
+                                        Fact.StopObliged(Identities.stop workId tenure, tenure) ]
+                            | _ -> fail "Review program diverged"
+                        | Program.Step.AwaitEmptyReview ->
+                            match effectOf program (box true) with
+                            | Program.Step.Launch ->
+                                let operationId = Identities.launch workId run call digest
+                                Write [ Fact.DeliveryRequested(operationId, tenure, run, call, digest, claimed) ]
+                            | _ -> fail "Launch program diverged"
+                        | _ -> fail "Review is not waiting"
+
+    let private recallNote (noted: Dictionary<string, obj>) messageId =
+        if noted.ContainsKey messageId then Some noted[messageId] else None
+
+    let decide (workId: string) (ledger: Ledger) (noted: Dictionary<string, obj>) (command: obj) =
+        match text (get command "type") with
+        | "Review" -> decideReview workId ledger command
+        | "OperatorAnswer" ->
+            fields [ "type"; "messageId" ] [] command
+            let messageId = identifier (get command "messageId")
+            match ledger.TryMessage messageId with
             | Some result -> Observe result
             | None ->
-                let tenure = state.RequireTenure tenureId
-                state.NoDelivery()
-                if not (Array.isEmpty reasons) then blocked tenureId reasons
-                elif not (Map.isEmpty tenure.Obligations) then
-                    Observe(Vocabulary.result "Blocked" [ "obligations", box (tenure.Obligations |> Map.toList |> List.map (fun (k, v) -> objectOf [ "key", box k; "value", box v ]) |> List.toArray) ])
+                if ledger.Phase <> "AwaitingAnswer" then Refuse "No parked question"
                 else
-                    let eligible =
-                        tenure.Review |> Option.map (fun review -> review.Promoted) |> Option.defaultValue false
-                    // Deliver performs the promotion/completion. An eligible Plan
-                    // S1/S2 relays into a fresh tenure at the NEXT stage; S3 grants
-                    // delivery authority; an eligible S4 completes.
-                    if state.Sequence = WorkSequence.Plan && state.Authorized then
-                        let selected = draft |> Option.defaultWith (fun () -> fail "Authorized delivery requires a draft")
-                        Write [ Fact.DeliveryRequested
-                                    { Id = identity "delivery-operation-v1" [ workId; tenureId; state.Authority; requestId ]
-                                      Tenure = tenureId; Fence = fence; Cursor = observedCursor; Draft = selected } ]
-                    elif state.Sequence = WorkSequence.Plan && eligible && state.Stage = 2 then
-                        Write [ Fact.PlanAuthorized(tenureId) ]
-                    else
-                        let delivered =
-                            state.Sequence = WorkSequence.Execution
-                            && tenure.Review |> Option.map (fun review -> review.Promoted) |> Option.defaultValue false
-                        let retirementCursor = if state.Sequence = WorkSequence.Plan then Some observedCursor else None
-                        let retired = retire workId state tenureId fence delivered retirementCursor None None None
-                        if delivered then Write [ Fact.IncumbencyRetired retired ]
-                        else
-                            match nextOwner with
-                            | None -> Observe(Vocabulary.result "Blocked" [ "successor", box true ])
-                            | Some owner ->
-                                // An eligible Plan S1/S2 opens the successor at the
-                                // NEXT stage (promotion); everything else relays at
-                                // the same stage.
-                                let successorStage = if state.Sequence = WorkSequence.Plan && eligible && state.Stage < 2 then state.Stage + 1 else state.Stage
-                                Write [ Fact.IncumbencyRetired retired
-                                        Fact.IncumbencyOpened(workId, identity "successor-incumbency-v1" [ retired.Id ], owner, successorStage, observedCursor) ]
-        | "ResolveDelivery" ->
-            let outcome = read "outcome"
-            let extra =
-                match outcome with
-                | "Accepted" -> [ "execSessionId"; "digest"; "path"; "blockers" ]
-                | "SessionCreated" -> [ "execSessionId" ]
-                | "NotStarted" -> [ "reason" ]
-                | "Unknown" -> []
-                | _ -> fail "Unknown execution observation"
-            exact ([ "operationId"; "outcome" ] @ extra) []
-            let operation = id "operationId"
-            let accepted =
-                if outcome = "Accepted" then Some(id "execSessionId", Vocabulary.draft command, blockers ())
-                else None
-            let createdSession = if outcome = "SessionCreated" then Some(id "execSessionId") else None
-            match state.TryCompleted operation with
-            | Some retired ->
-                require (outcome <> "NotStarted") "Observation conflicts with an accepted execution"
-                match accepted with
-                | Some(session, draft, _) ->
-                    require (retired.Session = Some session && retired.Draft = Some draft) "Execution receipt mismatch"
-                | None -> ()
-                match createdSession with
-                | Some session -> require (retired.Session = Some session) "Execution session mismatch"
-                | None -> ()
-                Observe(state.TryOperation operation |> Option.get)
-            | None ->
-                match state.TryOperation operation with
-                | Some previous when (state.Pending |> Option.map (fun delivery -> delivery.Id)) <> Some operation ->
-                    match outcome with
-                    | "Unknown" -> Observe previous
-                    | "NotStarted" ->
-                        require (read "reason" = (get previous "reason" |> text)) "Execution rejection conflict"
-                        Observe previous
-                    | _ -> fail "Observation conflicts with a rejected execution"
-                | _ ->
-                    let delivery = state.Pending |> Option.defaultWith (fun () -> fail "No pending delivery")
-                    require (delivery.Id = operation) "Delivery operation mismatch"
-                    match outcome, accepted, createdSession with
-                    | "Unknown", _, _ -> Observe(state.TryOperation operation |> Option.get)
-                    | "NotStarted", _, _ -> Write [ Fact.DeliveryRejected(delivery.Id, read "reason") ]
-                    | "SessionCreated", _, Some session ->
-                        match state.PendingSession with
-                        | Some existing ->
-                            require (existing = session) "Execution session mismatch"
-                            Observe(state.TryOperation operation |> Option.get)
-                        | None -> Write [ Fact.DeliverySessionBound(delivery.Id, session) ]
-                    | _, Some(session, draft, reasons), _ ->
-                        require (state.PendingSession = Some session) "Execution session is not durably bound"
-                        require (draft = delivery.Draft) "Execution receipt draft mismatch"
-                        if not (Array.isEmpty reasons) then blocked delivery.Tenure reasons
-                        else
-                            Write [ Fact.IncumbencyRetired(retire workId state delivery.Tenure delivery.Fence true (Some delivery.Cursor) (Some delivery.Id) (Some session) (Some delivery.Draft)) ]
-                    | _ -> fail "Execution observation is incomplete"
+                    match ledger.ActiveId with
+                    | None -> fail "No active tenure"
+                    | Some tenure ->
+                        match ledger.ParkedQuestion with
+                        | None -> fail "No parked question"
+                        | Some questionId -> Write [ Fact.OperatorAnswered(messageId, tenure, questionId) ]
+        | "OperatorMessage" ->
+            fields [ "type"; "kind"; "messageId" ] [] command
+            let kind = text (get command "kind")
+            require (kind = "Operator" || kind = "Advisor" || kind = "Agent") "Unknown operator kind"
+            let messageId = identifier (get command "messageId")
+            match ledger.TryMessage messageId, recallNote noted messageId with
+            | Some result, _ -> Observe result
+            | None, Some result -> Observe result
+            | None, None ->
+                if ledger.Phase <> "Completed" then Refuse "Operator message is only accepted after completion"
+                else
+                    let program = Program.entry "Completed" "已完成"
+                    match Program.step program with
+                    | Program.Step.AwaitOperator ->
+                        match effectOf program (box kind) with
+                        | Program.Step.Reopen -> Write [ Fact.IncumbencyOpened(Identities.reopen workId messageId, "Originator", "执行", Some messageId) ]
+                        | Program.Step.AwaitOperator -> Observe(ignored messageId ledger)
+                        | _ -> fail "Completion program diverged"
+                    | _ -> fail "Completion program diverged"
+        | "Confirm" ->
+            fields [ "type"; "effectId"; "outcome" ] [ "execSessionId"; "reason" ] command
+            let effectId = identifier (get command "effectId")
+            let outcome = text (get command "outcome")
+            let session = optionalId command "execSessionId"
+            let reason = optionalReason command
+            let late () = Observe(confirmed outcome effectId ledger)
+            match ledger.Describe effectId, outcome, session, reason with
+            | None, _, _, _ -> Refuse "Effect is not pending"
+            | Some("Ask", "", _), "Parked", None, None
+            | Some("Ask", "", _), "Unknown", None, None -> Write [ Fact.EffectConfirmed(effectId, outcome, None, None) ]
+            | Some("Ask", recorded, _), claimed, None, None when recorded = claimed -> late ()
+            | Some("Dispatch", "", _), "Sent", None, None
+            | Some("Dispatch", "", _), "Unknown", None, None -> Write [ Fact.EffectConfirmed(effectId, outcome, None, None) ]
+            | Some("Dispatch", recorded, _), claimed, None, None when recorded = claimed -> late ()
+            | Some("Launch", "Create", _), "SessionCreated", Some _, None -> Write [ Fact.DeliverySessionBound(effectId, Option.get session) ]
+            | Some("Launch", "Create", _), "Unknown", None, None -> Write [ Fact.EffectConfirmed(effectId, "Unknown", None, None) ]
+            | Some("Launch", "Create", _), "NotStarted", None, Some reason -> Write [ Fact.DeliveryRejected(effectId, reason) ]
+            | Some("Launch", "Send", Some bound), "Admitted", Some claimed, None when bound = claimed -> Write [ Fact.DeliveryAdmitted(effectId, claimed) ]
+            | Some("Launch", "Send", _), "Unknown", None, None -> Write [ Fact.EffectConfirmed(effectId, "Unknown", None, None) ]
+            | Some("Launch", "Send", _), "NotStarted", None, Some reason -> Write [ Fact.DeliveryRejected(effectId, reason) ]
+            | Some("Launch", "Send", Some bound), "SessionCreated", Some claimed, None when bound = claimed -> late ()
+            | Some("Launch", "Admitted", Some bound), "Admitted", Some claimed, None when bound = claimed -> late ()
+            | Some("Launch", "Unknown", _), "Unknown", None, None -> late ()
+            | Some("Launch", "Rejected", _), "NotStarted", None, Some _ -> late ()
+            | Some("Stop", "", _), "Requested", None, None
+            | Some("Stop", "", _), "Unknown", None, None -> Write [ Fact.EffectConfirmed(effectId, outcome, None, None) ]
+            | Some("Stop", "Requested", _), "Observed", None, None -> Write [ Fact.EffectConfirmed(effectId, "Observed", None, None) ]
+            | Some("Stop", "Requested", _), "Requested", None, None -> late ()
+            | Some("Stop", "Observed", _), "Observed", None, None -> late ()
+            | Some("Stop", "Unknown", _), "Unknown", None, None -> late ()
+            | _ -> Refuse "Confirmation does not match the effect"
+        | "BindDevOps" ->
+            fields [ "type"; "trigger"; "devopsId"; "target" ] [] command
+            if not ledger.Opened then Refuse "Work is not open"
+            else
+                let trigger = text (get command "trigger")
+                let devopsId = identifier (get command "devopsId")
+                let target = if isNull (get command "target") then None else Some(text (get command "target"))
+                match ledger.DevOps with
+                | Some(existingId, existingTarget, existingTrigger) when existingId = devopsId && existingTarget = target && existingTrigger = trigger ->
+                    Observe(decision "DevOpsBound" (ledger.ActiveId |> Option.map box |> Option.defaultValue null) (box ledger.Milestone) ledger.WaitName null (box (View.obligations ledger.Obligations)) [ "devopsId", box devopsId ])
+                | Some _ -> Refuse "DevOps binding conflict"
+                | None -> Write [ Fact.DevOpsBound(devopsId, target, trigger) ]
         | _ -> fail "Unknown work command"
 
 let Work (workId: string) (records: string array option): IWork =
     do identifier (box workId) |> ignore
+    let observed = Dictionary<string, Receipt>()
+    let noted = Dictionary<string, obj>()
 
     let rebuild (bodies: string array) =
-        let state = WorkState(workId)
+        let ledger = Ledger(workId)
         require (isArray (box bodies)) "History must be an array of records, not a service"
         for body in bodies do
             require (isString (box body)) "History records must be text"
-            let frame = parse body
+            let frame: obj = parse body
             fields [ "requestId"; "requestHash"; "events" ] [] frame
             require (canonical frame = body) "History body is not canonical JSON"
             let requestId = identifier (get frame "requestId")
@@ -209,10 +256,9 @@ let Work (workId: string) (records: string array option): IWork =
             let encoded = get frame "events"
             require (isArray encoded) "Events must be an array"
             let facts = unbox<obj array> encoded |> Array.map FactCodec.decode |> Array.toList
-            let result = state.Apply(requestId, facts)
-            let operation = facts |> List.tryPick (function Fact.DeliveryRequested delivery -> Some delivery.Id | _ -> None)
-            state.Remember(requestId, hash, result, operation)
-        state
+            let seal, result = ledger.Apply facts
+            ledger.Seal(requestId, hash, seal, result)
+        ledger
 
     let mutable saved = defaultArg records [||]
     let mutable state = rebuild saved
@@ -224,24 +270,21 @@ let Work (workId: string) (records: string array option): IWork =
         busy <- true
         try action () finally busy <- false
 
-    let detached value = value |> canonical |> parse
+    let detach value = value |> canonical |> parse
 
     let response status revision result record reason =
         objectOf [ "status", box status; "revision", box revision; "result", result; "record", record; "reason", reason ]
 
-    let addUpdates (command: obj) (result: obj) =
-        let result = detached result
-        if (unbox<string> (get command "type")) = "Review" && not (isNull result) then
-            result?updates <- detached (get command "updates")
-        result
+    let remember requestId hash result =
+        observed[requestId] <- { Hash = hash; Result = result }
 
-    let inspect () = guard (fun () -> detached (state.Snapshot()))
+    let recall requestId =
+        if observed.ContainsKey requestId then Some observed[requestId] else None
 
+    let inspect () = guard (fun () -> detach (state.Snapshot(saved.Length)))
     let history () = guard (fun () -> saved |> Array.map parse)
-
     let records () = guard (fun () -> Array.copy saved)
-
-    let recover () = guard (fun () -> detached (state.Recovery()))
+    let recover () = guard (fun () -> detach (state.Recover(saved.Length)))
 
     let execute (requestId: string, input: obj): obj =
         guard (fun () ->
@@ -249,28 +292,33 @@ let Work (workId: string) (records: string array option): IWork =
             let encoded = canonical input
             let command = parse encoded
             let hash = sha256 encoded
-            match state.TryReceipt requestId with
+            let revision = saved.Length
+            let stored =
+                match state.TryReceipt requestId with
+                | Some receipt -> Some receipt
+                | None -> recall requestId
+            match stored with
             | Some receipt ->
-                if receipt.Hash = hash then
-                    response "Replayed" state.Revision (addUpdates command (state.Replay receipt)) (null: obj) (null: obj)
-                else
-                    // 同一 requestId 的异载荷是可预见的冲突：返回结构化结果，不写、不抛。
-                    response "Conflict" state.Revision (null: obj) (null: obj) (box "RequestIdConflict")
+                if receipt.Hash = hash then response "Replayed" revision (detach receipt.Result) (null: obj) (null: obj)
+                else response "Conflict" revision (null: obj) (null: obj) (box "RequestIdConflict")
             | None ->
-                match Commands.decide workId requestId state command with
-                | Refuse reason -> response "Conflict" state.Revision (null: obj) (null: obj) (box reason)
-                | Observe result -> response "Observed" state.Revision (addUpdates command result) (null: obj) (null: obj)
+                match Commands.decide workId state noted command with
+                | Refuse reason -> response "Conflict" revision (null: obj) (null: obj) (box reason)
+                | Observe result ->
+                    let frozen = detach result
+                    remember requestId hash frozen
+                    if unbox<string> (get frozen "kind") = "Ignored" then
+                        noted[identifier (get command "messageId")] <- frozen
+                    response "Observed" revision (detach frozen) (null: obj) (null: obj)
                 | Write facts ->
-                    // 事务在私有候选上完成；任何验证失败都不改变当前个体。
                     let candidate = rebuild saved
                     let facts = facts |> List.map (FactCodec.encode >> FactCodec.decode)
-                    let result = candidate.Apply(requestId, facts)
+                    let seal, result = candidate.Apply facts
                     let body = canonical (objectOf [ "requestId", box requestId; "requestHash", box hash; "events", box (facts |> List.map FactCodec.encode |> List.toArray) ])
-                    let operation = facts |> List.tryPick (function Fact.DeliveryRequested delivery -> Some delivery.Id | _ -> None)
-                    candidate.Remember(requestId, hash, result, operation)
-                    let reply = response "Applied" candidate.Revision (addUpdates command result) (box body) (null: obj)
-                    let next = Array.append saved [| body |]
-                    saved <- next
+                    let frozen = detach result
+                    candidate.Seal(requestId, hash, seal, frozen)
+                    let reply = response "Applied" (saved.Length + 1) (detach frozen) (box body) (null: obj)
+                    saved <- Array.append saved [| body |]
                     state <- candidate
                     reply)
 

@@ -8,8 +8,8 @@ const names = ['fork', 'resume', 'join', 'horizon', 'fission', 'bash-honeypot', 
 
 test('SPEC[capability-004] one permission → tool-name map; programming-surface duties have no host name', () => {
   assert.deepEqual(capability.toolNames('Fork'), ['fork'])
-  assert.deepEqual(capability.toolNames('Finality'), ['deliver'])
-  assert.deepEqual(capability.toolNames('Deliver'), ['deliver'])
+  assert.deepEqual(capability.toolNames('Finality'), [])
+  assert.deepEqual(capability.toolNames('Deliver'), [])
   assert.deepEqual(capability.toolNames('ReviewAssessment'), ['review'])
   assert.deepEqual(capability.toolNames('Review'), ['review'])
   for (const p of ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Move', 'Remove', 'Exec', 'Pty', 'Ask', 'DevOpsConsultation', 'Advisor'])
@@ -21,8 +21,8 @@ test('SPEC[capability-004] one permission → tool-name map; programming-surface
 test('SPEC[capability-004] a shared verb resolves to the permission the role owns', () => {
   assert.equal(capability.permissionOfToolName('manager', 'review'), 'ReviewAssessment')
   assert.equal(capability.permissionOfToolName('plan', 'review'), 'Review')
-  assert.equal(capability.permissionOfToolName('manager', 'deliver'), 'Finality')
-  assert.equal(capability.permissionOfToolName('plan', 'deliver'), 'Deliver')
+  assert.equal(capability.permissionOfToolName('manager', 'deliver') ?? null, null)
+  assert.equal(capability.permissionOfToolName('plan', 'deliver') ?? null, null)
   assert.equal(capability.permissionOfToolName('engineer', 'review') ?? null, null, 'shared verb, owner of neither: undecided')
   assert.equal(capability.permissionOfToolName('engineer', 'fork'), 'Fork', 'sole owner keeps its mapping for every role')
   assert.equal(capability.permissionOfToolName('engineer', 'skill') ?? null, null)

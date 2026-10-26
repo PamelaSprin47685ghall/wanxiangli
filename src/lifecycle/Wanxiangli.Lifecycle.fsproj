@@ -4,7 +4,10 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Wire.fs" />
+    <Compile Include="Program.fs" />
     <Compile Include="State.fs" />
     <Compile Include="Work.fs" />
+    <PackageExport Include="Work.fs" Member="Work" />
+    <PackageExport Include="Work.fs" Member="abandonLocalState" />
   </ItemGroup>
 </Project>

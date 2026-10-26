@@ -1,14 +1,25 @@
-/** 任期过滤的一条输入消息；游标是该宿主消息首次被 XTrace 观测到的序号。 */
+/** 任期过滤的一条输入消息。归属只看屏障、工具调用身份和后任身份。 */
 export interface TenureMessage {
-  /** 宿主稳定消息 id；没有时为 null。 */
+  /** 宿主稳定消息 id；没有时为 null。有 id 本身不构成后任内容。 */
   readonly id: string | null
   readonly role: string
   /** 宿主或插件合成的行（非物理消息）。 */
   readonly synthetic: boolean
   /** 是否带语义内容（解码后至少一个 part）。 */
   readonly semantic: boolean
-  /** 首次观测游标；尚未捕获时为 null。只有带 id 的消息才可能有游标。 */
-  readonly cursor: bigint | null
+  /** 首次观测游标；尚未捕获时为 null。游标不决定后任可见性。 */
+  readonly cursor?: bigint | null
+  /** 这条消息发出的工具调用；没有时为 null。 */
+  readonly toolCallId: string | null
+  /** 这条消息所回答的工具调用；没有时为 null。 */
+  readonly resultFor: string | null
+  /** 已标明的任期；无法归属时为 null，不得放行。 */
+  readonly tenureId: string | null
+}
+
+export interface TenureBarrier {
+  readonly toolCallId: string
+  readonly successorTenureId: string
 }
 
 /** 一条通用投影意图的规划视图；行内容对本规则不透明，同值由所有者给出的指纹判定。 */
@@ -91,11 +102,11 @@ export interface ProviderProjectionView {
 
 export interface ProjectionMessages {
   /**
-   * 当前任期可见的物理消息：非合成 user 原样保留；assistant/tool 只在首次观测 `>= openingCursor`
-   * 或带 id 尚未捕获时保留；合成行与其他角色剥离。无 id 却带语义内容的交换抛错。
-   * 返回保留消息的输入下标（升序、冻结）。
+   * 后任可见的消息下标。屏障标出的工具调用及其结果，以及二者中较晚者之前的消息，一律不可见。
+   * 之后只保留 tenureId 等于后任、且不是合成行的消息。找不到调用或结果时返回空数组。
+   * 宿主 id、游标、角色都不能单独放行。返回升序、冻结的下标。
    */
-  tenure(messages: readonly TenureMessage[], openingCursor: bigint): readonly number[]
+  tenure(messages: readonly TenureMessage[], barrier: TenureBarrier): readonly number[]
   /**
    * 规划并布局通用投影意图：同批不同基底、同键不同值显式冲突；同值重复幂等；结果与注册顺序无关。
    * 锚点超出（替换后）基底长度时抛错。

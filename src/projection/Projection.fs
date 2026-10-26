@@ -7,8 +7,8 @@ open Fable.Core.JsInterop
 /// 请求投影的信息边界。消息从哪里来、游标怎样观测、保留下来的原消息怎样写回宿主线格式，由组合者决定。
 [<AllowNullLiteral>]
 type ProjectionMessages =
-    /// 任期过滤：返回保留消息在输入中的下标（升序、冻结）。
-    abstract tenure: messages: obj * openingCursor: obj -> obj
+    /// 任期过滤：按已提交屏障切掉触发调用及其结果和更早的消息，只留后任。
+    abstract tenure: messages: obj * barrier: obj -> obj
     /// 意图规划与渲染布局：去重、冲突裁决、规范排序，给出输出每一行的来源。
     abstract layout: intents: obj * baseLength: obj -> obj
     /// 只规划：去重、冲突裁决、规范顺序；不校验锚点范围。
@@ -38,9 +38,6 @@ let private isRecord (_value: obj) : bool = jsNative
 
 [<Emit("typeof $0 === 'bigint' && $0 >= 0n")>]
 let private isCursor (_value: obj) : bool = jsNative
-
-[<Emit("$0 >= $1")>]
-let private atOrAfter (_cursor: obj) (_opening: obj) : bool = jsNative
 
 [<Emit("Object.freeze($0)")>]
 let private freeze (_value: obj) : obj = jsNative
@@ -75,7 +72,10 @@ type private TenureMessage =
       Role: string
       Synthetic: bool
       Semantic: bool
-      Cursor: obj option }
+      Cursor: obj option
+      ToolCallId: string option
+      ResultFor: string option
+      TenureId: string option }
 
 let private flag (what: string) (value: obj) (name: string) : bool =
     let item = field what value name
@@ -103,50 +103,76 @@ let private tenureMessageOf (index: int) (value: obj) : TenureMessage =
     if jsTypeof role <> "string" then
         fail (what + ".role must be a string")
 
-    let cursor = field what value "cursor"
+    let cursorDescriptor = descriptorOf value "cursor"
 
     let cursorValue =
-        if isAbsent cursor then None
-        elif isCursor cursor then Some cursor
-        else fail (what + ".cursor must be a nonnegative bigint or null")
+        if isAbsent cursorDescriptor then None
+        else
+            let cursor = field what value "cursor"
+
+            if isAbsent cursor then None
+            elif isCursor cursor then Some cursor
+            else fail (what + ".cursor must be a nonnegative bigint or null")
 
     if cursorValue.IsSome && not identified then
         fail (what + ".cursor requires a Host message id")
+
+    let attribution name =
+        let descriptor = descriptorOf value name
+
+        if isAbsent descriptor then
+            fail (what + "." + name + " is required")
+
+        let item = field what value name
+
+        if isAbsent item then None
+        elif jsTypeof item = "string" && not (String.IsNullOrEmpty(unbox<string> item)) then Some(unbox<string> item)
+        else fail (what + "." + name + " must be a non-empty string or null")
 
     { Identified = identified
       Role = unbox<string> role
       Synthetic = flag what value "synthetic"
       Semantic = flag what value "semantic"
-      Cursor = cursorValue }
+      Cursor = cursorValue
+      ToolCallId = attribution "toolCallId"
+      ResultFor = attribution "resultFor"
+      TenureId = attribution "tenureId" }
 
-/// 一条 assistant/tool 交换只在首次观测严格早于本任期开场时剥离；有宿主 id 但尚未捕获的保留；
-/// 没有宿主 id 又带语义内容是契约违约，不编造游标、不整体保留或丢弃。
-let private keepsInteraction (opening: obj) (message: TenureMessage) =
-    match message.Cursor, message.Identified, message.Semantic with
-    | Some cursor, _, _ -> atOrAfter cursor opening
-    | None, true, _ -> true
-    | None, false, false -> false
-    | None, false, true -> fail "Plan interaction has no stable XTrace message identity"
+let private barrierOf (value: obj) =
+    if not (isRecord value) then
+        fail "Tenure barrier must be an object"
 
-let private keeps (opening: obj) (message: TenureMessage) =
-    match message.Synthetic, message.Role with
-    | true, _ -> false
-    | false, "user" -> true
-    | false, "assistant"
-    | false, "tool" -> keepsInteraction opening message
-    | false, _ -> false
+    let read name =
+        let item = field "barrier" value name
 
-let private tenureKept (messages: obj) (openingCursor: obj) : obj =
-    if not (isCursor openingCursor) then
-        fail "Plan opening cursor must be a nonnegative bigint"
+        if isAbsent item || jsTypeof item <> "string" || String.IsNullOrEmpty(unbox<string> item) then
+            fail ("barrier." + name + " must be a non-empty string")
 
+        unbox<string> item
+
+    read "toolCallId", read "successorTenureId"
+
+/// 切点是触发调用与其结果中较晚的那一条。切点及其之前都不可见。
+/// 之后只保留标明同一后任、且不是合成行的消息。宿主 id、游标和角色都不能单独放行。
+let private tenureKept (messages: obj) (barrier: obj) : obj =
+    let toolCallId, successor = barrierOf barrier
     let parsed = snapshot "messages" messages |> Array.mapi tenureMessageOf
 
-    parsed
-    |> Array.indexed
-    |> Array.choose (fun (index, message) -> if keeps openingCursor message then Some(box index) else None)
-    |> box
-    |> freeze
+    let indexOf predicate =
+        parsed |> Array.tryFindIndex predicate
+
+    match indexOf (fun message -> message.ToolCallId = Some toolCallId), indexOf (fun message -> message.ResultFor = Some toolCallId) with
+    | Some callAt, Some resultAt ->
+        let cut = max callAt resultAt
+
+        parsed
+        |> Array.indexed
+        |> Array.choose (fun (index, message) ->
+            if index <= cut || message.Synthetic || message.TenureId <> Some successor then None
+            else Some(box index))
+        |> box
+        |> freeze
+    | _ -> box [||] |> freeze
 
 // ── 意图规划与渲染布局 ─────────────────────────────────────────────────────
 
@@ -512,7 +538,7 @@ let private projectionBytes (identified: bool) (projection: obj) : string =
 /// 请求投影的纯规则。每条消息独立、无状态：先完整校验输入，再给出冻结的回答。
 let Projection () : ProjectionMessages =
     { new ProjectionMessages with
-        member _.tenure(messages, openingCursor) = tenureKept messages openingCursor
+        member _.tenure(messages, barrier) = tenureKept messages barrier
         member _.layout(intents, baseLength) = layoutOf intents baseLength
         member _.plan(intents) = planOf intents
         member _.retired(request) = retiredOf request

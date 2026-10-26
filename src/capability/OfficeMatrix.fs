@@ -88,7 +88,7 @@ module OfficeMatrix =
         set [ Permission.Read; Permission.Glob; Permission.Grep ]
 
     /// 末任即使已通过空账评审，也保留全部 Manager 工作与委派能力。
-    /// 是否真正交付仍由 durable obligations / blockers 与 deliver 决定。
+    /// 收尾由 review 结案。Finality 不再对应生命周期 deliver 工具名。
     let private manager: Set<Permission> =
         set
             [ Permission.Fork; Permission.Resume; Permission.Join; Permission.Horizon; Permission.Advisor
@@ -147,9 +147,9 @@ module ToolSurface =
         | Permission.BashHoneypot -> [ "bash-honeypot" ]
         | Permission.ReviewAssessment -> [ "review" ]
         | Permission.Fetch -> [ "fetch" ]
-        | Permission.Finality -> [ "deliver" ]
+        | Permission.Finality -> []
         | Permission.JsPlan -> [ "todowrite-for-plan" ]
-        | Permission.Deliver -> [ "deliver" ]
+        | Permission.Deliver -> []
         | Permission.Review -> [ "review" ]
         | Permission.ResetScope -> [ "resetScope" ]
         | Permission.Read
