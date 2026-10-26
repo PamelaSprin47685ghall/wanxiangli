@@ -21,7 +21,10 @@ type private PendingCompletion =
 
 /// 进程内 Bookkeeper 会话附着、在途完成句柄与提示词单次授权自治对象。
 /// 追踪 Bookkeeper 叶子会话与暂存事务 txId 的强绑定关系，以及提示词单次消费门禁。
-/// 不泄露内部可变状态别名；解绑、重绑或清空时内部原子触发对未完成句柄的 Error 结算。
+/// 核心契约与不变量：
+/// 1. 物理完成匹配凭证 = childId == terminal.SessionId（逐字节精确比对）；txId 仅作领域簿记与诊断，不参与物理事件字段比对。
+/// 2. 单次物理结算：completePhysical 查找到处于活跃附着状态的在途句柄时，原子移除该句柄并结算结果；重复或迟到事件因查不到句柄直接忽略返回 false。
+/// 3. 生命周期闭环：unbind、bind 覆盖或 clear 时，内部原子触发对未决 completion 的 Error 结算，保证无悬挂等待。
 [<AttachMembers>]
 type BookkeeperLedger() =
     let gate = obj ()
@@ -73,6 +76,7 @@ type BookkeeperLedger() =
                     pendingCompletions.Remove(sessionId) |> ignore
                     cancelCompletionIfPending pending.Completion "bookkeeper session re-bound to new transaction"
                 | false, _ -> ()
+
                 live.[sessionId] <-
                     { txId = txId
                       ownerSessionId = ownerSessionId
@@ -95,6 +99,7 @@ type BookkeeperLedger() =
                 | false, _ -> ())
 
     /// 登记会话与当前事务绑定的在途完成等待句柄。
+    /// 键控为 sessionId（即物理子会话 childId），txId 作为领域簿记关联存入条目。
     member _.registerCompletion(sessionId: string, txId: string, completion: obj) : unit =
         if isNull sessionId || isNull txId || isNull completion then
             ()
@@ -105,29 +110,29 @@ type BookkeeperLedger() =
                       Completion = completion })
 
     /// 物理完成通知：
-    /// 1. 首验 isAttached：若未附着，直接安全忽略并返回 false；
-    /// 2. 校验 live.txId == pending.txId：匹配则完成结算并原子移除句柄，返回 true；
-    /// 3. 若 txId 不匹配判定为陈旧代际，直接忽略不结算，返回 false。
+    /// 1. 首验 isAttached(sessionId)：未附着（已解绑或未知会话）直接忽略返回 false；
+    /// 2. 查找 pendingCompletions：按 terminal.SessionId 精确逐字节查找；
+    /// 3. 若命中，原子从字典移除句柄并触发 outcome 结算，返回 true；
+    /// 4. 若未命中（已被移除、重复到达或未登记），直接安全忽略返回 false。
     member _.completePhysical(sessionId: string, outcome: obj) : bool =
         if isNull sessionId then
             false
         else
             lock gate (fun () ->
-                match live.TryGetValue(sessionId) with
-                | true, att ->
+                if live.ContainsKey(sessionId) then
                     match pendingCompletions.TryGetValue(sessionId) with
-                    | true, pending when pending.TxId = att.txId ->
+                    | true, pending ->
                         pendingCompletions.Remove(sessionId) |> ignore
                         completePhysicalWith pending.Completion outcome
                         true
-                    | _ ->
-                        // txId 不匹配（陈旧代际）或无句柄：直接忽略
+                    | false, _ ->
+                        // 重复完成通知或句柄已提前被清理：直接忽略
                         false
-                | false, _ ->
-                    // 未附着：直接忽略
+                else
+                    // 未附着或已提前 unbind：直接忽略
                     false)
 
-    /// 移除在途句柄（若存在）。
+    /// 移除在途等待句柄（若存在）。
     member _.removeCompletion(sessionId: string) : unit =
         if isNull sessionId then
             ()

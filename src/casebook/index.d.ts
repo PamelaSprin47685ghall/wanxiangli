@@ -175,15 +175,15 @@ export interface BookkeeperAttachment {
 /** 进程内 Bookkeeper 会话附着、在途完成句柄与提示词单次授权自治对象。 */
 export declare class BookkeeperLedger {
   constructor()
-  /** 绑定 Bookkeeper 子会话到特定事务与所有者会话。若已存在绑定则原子覆盖并清空旧待办授权；若存在未完成句柄则 Error 结算。 */
+  /** 绑定 Bookkeeper 子会话到特定事务与所有者会话。若已存在绑定则原子覆盖并清空旧待办授权，若存在未决句柄则 Error 结算。 */
   bind(sessionId: string, txId: string, ownerSessionId: string): void
-  /** 解除会话附着，原子撤销关联的待办提示词授权；若存在未完成句柄则 Error 结算。 */
+  /** 解除会话附着，原子撤销关联的待办提示词授权，若存在未决句柄则 Error 结算。 */
   unbind(sessionId: string): void
-  /** 登记会话与当前事务绑定的在途完成等待句柄。 */
+  /** 登记会话与当前事务绑定的在途完成等待句柄。物理完成匹配凭证为 childId == terminal.SessionId。 */
   registerCompletion(sessionId: string, txId: string, completion: unknown): void
   /**
    * 物理完成通知：
-   * 首验 isAttached，再校验 live.txId == pending.txId，匹配则结算并原子移除，否则忽略返回 false。
+   * 首验 isAttached(sessionId)，按 terminal.SessionId 精确逐字节匹配在途句柄，命中则原子移除并结算结果，否则直接忽略返回 false。
    */
   completePhysical(sessionId: string, outcome: unknown): boolean
   /** 移除在途等待句柄（若存在）。 */
@@ -194,7 +194,7 @@ export declare class BookkeeperLedger {
   txIdFor(sessionId: string): string
   /** 判定会话是否属于活跃附着的 Bookkeeper worker。 */
   isAttached(sessionId: string): boolean
-  /** 获取只读附着快照，未附着返回 undefined。 */
+  /** 获取只读附着快照，未附着返回 null。 */
   getAttachment(sessionId: string): BookkeeperAttachment | null
   /** 登记当前附着会话预期的提示词单次授权。仅对处于活跃附着的会话生效并返回 true；未附着直接拒绝返回 false。 */
   authorize(sessionId: string, agent: string, text: string): boolean
@@ -204,9 +204,8 @@ export declare class BookkeeperLedger {
    * 任何参数不匹配、txId 不一致或未授权均返回 false 且保留已有授权。
    */
   tryConsume(sessionId: string, agent: string, text: string): boolean
-  /** 清空所有附着、提示词授权与在途等待句柄，原子结算所有未完成句柄。 */
+  /** 清空所有附着与提示词授权状态，原子结算所有未完成句柄。 */
   clear(): void
 }
 
-/** 进程内唯一 Bookkeeper 会话附着与提示词授权账本实例；ES 模块缓存保证全进程同一实例。 */
 export declare const bookkeeperLedger: BookkeeperLedger

@@ -9,6 +9,7 @@ export interface FSharpResult<T, E> {
 
 export interface SettledRunSnapshot {
   readonly count: number;
+  readonly retiredCount: number;
 }
 
 export interface SeatRegistrySnapshot {
@@ -18,6 +19,7 @@ export interface SeatRegistrySnapshot {
 /**
  * Monotonic ledger mapping advisor child session ID -> last settled provider run identity.
  * Replays or duplicate terminals of prior settled runs are recognized as stale and refused.
+ * Retire semantics retain tombstones to defend against late completed callbacks.
  */
 export declare class SettledRunLedger {
   constructor();
@@ -25,7 +27,9 @@ export declare class SettledRunLedger {
   tryPriorRun(childSessionId: string): string | undefined;
   priorRun(childSessionId: string): string;
   hasSettledRun(childSessionId: string): boolean;
+  isRetired(childSessionId: string): boolean;
   isStale(childSessionId: string, candidateRun: string): boolean;
+  retire(childSessionId: string): void;
   clearSession(childSessionId: string): void;
   clearAll(): void;
   snapshot(): SettledRunSnapshot;
@@ -44,10 +48,11 @@ export declare class AdvisorSeatRegistry {
     callerSessionId: string,
     startChild: () => Promise<FSharpResult<string, string>>
   ): Promise<FSharpResult<string, string>>;
+  tryChildId(callerSessionId: string): string | undefined;
   isSeatKnown(callerSessionId: string): boolean;
   hasChildTask(callerSessionId: string): boolean;
   hasCreateFailed(callerSessionId: string): boolean;
-  clear(callerSessionId: string): void;
+  clear(callerSessionId: string): string | undefined;
   clearAll(): void;
   snapshot(): SeatRegistrySnapshot;
 }

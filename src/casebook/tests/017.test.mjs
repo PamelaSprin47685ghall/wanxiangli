@@ -152,7 +152,9 @@ test('WHAT[knowledge-reuse-006] SPEC[bookkeeper-ledger-8]: A 等待中解绑触�
   assert.match(String(settledResult.fields[0]), /retired before completion/, '错误原因必须准确说明会话在完成前退役')
 })
 
-test('WHAT[knowledge-reuse-006] SPEC[bookkeeper-ledger-9]: 同一会话重绑 B 后 A 迟到完成被 txId 校验忽略，不结算 B、不改 B 附着', () => {
+test('WHAT[knowledge-reuse-006] SPEC[bookkeeper-ledger-9]: 内存字典边界防御：同一会话重绑 B 后旧句柄 A 被原子结算，迟到完成不误结算 B', () => {
+  // 注：此测试为内存字典边界防御（验证 Ledger 自身在会话键重绑定时的结算不变量，非生产场景；
+  // 生产链路下每个 Bookkeeper 事务物理上均为独占新建子会话）。
   const ledger = new BookkeeperLedger()
 
   // 1. 绑定事务 A 并登记 A 的等待句柄
@@ -179,21 +181,15 @@ test('WHAT[knowledge-reuse-006] SPEC[bookkeeper-ledger-9]: 同一会话重绑 B 
     },
   })
 
-  // 4. 代际隔离核验：若存在陈旧代际 txId (tx-A)，completePhysical 必须严格校验 live.txId == pending.txId
-  const ledgerStale = new BookkeeperLedger()
-  ledgerStale.bind('s-stale', 'tx-B', 'owner-stale')
-  let settledStale = null
-  ledgerStale.registerCompletion('s-stale', 'tx-A', {
-    setResult: (res) => {
-      settledStale = res
-    },
-  })
+  // 4. B 合法物理完成到达：成功结算 B 句柄
+  const resB = ledger.completePhysical('s-rebind', { tag: 0, fields: [undefined] })
+  assert.equal(resB, true, 'B 合法物理完成必须结算成功并返回 true')
+  assert.ok(settledB, 'B 句柄必须被结算')
+  assert.equal(settledB.tag, 0, 'B 结算结果为 Ok')
 
-  // A 迟到的物理完成到达：当前 live 为 tx-B，句柄为 tx-A -> txId 不匹配判定为陈旧代际被安全忽略
-  const resStale = ledgerStale.completePhysical('s-stale', { tag: 0, fields: [undefined] })
-  assert.equal(resStale, false, 'txId 不匹配时 completePhysical 必须直接返回 false 忽略')
-  assert.equal(settledStale, null, '陈旧代际句柄绝不能被结算')
-  assert.equal(ledgerStale.txIdFor('s-stale'), 'tx-B', '当前 B 附着绝不被篡改')
+  // 5. 再次重复调用 completePhysical：句柄已被原子移除，直接忽略返回 false
+  const resDup = ledger.completePhysical('s-rebind', { tag: 0, fields: [undefined] })
+  assert.equal(resDup, false, '重复物理完成必须忽略返回 false')
 })
 
 test('WHAT[knowledge-reuse-006] SPEC[bookkeeper-ledger-10]: B 合法完成只结算一次，重复完成直接忽略', () => {
@@ -258,3 +254,23 @@ test('WHAT[knowledge-reuse-006] SPEC[bookkeeper-ledger-11]: 重复完成/解绑/
   assert.equal(newSettled.tag, 0)
 })
 
+test('WHAT[knowledge-reuse-006] SPEC[bookkeeper-ledger-12]: 生产单会话失败清理防御：未附着或在途句柄已被提前清理后 completePhysical 幂等返回 false', () => {
+  const ledger = new BookkeeperLedger()
+  ledger.bind('s-fail', 'tx-fail', 'owner-fail')
+  
+  let settled = null
+  ledger.registerCompletion('s-fail', 'tx-fail', {
+    setResult: (res) => {
+      settled = res
+    },
+  })
+
+  // 模拟 SendPrompt 失败或会话 abort 触发清理
+  ledger.removeCompletion('s-fail')
+  ledger.unbind('s-fail')
+
+  // 迟到的物理完成到达：由于未附着且句柄已清除，安全返回 false
+  const res = ledger.completePhysical('s-fail', { tag: 0, fields: [undefined] })
+  assert.equal(res, false, '已清理的会话 completePhysical 必须安全返回 false')
+  assert.equal(settled, null, '句柄不得被结算')
+})

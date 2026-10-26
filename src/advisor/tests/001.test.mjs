@@ -90,13 +90,14 @@ test('SPEC[advisor-seat-4] clear and clearAll are strictly idempotent', async ()
   await registry.ensureSeatChild('caller-E', () => Promise.resolve(Ok('child-E')))
   assert.equal(registry.isSeatKnown('caller-E'), true)
 
-  // First clear removes seat
-  registry.clear('caller-E')
+  // First clear removes seat and returns child ID
+  const removed = registry.clear('caller-E')
+  assert.equal(removed, 'child-E')
   assert.equal(registry.isSeatKnown('caller-E'), false)
 
-  // Duplicate clear is idempotent (no throw)
-  assert.doesNotThrow(() => registry.clear('caller-E'))
-  assert.doesNotThrow(() => registry.clear('non-existent'))
+  // Duplicate clear is idempotent (returns undefined, no throw)
+  assert.equal(registry.clear('caller-E'), undefined)
+  assert.equal(registry.clear('non-existent'), undefined)
 
   // Re-creating after clear invokes factory freshly
   let calledAgain = false
@@ -110,6 +111,18 @@ test('SPEC[advisor-seat-4] clear and clearAll are strictly idempotent', async ()
   registry.clearAll()
   assert.equal(registry.isSeatKnown('caller-E'), false)
   assert.doesNotThrow(() => registry.clearAll())
+})
+
+test('SPEC[advisor-seat-5] clear returns bound childSessionId to bridge retirement without key mismatch', async () => {
+  const registry = new AdvisorSeatRegistry()
+  assert.equal(registry.clear('caller-X'), undefined)
+
+  await registry.ensureSeatChild('caller-X', () => Promise.resolve(Ok('child-X-uuid')))
+  assert.equal(registry.tryChildId('caller-X'), 'child-X-uuid')
+
+  const removedChildId = registry.clear('caller-X')
+  assert.equal(removedChildId, 'child-X-uuid')
+  assert.equal(registry.isSeatKnown('caller-X'), false)
 })
 
 test('SPEC[advisor-run-1] SettledRunLedger prevents cross-generation mis-settlement and identifies stale runs', () => {
@@ -132,7 +145,7 @@ test('SPEC[advisor-run-1] SettledRunLedger prevents cross-generation mis-settlem
   // Next consult advances and settles on run-101
   ledger.recordSettled('child-1', 'run-101')
   assert.equal(ledger.priorRun('child-1'), 'run-101')
-  assert.equal(ledger.isStale('child-1', 'run-100'), false, 'prior run pointer points to latest settled run')
+  assert.equal(ledger.isStale('child-1', 'run-100'), true, 'run-100 remains stale in history')
   assert.equal(ledger.isStale('child-1', 'run-101'), true, 'run-101 is now stale')
 })
 
@@ -145,10 +158,10 @@ test('SPEC[advisor-run-2] SettledRunLedger session isolation and idempotent clea
   assert.equal(ledger.priorRun('child-A'), 'run-A1')
   assert.equal(ledger.priorRun('child-B'), 'run-B1')
 
-  // Clear child-A does not touch child-B
+  // Clear child-A retires child-A
   ledger.clearSession('child-A')
-  assert.equal(ledger.hasSettledRun('child-A'), false)
-  assert.equal(ledger.hasSettledRun('child-B'), true)
+  assert.equal(ledger.isRetired('child-A'), true)
+  assert.equal(ledger.isRetired('child-B'), false)
 
   // Duplicate clear is idempotent
   assert.doesNotThrow(() => ledger.clearSession('child-A'))
@@ -158,6 +171,36 @@ test('SPEC[advisor-run-2] SettledRunLedger session isolation and idempotent clea
   ledger.clearAll()
   assert.equal(ledger.hasSettledRun('child-B'), false)
   assert.doesNotThrow(() => ledger.clearAll())
+})
+
+test('SPEC[advisor-run-3] recordSettled -> retire/clearSession -> late Completed from old run is rejected and cannot settle new binding', () => {
+  const ledger = new SettledRunLedger()
+
+  // 1. First consult settles on run-100
+  ledger.recordSettled('child-1', 'run-100')
+  assert.equal(ledger.priorRun('child-1'), 'run-100')
+  assert.equal(ledger.isRetired('child-1'), false)
+
+  // 2. Caller session is deleted / seat is cleared: retire child-1
+  ledger.retire('child-1')
+  assert.equal(ledger.isRetired('child-1'), true)
+
+  // 3. Tombstone is preserved: old run-100 arrives late as Completed
+  assert.equal(ledger.isStale('child-1', 'run-100'), true, 'late Completed from old run must be rejected as stale even after retire')
+  assert.equal(ledger.priorRun('child-1'), 'run-100', 'priorRun remains available as tombstone')
+
+  // 4. New binding established on the same adopted child: fresh run-101 starts
+  assert.equal(ledger.isStale('child-1', 'run-101'), false, 'fresh run-101 must not be marked stale')
+
+  // 5. Fresh run-101 settles on the new binding
+  ledger.recordSettled('child-1', 'run-101')
+  assert.equal(ledger.isRetired('child-1'), false, 'settling fresh run clears retired state')
+  assert.equal(ledger.priorRun('child-1'), 'run-101')
+
+  // 6. Old run-100 is STILL stale; run-101 is now stale; run-102 is fresh
+  assert.equal(ledger.isStale('child-1', 'run-100'), true, 'old run-100 remains permanently stale in history')
+  assert.equal(ledger.isStale('child-1', 'run-101'), true, 'run-101 is now stale')
+  assert.equal(ledger.isStale('child-1', 'run-102'), false, 'future run-102 is fresh')
 })
 
 test('SPEC[advisor-singletons] exported global singletons are available and functional', () => {
