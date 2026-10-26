@@ -16,6 +16,20 @@ test('SPEC[scope-progress-001] free rounds; min of all calls settles once regard
   assert.equal(p.record('s','e1','r1','new',0).ok,false)
 })
 
+test('SPEC[scope-progress-001] the Advisor trigger names the latched zero before the comparison',()=>{
+  const p=ScopeProgress()
+  const round=(run,value)=>{ p.record('s','e1',run,'call-'+run,value); return p.settle('s','e1',run) }
+  assert.equal(round('five',5).trigger,null)
+  assert.equal(round('stall',5).trigger,'Equal')
+  assert.equal(round('zero',0).trigger,null)
+  assert.equal(round('four',4).trigger,'ResetDue')
+  assert.equal(round('three',3).trigger,'ResetDue','a drop after the zero is still the unreset zero, not new work')
+  const p2=ScopeProgress()
+  p2.record('s','e1','a','c1',2); p2.settle('s','e1','a')
+  p2.record('s','e1','b','c1',6)
+  assert.equal(p2.settle('s','e1','b').trigger,'Increase')
+})
+
 test('SPEC[scope-progress-001] comparison is only against preceding charged round; zero is latched until reset',()=>{
   const p=ScopeProgress()
   p.record('s','e1','first','c1',4)

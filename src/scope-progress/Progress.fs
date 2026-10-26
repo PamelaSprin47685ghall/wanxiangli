@@ -52,7 +52,7 @@ type private ScopeState(epoch: string) =
             | true, calls ->
                 let next = calls.Values |> Seq.min
                 let prior = previous
-                let advisor = resetDue || (prior |> Option.exists (fun old -> next >= old))
+                let trigger = advisorTrigger resetDue prior next
                 resetDue <- resetDue || next = 0
                 previous <- Some next
                 rounds.Remove runId |> ignore
@@ -61,7 +61,8 @@ type private ScopeState(epoch: string) =
                                 "charged" ==> true
                                 "estimate" ==> next
                                 "previous" ==> (prior |> Option.map box |> Option.defaultValue null)
-                                "advisor" ==> advisor
+                                "advisor" ==> trigger.IsSome
+                                "trigger" ==> (trigger |> Option.map box |> Option.defaultValue null)
                                 "resetDue" ==> resetDue ]
                 settled[runId] <- outcome
                 outcome

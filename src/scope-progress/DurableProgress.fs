@@ -82,12 +82,21 @@ let private reading (journal: ProgressJournal) session epoch =
 let private error code reason =
     createObj [ "ok" ==> false; "status" ==> code; "reason" ==> reason ]
 
+let advisorTrigger (resetDueBefore: bool) (prior: int option) (estimate: int) : string option =
+    if resetDueBefore then Some "ResetDue"
+    else
+        match prior with
+        | Some old when estimate = old -> Some "Equal"
+        | Some old when estimate > old -> Some "Increase"
+        | _ -> None
+
 let private resultOf (item: obj) replayed =
     createObj [ "ok" ==> true; "charged" ==> true
                 "replayed" ==> replayed
                 "estimate" ==> item?estimate
                 "previous" ==> item?previous
                 "advisor" ==> item?advisor
+                "trigger" ==> item?trigger
                 "resetDue" ==> item?resetDue ]
 
 let private append (journal: ProgressJournal) (session: string) (epoch: string) (revision: int) (request: string) (body: string) =
@@ -171,13 +180,15 @@ let durableProgressSettle
                     | true, calls ->
                         let estimate = calls.Values |> Seq.min
                         let prior = observed.Previous
-                        let advisor = observed.ResetDue || (prior |> Option.exists (fun old -> estimate >= old))
+                        let trigger = advisorTrigger observed.ResetDue prior estimate
                         let resetDue = observed.ResetDue || estimate = 0
                         let body = serialize(createObj [
                             "kind" ==> "Settled"; "run" ==> runId
                             "estimate" ==> estimate
                             "previous" ==> (prior |> Option.map box |> Option.defaultValue null)
-                            "advisor" ==> advisor; "resetDue" ==> resetDue ])
+                            "advisor" ==> trigger.IsSome
+                            "trigger" ==> (trigger |> Option.map box |> Option.defaultValue null)
+                            "resetDue" ==> resetDue ])
                         let answer = append journal session epoch observed.Revision ("settle:" + field runId) body
                         let status = string answer?status
                         let reason = if isNull answer?reason then "" else string answer?reason

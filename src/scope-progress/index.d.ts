@@ -1,5 +1,5 @@
 export type ProgressReceipt = { ok: boolean; reason?: string; replayed?: boolean; minimum?: number }
-export type ProgressSettlement = { ok: boolean; reason?: string; charged?: boolean; estimate?: number; previous?: number | null; advisor?: boolean; resetDue?: boolean }
+export type ProgressSettlement = { ok: boolean; reason?: string; charged?: boolean; estimate?: number; previous?: number | null; advisor?: boolean; trigger?: 'ResetDue' | 'Equal' | 'Increase' | null; resetDue?: boolean }
 export interface ScopeProgressPort {
   record(sessionId: string, epochId: string, providerRunId: string, toolCallId: string, estimate: number): ProgressReceipt
   settle(sessionId: string, epochId: string, providerRunId: string): ProgressSettlement
@@ -69,7 +69,7 @@ export interface ProgressJournal {
   close(): void
 }
 export function durableProgressRecord(journal: ProgressJournal, sessionId: string, epochId: string, providerRunId: string, toolCallId: string, estimate: number): {ok: boolean, minimum?: number, replayed?: boolean, status?: string, reason?: string}
-export function durableProgressSettle(journal: ProgressJournal, sessionId: string, epochId: string, providerRunId: string): {ok: boolean, charged?: boolean, estimate?: number, previous?: number | null, advisor?: boolean, resetDue?: boolean, replayed?: boolean, status?: string, reason?: string}
+export function durableProgressSettle(journal: ProgressJournal, sessionId: string, epochId: string, providerRunId: string): {ok: boolean, charged?: boolean, estimate?: number, previous?: number | null, advisor?: boolean, trigger?: 'ResetDue' | 'Equal' | 'Increase' | null, resetDue?: boolean, replayed?: boolean, status?: string, reason?: string}
 export function durableProgressStatus(journal: ProgressJournal, sessionId: string, epochId: string): {ok: boolean, known?: boolean, epoch?: string, estimate?: number | null, resetDue?: boolean, status?: string, reason?: string}
 export function durableProgressPending(journal: ProgressJournal, sessionId: string, epochId: string): {ok: boolean, pending?: string[], status?: string, reason?: string}
 export function durableProgressDue(journal: ProgressJournal, sessionId: string, epochId: string): {ok: boolean, due?: readonly {providerRunId: string, result: unknown}[], status?: string, reason?: string}

@@ -50,6 +50,19 @@ test('SPEC[scope-progress-007] SQLite cold-open retains minimum, paid rounds, ad
   assert.equal(use(j => durableProgressSettle(j, 's', 'scope2', 'round-a')).advisor, false)
 }))
 
+test('SPEC[scope-progress-007] the durable Advisor trigger survives cold reopen and replay', () => database(use => {
+  const round = (run, value) => {
+    use(j => durableProgressRecord(j, 's', 'scope1', run, 'call-' + run, value))
+    return use(j => durableProgressSettle(j, 's', 'scope1', run))
+  }
+  assert.equal(round('five', 5).trigger ?? null, null)
+  assert.equal(round('zero', 0).trigger ?? null, null)
+  assert.equal(round('four', 4).trigger, 'ResetDue')
+  assert.equal(round('three', 3).trigger, 'ResetDue')
+  const replayed = use(j => durableProgressSettle(j, 's', 'scope1', 'three'))
+  assert.deepEqual([replayed.replayed, replayed.trigger], [true, 'ResetDue'])
+}))
+
 test('SPEC[scope-progress-007] pending tool observations survive SIGKILL-like cold reopen without settling prematurely', () => database(use => {
   use(j => durableProgressRecord(j, 'session', '1', 'provider-a', 'tool-a', 10))
   use(j => durableProgressRecord(j, 'session', '1', 'provider-a', 'tool-b', 2))
