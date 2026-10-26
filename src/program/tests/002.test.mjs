@@ -46,13 +46,27 @@ test('SPEC 2: only explicit park receives the injected value',{timeout:15000},as
  const p=await h.run('choice','return {answer:this.park('+json(payload)+')};');assert.equal(p.state,'parked',json(p));assert.deepEqual(p.payload,payload);
  const r=await h.resume('choice',value);assert.equal(r.state,'completed',json(r));assert.deepEqual(r.value,{answer:value});
 });
-test('SPEC 2: retry replays, new invocation cannot reuse a name',{timeout:15000},async t=>{
+test('SPEC 2: retry replays; an ended name is reusable while a parked name stays taken',{timeout:15000},async t=>{
  const h=await harness(t),starts=join(h.root,'starts'),cmd=command("require('node:fs').appendFileSync(process.argv[1],'start\\n');",starts);
  const body='return this.call('+json(cmd)+');';
- const r=await h.run('once',body,{}, {callId:'original'});assert.equal(r.state,'completed',json(r));assert.equal(r.value.exitCode,0);
- assert.deepEqual(await h.run('once',body,{}, {callId:'original'}),r);
- assert.equal((await h.run('once',body,{}, {callId:'different'})).code,'NAME_TAKEN');
- assert.equal(await readFile(starts,'utf8'),'start\n');assert.deepEqual(await h.resume('once'),r);
+ const first=await h.run('once',body,{}, {callId:'original'});assert.equal(first.state,'completed',json(first));assert.equal(first.value.exitCode,0);
+ assert.deepEqual(await h.run('once',body,{}, {callId:'original'}),first);
+ assert.equal(await readFile(starts,'utf8'),'start\n');
+ const second=await h.run('once',body,{}, {callId:'later'});assert.equal(second.state,'completed',json(second));assert.equal(second.value.exitCode,0);
+ assert.equal(await readFile(starts,'utf8'),'start\nstart\n');assert.deepEqual(await h.resume('once'),second);
+ assert.equal((await h.run('held','await this.park({ready:true});return 1;')).state,'parked');
+ assert.equal((await h.run('held','return 2;')).code,'NAME_TAKEN');
+});
+test('SPEC 2: a control program observed before name reuse cannot resume the new run',{timeout:15000},async t=>{
+ const h=await harness(t);
+ assert.equal((await h.run('target','const value=await this.park({round:1});return value;')).state,'parked');
+ await h.run('hold','const value=this.park({waiting:true});return this.unpark("target",value);');
+ assert.equal((await h.control('return this.abandon("target");')).state,'abandoned');
+ const fresh=await h.run('target','const value=await this.park({round:2});return value;');
+ assert.equal(fresh.state,'parked',json(fresh));assert.deepEqual(fresh.payload,{round:2});
+ const late=await h.resume('hold','go');assert.equal(late.value.code,'STALE_CONTROL',json(late));
+ assert.equal(h.session.pendingNames().includes('target'),true);
+ assert.equal((await h.resume('target','second')).value,'second');
 });
 test('SPEC 2: old control cannot consume a later pause',{timeout:15000},async t=>{
  const h=await harness(t);

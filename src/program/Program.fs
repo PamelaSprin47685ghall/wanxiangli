@@ -9,13 +9,15 @@ open Wanxiangli.Program
 open Wanxiangli.Program.Native
 open Wanxiangli.Program.Caller
 
-type private Observation = { Pause: int; Command: int }
+type private Observation = { Pause: int; Command: int; Instance: int }
 
 [<AttachMembers>]
 type private Session(sessionId: string, runtime: obj) =
     let programs = Dictionary<string, Run>()
+    let identities = Dictionary<string, int>()
     let calls = Dictionary<string, string * string * string * Task<obj>>()
     let mutable closed = false
+    let mutable sequence = 0
 
     let rejected name code reason =
         Task.FromResult(receipt name "failed" (failure code reason))
@@ -25,8 +27,14 @@ type private Session(sessionId: string, runtime: obj) =
         |> Seq.map (fun entry ->
             entry.Key,
             { Pause = entry.Value.Generation
-              Command = entry.Value.CommandGeneration })
+              Command = entry.Value.CommandGeneration
+              Instance = identities[entry.Key] })
         |> Map.ofSeq
+
+    let active name =
+        match programs.TryGetValue name with
+        | true, program -> not (terminal program.State)
+        | _ -> false
 
     let canControl (caller: Set<string>) (target: Run) = Set.isSubset target.Capabilities caller
 
@@ -60,6 +68,8 @@ type private Session(sessionId: string, runtime: obj) =
             match target, wanted with
             | (false, _), _ -> rejected targetName "PROGRAM_UNKNOWN" "no execution site is known for this program name"
             | (true, _), None -> rejected targetName "STALE_CONTROL" "this request did not observe the target program"
+            | (true, _), Some seen when seen.Instance <> identities[targetName] ->
+                rejected targetName "STALE_CONTROL" "this request observed an earlier run of the target name"
             | (true, program), Some _ when not (canControl callerCapabilities program) ->
                 rejected targetName "CAPABILITY_DENIED" "this request does not hold the target program's capabilities"
             | (true, program), Some seen ->
@@ -103,14 +113,16 @@ type private Session(sessionId: string, runtime: obj) =
                 ->
                 result
             | Some _ -> rejected name "CALL_REPLAY_MISMATCH" "the physical tool call already belongs to another request"
-            | None when programs.ContainsKey name ->
-                rejected name "NAME_TAKEN" "this name already belongs to a program in the session"
+            | None when active name ->
+                rejected name "NAME_TAKEN" "this name belongs to a program that has not ended"
             | None ->
                 let observed = observations ()
                 let capabilities = strings (get options "capabilities") |> Set.ofArray
                 let window = RequestWindow(runtime, now runtime + (budget intent).Value)
                 let program = Run(options, runtime, window, control name capabilities observed)
-                programs.Add(name, program)
+                sequence <- sequence + 1
+                programs[name] <- program
+                identities[name] <- sequence
                 let result = program.Start()
 
                 if callId <> "" then
