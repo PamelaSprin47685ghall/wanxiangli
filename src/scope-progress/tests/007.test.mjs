@@ -94,3 +94,14 @@ test('SPEC[scope-progress-007] unknown append and corrupt history fail closed wi
   assert.equal(durableProgressStatus(corrupt, 's', 'e').status, 'Unknown')
   assert.equal(durableProgressPending(corrupt, 's', 'e').status, 'Unknown')
 })
+
+
+test('SPEC[scope-progress-007] a replayed physical ToolCallId is not billed again under a new OMP turn witness', () => database(use => {
+  const call=(run,score)=>use(j=>durableProgressRecord(j,'s','scope','run-'+run,'physical-call',score))
+  assert.equal(call('before-restart',4).replayed,false)
+  assert.equal(use(j=>durableProgressSettle(j,'s','scope','run-before-restart')).estimate,4)
+  assert.equal(call('after-restart',4).replayed,true,'reissued toolCall must not be written into the new Provider run')
+  assert.equal(call('after-restart',3).status,'Conflict')
+  assert.equal(use(j=>durableProgressSettle(j,'s','scope','run-after-restart')).charged,false)
+  assert.equal(use(j=>durableProgressStatus(j,'s','scope')).estimate,4)
+}))

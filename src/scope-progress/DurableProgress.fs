@@ -106,9 +106,21 @@ let durableProgressRecord
         try
             let rec attempt retries =
                 let observed = reading journal session epoch
-                if observed.Settled.ContainsKey runId then
+                let previousCall =
+                    observed.Calls
+                    |> Seq.tryPick (fun item ->
+                        match item.Value.TryGetValue callId with
+                        | true, prior when item.Key <> runId -> Some(item.Key, prior)
+                        | _ -> None)
+                match previousCall with
+                | Some (_, original) when original <> estimate ->
+                    error "Conflict" "tool call identity already belongs to another Provider round with a different estimate"
+                | Some (owner, _) ->
+                    createObj [ "ok" ==> true; "replayed" ==> true
+                                "minimum" ==> (observed.Calls[owner].Values |> Seq.min) ]
+                | None when observed.Settled.ContainsKey runId ->
                     error "Conflict" "provider round already durably settled"
-                else
+                | None ->
                     let recorded = observed.Calls.TryGetValue runId
                     match recorded with
                     | true, calls when calls.ContainsKey callId ->
