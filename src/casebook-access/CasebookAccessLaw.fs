@@ -148,3 +148,119 @@ type CasebookAccessLaw() =
     /// 含命令替换或不是读取命令时为 null。
     member _.execRead(command: obj) : string =
         execReadOf (requireText "command" command) |> Option.toObj
+
+
+open System.Collections.Generic
+
+/// CASE-003: 归一化后的文件读取观测（去除了冗余的 kind 字段）。
+type CasebookFileRead =
+    { path: string
+      contentHash: string }
+
+/// KR-003: 纯内存实质文件访问跟踪器（不触碰文件系统与事件存储）。
+[<AttachMembers>]
+type AccessTracker() =
+    let paths = HashSet<string>()
+    let law = CasebookAccessLaw()
+
+    let add (access: obj) =
+        for path in law.accessPaths access do
+            paths.Add path |> ignore
+
+    let ofPath (kind: string) (path: string) =
+        createObj [ "kind" ==> kind; "path" ==> path ]
+
+    member this.recordRead(path: string, contentHash: string) : unit = this.RecordRead(path, contentHash)
+    member this.recordCreate(path: string) : unit = this.RecordCreate(path)
+    member this.recordEdit(path: string) : unit = this.RecordEdit(path)
+    member this.recordDelete(path: string) : unit = this.RecordDelete(path)
+    member this.recordMove(source: string, destination: string) : unit = this.RecordMove(source, destination)
+    member this.recordGrep(pattern: string, path: string) : unit = this.RecordGrep(pattern, path)
+    member this.recordGlob(pattern: string) : unit = this.RecordGlob(pattern)
+
+    member this.recordAttemptedMutation(path: string, committed: bool) : unit =
+        this.RecordAttemptedMutation(path, committed)
+
+    member this.getRelatedPaths() : string array = this.GetRelatedPaths()
+
+    member _.RecordRead(path: string, _contentHash: string) : unit = add (ofPath "read" (string path))
+    member _.RecordCreate(path: string) : unit = add (ofPath "create" (string path))
+    member _.RecordEdit(path: string) : unit = add (ofPath "edit" (string path))
+    member _.RecordDelete(path: string) : unit = add (ofPath "delete" (string path))
+
+    member _.RecordMove(source: string, destination: string) : unit =
+        add (
+            createObj
+                [ "kind" ==> "move"
+                  "source" ==> string source
+                  "destination" ==> string destination ]
+        )
+
+    member _.RecordGrep(_pattern: string, _path: string) : unit = ()
+    member _.RecordGlob(_pattern: string) : unit = ()
+
+    member _.RecordAttemptedMutation(path: string, committed: bool) : unit =
+        add (createObj [ "kind" ==> "mutation"; "path" ==> string path; "committed" ==> committed ])
+
+    member _.GetRelatedPaths() : string array =
+        law.relatedPaths (Seq.toArray paths)
+
+/// CASE-003 / KR-003: 会话级观测与实质性访问累积器。
+[<AttachMembers>]
+type CasebookObservationCollector() =
+    let buffers = Dictionary<string, ResizeArray<CasebookFileRead>>()
+    let trackers = Dictionary<string, AccessTracker>()
+    let law = CasebookAccessLaw()
+
+    let appendObservation sessionId observation =
+        match buffers.TryGetValue sessionId with
+        | true, buffer -> buffer.Add observation
+        | false, _ ->
+            let buffer = ResizeArray<CasebookFileRead>()
+            buffer.Add observation
+            buffers.[sessionId] <- buffer
+
+    let resolveTracker sessionId =
+        match trackers.TryGetValue sessionId with
+        | true, tracker -> tracker
+        | false, _ ->
+            let tracker = AccessTracker()
+            trackers.[sessionId] <- tracker
+            tracker
+
+    member _.getTracker(sessionId: string) : AccessTracker = resolveTracker sessionId
+
+    member _.Collect(sessionId: string, toolName: string, args: obj, output: string) : unit =
+        let tracker = resolveTracker sessionId
+        for path in law.toolPaths (toolName, args, true) do
+            tracker.RecordAttemptedMutation(path, true)
+
+    member _.RecordFileRead(sessionId: string, path: string, output: string, ?contentHash: string) : unit =
+        let tracker = resolveTracker sessionId
+        let hash = defaultArg contentHash ""
+        tracker.RecordRead(path, hash)
+
+        if not (isBlank path) && not (isBlank output) then
+            appendObservation sessionId { path = path; contentHash = hash }
+
+    member _.Drain(sessionId: string) =
+        match buffers.TryGetValue sessionId with
+        | true, buffer ->
+            // CASE-003: normalize — 按 "read:" + path + ":" + hash 升序排列并去重，与宿主 Observations.normalize 逐字等价
+            let identityOf (item: CasebookFileRead) = "read:" + item.path + ":" + item.contentHash
+            let sorted =
+                buffer
+                |> Seq.sortBy identityOf
+                |> Seq.distinctBy identityOf
+                |> Seq.map (fun item -> {| path = item.path; contentHash = item.contentHash |})
+                |> Seq.toArray
+            buffers.Remove sessionId |> ignore
+            sorted
+        | false, _ -> [||]
+
+    member _.Count(sessionId: string) : int =
+        match buffers.TryGetValue sessionId with
+        | true, buffer -> buffer.Count
+        | false, _ -> 0
+
+let casebookObservationCollector = CasebookObservationCollector()

@@ -23,3 +23,19 @@
 2. [LEMMA 2] 证明：`tests/003.test.mjs`。
 3. [LEMMA 3] 证明：`tests/003.test.mjs`。
 4. [LEMMA 4] 证明：`tests/003.test.mjs`；与主仓旧实现的逐项差异由 vibe-fs `evidence/CUT-27/shadow-access.mjs` 记录。
+
+
+# AXIOM (Package-06 状态抽取)
+
+3. [使用者] 会话观测缓冲与实质访问跟踪是纯内存状态容器，不触碰文件系统、宿主 SDK 或持久化存储。
+    - 理由：Package-06 状态抽取（CASE-003 / KR-003）。物理文件读取、摘要计算与落盘由宿主负责；状态维护与按身份归一化由本包独占。
+
+# LEMMA (Package-06)
+
+5. [本模块 AXIOM 3] `RecordFileRead` 仅在 path 与 output 皆非空时追加观测；contentHash 默认空字符串且不影响访问判定。
+6. [本模块 AXIOM 3] `Drain` 返回按 `"read:" + path + ":" + hash` 码元序升序且去重后的只读快照，并清空当前会话 buffer，但严格保留该会话的 tracker。
+7. [本模块 AXIOM 3] `Collect` 将已提交工具变更记入 tracker，绝不污染 buffer。
+
+# SPEC (Package-06)
+
+5. [LEMMA 5, 6, 7] 证明：`tests/004.test.mjs`（覆盖空输出不记录、Drain 清空 buffer 留 tracker、去重排序等反例）。

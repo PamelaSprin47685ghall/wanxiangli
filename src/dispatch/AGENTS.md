@@ -42,3 +42,18 @@
     - 证明：`tests/002.test.mjs`。
 7. [LEMMA 7] 留下的认领与计数与独立 oracle 一致（含他会话根计数、空串运行 id 不算缺席）；保持输入顺序；畸形输入抛错。
     - 证明：`tests/003.test.mjs`。
+
+# LEMMA (DeliveryAttemptLedger)
+
+8. [本模块 AXIOM 1] 交付 attempt 台账（DeliveryAttemptLedger）进程内持有精确围栏记录（session * providerRun * callId），区隔已成立（提交面）、已呈现、中断发出、中断观察四类事实；登记时的物理用户消息构成防误停新输入的物理围栏，已有物理围栏不被后来的登记改写。
+    - 进门校验与 fail-closed 契约：所有接收 `fence`、`physical` 或 `witness` 的成员均在进门处做严格形状与非空校验。缺少字段、非对象或包含空白/undefined/null 字符串的畸形输入一律 fail-closed（修改成员返回 `false`，查询成员返回 `None` / `undefined`），绝不静默拼装垃圾键或向状态字典写入脏记录。
+    - 返回值语义：`recordEstablished`、`recordPresented`、`recordInterruptIssued`、`recordInterruptObserved` 返回 `bool`，`true` 表示入参围栏合规且状态已成功登记或合并，`false` 表示围栏畸形遭拒绝且内部状态严格保持不变。
+    - activeInterruptTask 键语义与 sequence 最新规则：记录键为三元 `sessionId:providerRun:callId`，查找按二元 `sessionId + providerRun` 聚合。同一 run 下若存在多个 callId 均持有中断任务，严格按内部单调递增 `sequence` 降序选取最新者（即最后一次执行中断发出的 attempt 任务胜出），消除多 callId 并发查询的随机性。
+    - InterruptTask 生命周期与宿主所有权契约：`InterruptTask` 为宿主拥有的并发 Task / Promise 原生句柄，库侧仅以不透明 `obj option` 原样持有并按序返回，库端绝不主动触发 await、检查状态或管理生命周期；宿主（`HostTurnObserver.fs`）负责单点 unbox 并在安全上下文中 await。已 fault、已被前序分支 await 或插件重启导致的陈旧句柄由 .NET Task 完成态契约天然化解（已完成的任务再次 await 为立即完成无害 no-op）。
+    - clear() 生产隔离定位：`clear()` 属于测试与隔离沙箱专用的全量重置通道。生产路径严禁调用 `clear()`（必须且只能按会话调用 `dropSession(sessionId)`），以根绝跨插件实例或多会话并发环境下的误清扫与数据污染。
+    - Durable 见证解耦：进程内快速路径与 durable 见证严格分离。durable 见证作为纯数据切片输入，按 `confirmedFence` 精确比对物理输入且最新见证胜出；未查得见证不等于未曾交付，只是当前无法证明其已落盘。
+
+# SPEC (DeliveryAttemptLedger)
+
+8. [LEMMA 8] 物理输入不匹配的陈旧见证被拒、最新匹配见证胜出、重复记录不重复完成、清空后 hasDurableEstablished 为假、不同 ToolCallId 互不影响、畸形输入严格 fail-closed 拒绝且不污染状态、同 run 多 callId 中断任务按 sequence 最新胜出。
+    - 证明：`tests/004.test.mjs`。

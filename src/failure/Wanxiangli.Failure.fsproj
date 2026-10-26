@@ -6,6 +6,10 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="ProviderAttemptStopFence.fs" />
     <Compile Include="ExecutionFailurePolicy.fs" />
+    <PackageExport Include="ExecutionFailurePolicy.fs" Member="ExecutionFailurePolicy" />
+    <PackageExport Include="ProviderAttemptStopFence.fs" Member="ProviderAttemptStopFence" />
+    <PackageExport Include="ProviderAttemptStopFence.fs" Member="providerAttemptStopFence" />
   </ItemGroup>
 </Project>

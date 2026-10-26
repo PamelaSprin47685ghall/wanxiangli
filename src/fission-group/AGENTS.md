@@ -1,6 +1,6 @@
 # fission-group
 
-层：内核。纯计算，不得 import 宿主 SDK 或其它 wanxiangli 模块；不持有组表、不比较 blob/session 值、不创建或中止 lane。npm 入口 `wanxiangli/fission-group`。
+层：内核。纯计算与状态门禁，不得 import 宿主 SDK 或其它 wanxiangli 模块；不比较 blob/session 值、不创建或中止 lane。npm 入口 `wanxiangli/fission-group`。
 
 # AXIOM
 
@@ -22,7 +22,6 @@
 
 4. [AXIOM 4] parsePrompts：少于 2 个 → TooFewLanes；第一个空白 lane → EmptyLanePrompt(index)；否则 lanes = n。routeCompletion：广播 → 0..n-1，lane 亲和 → 界内则 [lane] 否则 []。mergeOrder：n < 2 → []，否则 0..n-1；finalLane = n-1（n < 2 为 null）；successor：从 laneIndex 起顺环找第一个未关闭 lane（含自身最后一个），全关闭或非法为 null。
 5. [AXIOM 4] settle：Ongoing/NeedsContinuation/ProviderFailed/DegenerationInterrupted → yield；ExternalAbort → fail；Completed → lane 为 materialize、takeover 为 complete。
-
 # SPEC
 
 1. [LEMMA 1–5] 证明：`tests/001.test.mjs`；与 vibe-fs 旧 `FissionProjection.fold` 逐项对照见 vibe-fs `evidence/CUT-28/`。

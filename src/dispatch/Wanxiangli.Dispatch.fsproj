@@ -7,6 +7,10 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="ClaimLaw.fs" />
+    <Compile Include="DeliveryAttemptLedger.fs" />
     <Compile Include="Dispatch.fs" />
+    <PackageExport Include="Dispatch.fs" Member="Dispatch" />
+    <PackageExport Include="DeliveryAttemptLedger.fs" Member="DeliveryAttemptLedger" />
+    <PackageExport Include="DeliveryAttemptLedger.fs" Member="deliveryAttemptLedger" />
   </ItemGroup>
 </Project>

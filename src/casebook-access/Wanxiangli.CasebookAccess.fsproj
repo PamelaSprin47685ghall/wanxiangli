@@ -1,10 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Wanxiangli.CasebookAccess</RootNamespace>
     <!-- Fable-only compilation unit. No dotnet build; see AGENTS.md. -->
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="CasebookAccessLaw.fs" />
+    <PackageExport Include="CasebookAccessLaw.fs" Member="CasebookAccessLaw" />
+    <PackageExport Include="CasebookAccessLaw.fs" Member="AccessTracker" />
+    <PackageExport Include="CasebookAccessLaw.fs" Member="CasebookObservationCollector" />
+    <PackageExport Include="CasebookAccessLaw.fs" Member="casebookObservationCollector" />
   </ItemGroup>
 </Project>

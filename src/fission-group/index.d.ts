@@ -49,3 +49,33 @@ export declare class FissionGroupLaw {
   successor(input: { laneCount: number; laneIndex: number; closed: readonly number[] }): number | null
   settle(input: { stage: 'lane' | 'takeover'; observation: 'OngoingExecution' | 'NeedsContinuation' | 'ProviderFailed' | 'DegenerationInterrupted' | 'ExternalAbort' | 'Completed' }): { readonly decision: 'yield' | 'fail' | 'materialize' | 'complete' }
 }
+
+export declare class FissionLaneQuiescenceGate {
+  constructor()
+  /** Mark a specific lane under a group as quiescent. Returns true if state changed, false if already quiescent (idempotent). */
+  enterQuiescent(groupId: string, laneId: string): boolean
+  /** Alias for enterQuiescent. */
+  markQuiescent(groupId: string, laneId: string): boolean
+  /** Mark a specific lane under a group as active / non-quiescent. Returns true if it was previously quiescent. */
+  leaveQuiescent(groupId: string, laneId: string): boolean
+  /** Alias for leaveQuiescent. */
+  markActive(groupId: string, laneId: string): boolean
+  /** Check if a specific lane under a group is currently quiescent. */
+  isLaneQuiescent(groupId: string, laneId: string): boolean
+  /** Check if an entire group has converged to quiescence (all lanes quiescent, minimum 2 lanes). */
+  isGroupQuiescent(groupId: string, expectedLaneCount?: number): boolean
+  /** Check if given array of lanes are all quiescent under the group (minimum 2 lanes). */
+  areLanesQuiescent(groupId: string, laneIds: readonly string[]): boolean
+  /** Get array of lane IDs currently quiescent in the group. */
+  getQuiescentLanes(groupId: string): readonly string[]
+  /** Get total recorded lane count for the group. */
+  getLaneCount(groupId: string): number
+  /** Clear state for a specific lane. Returns true if lane existed. */
+  clearLane(groupId: string, laneId: string): boolean
+  /** Clear all state for a group. Returns true if group existed. */
+  clearGroup(groupId: string): boolean
+  /** Clear all groups and lanes. */
+  clearAll(): void
+}
+
+export declare const fissionLaneQuiescenceGate: FissionLaneQuiescenceGate

@@ -69,3 +69,26 @@ export declare class ExecutionFailurePolicy {
   /** Throws on malformed input; never guesses a missing fact. */
   decide<K, F>(input: FailureInput<K, F>): FailureDecision<K, F>
 }
+
+export type RegisterResult = 'Admitted' | 'AlreadyStopped'
+
+export type WaitForStopResult = 'Stopped' | 'TimedOut' | 'Denied'
+
+export interface ProviderAttemptStopFenceSnapshot {
+  readonly stopped: number
+  readonly waiting: number
+  readonly denied: number
+}
+
+export declare class ProviderAttemptStopFence {
+  constructor()
+  Register(sessionId: string, providerRun: string): RegisterResult
+  SignalStop(sessionId: string, providerRun: string): void
+  WaitForStop(sessionId: string, providerRun: string, timeoutMs?: number): Promise<WaitForStopResult>
+  Revoke(sessionId: string): void
+  Clear(sessionId: string): void
+  ClearAll(): void
+  Snapshot(): ProviderAttemptStopFenceSnapshot
+}
+
+export declare const providerAttemptStopFence: ProviderAttemptStopFence

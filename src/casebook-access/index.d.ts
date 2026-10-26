@@ -1,7 +1,5 @@
 /**
- * wanxiangli/casebook-access — Casebook 实质访问的纯分类（CUT-27 子范围③，knowledge-reuse-003/010）。
- *
- * 纯计算：不读文件、不持有会话状态、不写事件。每会话的累积器、Observation 的构造与内容摘要都归调用方。
+ * wanxiangli/casebook-access — Casebook 实质访问与会话观测累积（CUT-27 / Package-06）。
  */
 export type AccessKind = 'read' | 'create' | 'edit' | 'delete' | 'move' | 'mutation' | 'grep' | 'glob' | 'list' | 'stat' | 'mention'
 
@@ -21,3 +19,43 @@ export declare class CasebookAccessLaw {
   /** cat/head/tail/sed 的单文件读取目标；命令替换或非读取命令为 null。 */
   execRead(command: string): string | null
 }
+
+/** CASE-003: 归一化后的文件读取观测（去除了冗余的 kind 字段）。 */
+export interface CasebookFileRead {
+  readonly path: string
+  readonly contentHash: string
+}
+
+/** KR-003: 纯内存实质文件访问跟踪器（不触碰文件系统与事件存储）。 */
+export declare class AccessTracker {
+  recordRead(path: string, contentHash: string): void
+  recordCreate(path: string): void
+  recordEdit(path: string): void
+  recordDelete(path: string): void
+  recordMove(source: string, destination: string): void
+  recordGrep(pattern: string, path: string): void
+  recordGlob(pattern: string): void
+  recordAttemptedMutation(path: string, committed: boolean): void
+  getRelatedPaths(): string[]
+
+  RecordRead(path: string, contentHash: string): void
+  RecordCreate(path: string): void
+  RecordEdit(path: string): void
+  RecordDelete(path: string): void
+  RecordMove(source: string, destination: string): void
+  RecordGrep(pattern: string, path: string): void
+  RecordGlob(pattern: string): void
+  RecordAttemptedMutation(path: string, committed: boolean): void
+  GetRelatedPaths(): string[]
+}
+
+/** CASE-003 / KR-003: 会话级观测与实质性访问累积器。 */
+export declare class CasebookObservationCollector {
+  getTracker(sessionId: string): AccessTracker
+  Collect(sessionId: string, toolName: string, args: unknown, output: string): void
+  RecordFileRead(sessionId: string, path: string, output: string, contentHash?: string): void
+  Drain(sessionId: string): CasebookFileRead[]
+  Count(sessionId: string): number
+}
+
+export declare const casebookObservationCollector: CasebookObservationCollector

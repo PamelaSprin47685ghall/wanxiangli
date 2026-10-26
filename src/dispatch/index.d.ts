@@ -74,3 +74,50 @@ export declare class Dispatch {
   /** messages 按时间先后；只看最后 recoveryTailWindow 条、role=user、PromptKey 完全一致。 */
   recover(input: { promptKey: string; hasReceipt: boolean; messages: readonly RecoveryMessage[] }): RecoveryVerdict
 }
+
+export interface DeliveryFence {
+  readonly sessionId: string
+  readonly providerRun: string
+  readonly callId: string
+}
+
+export interface InterruptFacts {
+  readonly issued: boolean
+  readonly observed?: unknown
+}
+
+export interface DeliveryAttemptRecord {
+  readonly fence: DeliveryFence
+  readonly physical?: string | null
+  readonly established: boolean
+  readonly presented: boolean
+  readonly interrupt: InterruptFacts
+  readonly interruptTask?: unknown
+  readonly sequence: number
+}
+
+export interface DeliveryWitnessRecord {
+  readonly sessionId: string
+  readonly providerRun: string
+  readonly callId?: string
+  readonly toolCallId?: string
+  readonly physicalUserMessageId: string
+}
+
+export declare class DeliveryAttemptLedger {
+  constructor()
+  recordEstablished(fence: DeliveryFence | Record<string, unknown>, physical?: string | null): boolean
+  recordPresented(fence: DeliveryFence | Record<string, unknown>): boolean
+  tryFindEstablished(sessionId: string, physical?: string | null): DeliveryAttemptRecord | undefined
+  hasEstablished(sessionId: string): boolean
+  recordInterruptIssued(fence: DeliveryFence | Record<string, unknown>, task: unknown): boolean
+  recordInterruptObserved(fence: DeliveryFence | Record<string, unknown>, outcome: unknown): boolean
+  interruptFacts(fence: DeliveryFence | Record<string, unknown>): InterruptFacts
+  activeInterruptTask(sessionId: string, providerRun: string): unknown | undefined
+  dropSession(sessionId: string): void
+  clear(): void
+  tryFindDurableEstablished(witnesses: readonly unknown[], sessionId: string, physical?: string | null): DeliveryFence | undefined
+  hasDurableEstablished(witnesses: readonly unknown[], sessionId: string): boolean
+}
+
+export declare const deliveryAttemptLedger: DeliveryAttemptLedger

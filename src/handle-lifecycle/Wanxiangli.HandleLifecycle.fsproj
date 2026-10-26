@@ -5,6 +5,10 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="JoinAttemptRegistry.fs" />
     <Compile Include="HandleLifecycleLaw.fs" />
+    <PackageExport Include="JoinAttemptRegistry.fs" Member="JoinAttemptRegistry" />
+    <PackageExport Include="JoinAttemptRegistry.fs" Member="joinAttemptRegistry" />
+    <PackageExport Include="HandleLifecycleLaw.fs" Member="HandleLifecycleLaw" />
   </ItemGroup>
 </Project>

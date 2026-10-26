@@ -41,3 +41,16 @@
 - 连续失败上限的数值：预算（Available/Exhausted）与 breaker（Closed/Open）作为输入事实给出，由调用方 owner 维护；本包不计数。
 - 与 delegation、process 的边界：本包只说"这个失败导致什么动作"，实际发送与执行在各自 owner。
 - 旧系统的十一类失败照旧作为输入分类保留（vibe-fs execution-failure-policy 现行契约），但只映射到上面五路决议；fatal 只有 FatalAfterSettlement 一种，不另设登记表。
+
+
+## ProviderAttemptStopFence
+
+层：内核。宿主「已停止自动重试」的进程内发送栅栏（provider-attempt-recovery-022）。
+持有 private `stopped: HashSet<string>`、`waiters: Dictionary<string, TaskCompletionSource<string>>`、`denied: HashSet<string>` 及私有并发锁 `gate`。
+公开能力：
+- `Register(sessionId, providerRun)`: 登记 attempt，若已停止返回 AlreadyStopped，否则 Admitted。
+- `SignalStop(sessionId, providerRun)`: 标记停止并唤醒等待者，幂等。
+- `WaitForStop(sessionId, providerRun, timeoutMs?)`: 等待确切停止证据，返回 Stopped / TimedOut / Denied。
+- `Revoke(sessionId)`: 批量拒绝目标会话当前等待中的 attempt，不污染后续 attempt，幂等。
+- `Clear(sessionId)` / `ClearAll()`: 清空指定会话或全部状态，重复调用幂等不误伤新 attempt。
+- `Snapshot()`: 返回只读诊断快照（stopped / waiting / denied），不暴露内部集合。

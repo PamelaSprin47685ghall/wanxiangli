@@ -2,8 +2,8 @@
  * wanxiangli/handle-lifecycle — the single-winner lifecycle of one delegation handle and of
  * one admitted work under it (vibe-fs CUT-13 sub-loop 1; delegation EXEC-004 / EXEC-009).
  *
- * Pure computation. The caller holds the handle and work cells, answers the keyed lookups and
- * value equalities, and writes the phase a `set` verdict names together with its own payload.
+ * Package-08: JoinAttemptRegistry maintains in-process join lease exclusivity and
+ * visible message deduplication facts without async runtime handles.
  */
 export type Phase = 'Active' | 'CompletedAwaitingJoin' | 'Abandoned' | 'Retired'
 
@@ -78,3 +78,52 @@ export declare class HandleLifecycleLaw {
   work(input: WorkInput): Verdict
   recoverChild(input: RecoverChildInput): ChildResolution
 }
+
+export interface AcquireVerdict {
+  readonly acquired: boolean
+  readonly targetSessionId: string
+  readonly attemptId: string
+  readonly reason: 'AlreadyAcquired' | null
+  readonly existingAttemptId?: string
+}
+
+export interface ReleaseVerdict {
+  readonly released: boolean
+  readonly targetSessionId: string
+  readonly attemptId: string
+}
+
+export interface SignalMessageVerdict {
+  readonly woken: boolean
+  readonly targetSessionId: string
+  readonly attemptId: string | null
+  readonly reason: 'UserMessageArrived' | 'DuplicateMessage' | 'NoActiveLease'
+  readonly messageId: string
+}
+
+export interface ClearSessionVerdict {
+  readonly cleared: boolean
+  readonly targetSessionId: string
+  readonly droppedLease: boolean
+  readonly droppedMessagesCount: number
+}
+
+export interface JoinAttemptSnapshot {
+  readonly targetSessionId: string
+  readonly isAcquired: boolean
+  readonly attemptId: string | null
+  readonly woken: boolean
+  readonly seenMessages: readonly string[]
+}
+
+export declare class JoinAttemptRegistry {
+  acquire(targetSessionId: string, attemptId: string): AcquireVerdict
+  release(targetSessionId: string, attemptId: string): ReleaseVerdict
+  signalVisibleUserMessage(targetSessionId: string, messageId: string): SignalMessageVerdict
+  clearSession(targetSessionId: string): ClearSessionVerdict
+  isAcquired(targetSessionId: string): boolean
+  hasSeenMessage(targetSessionId: string, messageId: string): boolean
+  snapshot(targetSessionId: string): JoinAttemptSnapshot
+}
+
+export declare const joinAttemptRegistry: JoinAttemptRegistry
