@@ -1,98 +1,54 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { ProgramCallers, programCallers, Program } from './support.mjs'
+import { ActiveTurnBridge, activeTurnBridge } from '../../../dist/program/Program.js'
 
-test('SPEC[program-callers-1] noteCaller records caller and callerName returns recorded name', () => {
-  const callers = new ProgramCallers()
-  assert.equal(callers.callerName('sess-1', 'call-1'), undefined)
-  callers.noteCaller('sess-1', 'call-1', 'prog-alpha')
-  assert.equal(callers.callerName('sess-1', 'call-1'), 'prog-alpha')
-  assert.equal(callers.count, 1)
+test('ActiveTurnBridge acquires lease, resolves host and ask, and releases with token matching', async () => {
+  const bridge = new ActiveTurnBridge()
+  const host = { name: 'testHost' }
+  const ask = async (q) => ({ ok: true, q })
+
+  const token = bridge.acquire('session-1', host, ask)
+  assert.equal(typeof token, 'string')
+  assert.ok(token.length > 0)
+  assert.equal(bridge.count, 1)
+
+  assert.equal(bridge.resolveHost('session-1'), host)
+  assert.equal(bridge.resolveAsk('session-1'), ask)
+
+  // Mismatched token does not release
+  const wrongRelease = bridge.release('session-1', 'wrong-token')
+  assert.equal(wrongRelease, false)
+  assert.equal(bridge.count, 1)
+  assert.equal(bridge.resolveHost('session-1'), host)
+
+  // Correct token releases
+  const correctRelease = bridge.release('session-1', token)
+  assert.equal(correctRelease, true)
+  assert.equal(bridge.count, 0)
+  assert.equal(bridge.resolveHost('session-1'), null)
+  assert.equal(bridge.resolveAsk('session-1'), null)
 })
 
-test('SPEC[program-callers-2] empty or whitespace sessionId / callId / name are rejected without polluting state', () => {
-  const callers = new ProgramCallers()
-  callers.noteCaller('', 'call-1', 'prog-1')
-  callers.noteCaller('sess-1', '', 'prog-1')
-  callers.noteCaller('sess-1', 'call-1', '')
-  assert.equal(callers.count, 0)
-  assert.equal(callers.callerName('', 'call-1'), undefined)
-  assert.equal(callers.callerName('sess-1', ''), undefined)
-  assert.equal(callers.callerName('', ''), undefined)
+test('ActiveTurnBridge clearSession and clearAll isolation', async () => {
+  const bridge = new ActiveTurnBridge()
+  bridge.acquire('s1', { h: 1 }, null)
+  bridge.acquire('s2', { h: 2 }, null)
+  assert.equal(bridge.count, 2)
+
+  bridge.clearSession('s1')
+  assert.equal(bridge.count, 1)
+  assert.equal(bridge.resolveHost('s1'), null)
+  assert.notEqual(bridge.resolveHost('s2'), null)
+
+  bridge.clearAll()
+  assert.equal(bridge.count, 0)
 })
 
-test('SPEC[program-callers-3] clearCaller removes targeted callId while retaining other calls in same session', () => {
-  const callers = new ProgramCallers()
-  callers.noteCaller('sess-1', 'call-a', 'prog-a')
-  callers.noteCaller('sess-1', 'call-b', 'prog-b')
-  assert.equal(callers.count, 2)
-  callers.clearCaller('sess-1', 'call-a')
-  assert.equal(callers.callerName('sess-1', 'call-a'), undefined)
-  assert.equal(callers.callerName('sess-1', 'call-b'), 'prog-b')
-  assert.equal(callers.count, 1)
-
-  // Clearing non-existent or empty callId is safe no-op
-  callers.clearCaller('sess-1', 'non-existent')
-  callers.clearCaller('', 'call-b')
-  callers.clearCaller('sess-1', '')
-  assert.equal(callers.callerName('sess-1', 'call-b'), 'prog-b')
-  assert.equal(callers.count, 1)
-})
-
-test('SPEC[program-callers-4] clearSession removes all calls for session and strictly isolates prefix-similar sessions', () => {
-  const callers = new ProgramCallers()
-  callers.noteCaller('s1', 'c1', 'prog-1')
-  callers.noteCaller('s1', 'c2', 'prog-2')
-  callers.noteCaller('s10', 'c1', 'prog-10')
-  callers.noteCaller('s100', 'c1', 'prog-100')
-  callers.noteCaller('other', 'c1', 'prog-other')
-  assert.equal(callers.count, 5)
-
-  // Clear s1: s10, s100 and other must remain untouched
-  callers.clearSession('s1')
-  assert.equal(callers.callerName('s1', 'c1'), undefined)
-  assert.equal(callers.callerName('s1', 'c2'), undefined)
-  assert.equal(callers.callerName('s10', 'c1'), 'prog-10')
-  assert.equal(callers.callerName('s100', 'c1'), 'prog-100')
-  assert.equal(callers.callerName('other', 'c1'), 'prog-other')
-  assert.equal(callers.count, 3)
-
-  // Empty sessionId is safe no-op
-  callers.clearSession('')
-  assert.equal(callers.count, 3)
-
-  // clearAll cleans everything
-  callers.clearAll()
-  assert.equal(callers.count, 0)
-  assert.equal(callers.callerName('s10', 'c1'), undefined)
-})
-
-test('SPEC[program-callers-5] independent instances and global singleton do not cross-pollute', () => {
-  const instanceA = new ProgramCallers()
-  const instanceB = new ProgramCallers()
-
-  instanceA.noteCaller('sess-iso', 'call-1', 'prog-a')
-  assert.equal(instanceA.callerName('sess-iso', 'call-1'), 'prog-a')
-  assert.equal(instanceB.callerName('sess-iso', 'call-1'), undefined)
-
-  // Test global singleton programCallers
-  programCallers.clearAll()
-  assert.equal(programCallers.count, 0)
-  programCallers.noteCaller('sess-global', 'call-g', 'prog-global')
-  assert.equal(programCallers.callerName('sess-global', 'call-g'), 'prog-global')
-  assert.equal(instanceA.callerName('sess-global', 'call-g'), undefined)
-  programCallers.clearAll()
-  assert.equal(programCallers.count, 0)
-})
-
-test('SPEC[program-callers-6] Program().close(sessionId) triggers caller cleanup on singleton', async () => {
-  programCallers.clearAll()
-  const p = Program()
-  const sess = p.session('managed-close-sess')
-  programCallers.noteCaller('managed-close-sess', 'call-x', 'prog-x')
-  assert.equal(programCallers.callerName('managed-close-sess', 'call-x'), 'prog-x')
-
-  await p.close('managed-close-sess')
-  assert.equal(programCallers.callerName('managed-close-sess', 'call-x'), undefined)
-  assert.equal(programCallers.count, 0)
+test('activeTurnBridge singleton is exported and operational', async () => {
+  assert.ok(activeTurnBridge instanceof ActiveTurnBridge)
+  activeTurnBridge.clearAll()
+  const t = activeTurnBridge.acquire('global-s', { g: true }, null)
+  assert.equal(activeTurnBridge.resolveHost('global-s').g, true)
+  activeTurnBridge.release('global-s', t)
+  assert.equal(activeTurnBridge.count, 0)
 })

@@ -76,3 +76,36 @@ export interface SignalBroadcaster {
   snapshot(): readonly ((signal: any) => any)[];
 }
 export const SignalBroadcaster: { new(): SignalBroadcaster };
+
+export interface SessionFamilyResult {
+  readonly ok: boolean;
+  readonly root: string | null;
+  readonly error: string | null;
+  readonly isOk: boolean;
+  readonly isError: boolean;
+}
+
+export interface SessionFamilyTree {
+  registerChild(parentId: string, childId: string): string;
+  resolveFamilyRoot(
+    targetId: string,
+    stepQuery: (current: string) => Promise<{ ok: boolean; parent?: string | null; error?: string | null } | any>
+  ): Promise<SessionFamilyResult>;
+  familyRootOf(sessionId: string): string;
+  isManagedChild(sessionId: string): boolean;
+  listChildren(parentId: string): readonly string[];
+  childrenToAbort(parentId: string): readonly string[];
+  settleAbort(parentId: string, results: readonly (readonly [string, boolean])[]): void;
+  settleAbortOne(parentId: string, childId: string, isAborted: boolean): void;
+  endAbort(parentId: string): void;
+  detachChild(childId: string): void;
+  clearSession(sessionId: string): void;
+  clearAll(): void;
+  snapshot(): {
+    readonly roots: readonly string[];
+    readonly childParents: readonly (readonly [string, string])[];
+    readonly abortingRoots: readonly string[];
+    readonly clearedChildren: readonly string[];
+  };
+}
+export const SessionFamilyTree: { new(familyParent?: (sessionId: string) => string | null | undefined): SessionFamilyTree };

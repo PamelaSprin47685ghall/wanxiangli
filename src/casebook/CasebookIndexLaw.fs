@@ -278,3 +278,6 @@ let casebookIndex = CasebookIndex()
 
 type FetchFlightRegistry = Wanxiangli.Casebook.FetchFlightRegistry.FetchFlightRegistry
 let fetchFlightRegistry = Wanxiangli.Casebook.FetchFlightRegistry.fetchFlightRegistry
+
+type BookkeeperLedger = Wanxiangli.Casebook.BookkeeperLedger.BookkeeperLedger
+let bookkeeperLedger = Wanxiangli.Casebook.BookkeeperLedger.bookkeeperLedger

@@ -163,3 +163,41 @@ export declare class FetchFlightRegistry {
 
 /** 进程内唯一 Casebook Fetch 单飞注册表；ES 模块缓存保证全进程同一实例。 */
 export declare const fetchFlightRegistry: FetchFlightRegistry
+
+
+/** Bookkeeper 会话附着只读快照。 */
+export interface BookkeeperAttachment {
+  readonly txId: string
+  readonly ownerSessionId: string
+  readonly attachment: string
+}
+
+/** 进程内 Bookkeeper 会话附着与提示词单次授权自治对象。 */
+export declare class BookkeeperLedger {
+  constructor()
+  /** 绑定 Bookkeeper 子会话到特定事务与所有者会话。若已存在绑定则原子覆盖并清空旧待办授权。 */
+  bind(sessionId: string, txId: string, ownerSessionId: string): void
+  /** 解除会话附着，并原子撤销关联的待办提示词授权。 */
+  unbind(sessionId: string): void
+  /** 查询会话关联的事务 ID。 */
+  tryTxId(sessionId: string): string | undefined
+  /** 获取会话关联的事务 ID，未附着返回空字符串。 */
+  txIdFor(sessionId: string): string
+  /** 判定会话是否属于活跃附着的 Bookkeeper worker。 */
+  isAttached(sessionId: string): boolean
+  /** 获取只读附着快照，未附着返回 undefined。 */
+  getAttachment(sessionId: string): BookkeeperAttachment | null
+  /** 登记当前附着会话预期的提示词单次授权。仅对处于活跃附着的会话生效并返回 true；未附着直接拒绝返回 false。 */
+  authorize(sessionId: string, agent: string, text: string): boolean
+  /**
+   * 单次消费提示词授权。
+   * 仅在会话存在未消费授权、所属附着仍存在且 txId 一致、agent 与 text 均严格逐字节精确匹配时才消费成功（原子删除并返回 true）；
+   * 任何参数不匹配、txId 不一致或未授权均返回 false 且保留已有授权。
+   */
+  tryConsume(sessionId: string, agent: string, text: string): boolean
+  /** 清空所有附着与提示词授权状态。 */
+  clear(): void
+}
+
+/** 进程内唯一 Bookkeeper 会话附着与提示词授权账本实例；ES 模块缓存保证全进程同一实例。 */
+export declare const bookkeeperLedger: BookkeeperLedger

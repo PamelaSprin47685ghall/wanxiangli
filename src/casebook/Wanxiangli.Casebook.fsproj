@@ -8,6 +8,7 @@
     <Compile Include="BookkeeperStaging.fs" />
     <Compile Include="SessionDraftStore.fs" />
     <Compile Include="FetchFlightRegistry.fs" />
+    <Compile Include="BookkeeperLedger.fs" />
     <Compile Include="CasebookIndexLaw.fs" />
     <PackageExport Include="BookkeeperStaging.fs" Member="BookkeeperStaging" />
     <PackageExport Include="BookkeeperStaging.fs" Member="bookkeeperStaging" />
@@ -15,6 +16,8 @@
     <PackageExport Include="SessionDraftStore.fs" Member="sessionDraftStore" />
     <PackageExport Include="FetchFlightRegistry.fs" Member="FetchFlightRegistry" />
     <PackageExport Include="FetchFlightRegistry.fs" Member="fetchFlightRegistry" />
+    <PackageExport Include="BookkeeperLedger.fs" Member="BookkeeperLedger" />
+    <PackageExport Include="BookkeeperLedger.fs" Member="bookkeeperLedger" />
     <PackageExport Include="CasebookIndexLaw.fs" Member="CasebookIndex" />
     <PackageExport Include="CasebookIndexLaw.fs" Member="casebookIndex" />
     <PackageExport Include="CasebookIndexLaw.fs" Member="CasebookIndexLaw" />

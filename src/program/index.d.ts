@@ -86,3 +86,16 @@ export declare class ProgramCallers {
   inspect(): { readonly count: number; readonly keys: string[] }
 }
 export declare const programCallers: ProgramCallers
+
+export declare class ActiveTurnBridge {
+  constructor()
+  acquire(sessionId: string, host: unknown, ask: unknown): string
+  release(sessionId: string, token: string): boolean
+  resolveHost(sessionId: string): unknown | null
+  resolveAsk(sessionId: string): unknown | null
+  clearSession(sessionId: string): void
+  clearAll(): void
+  readonly count: number
+  inspect(): { readonly count: number; readonly sessions: string[] }
+}
+export declare const activeTurnBridge: ActiveTurnBridge

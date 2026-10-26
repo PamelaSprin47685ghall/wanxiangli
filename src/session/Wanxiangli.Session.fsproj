@@ -8,10 +8,12 @@
   <ItemGroup>
     <Compile Include="Wire.fs" />
     <Compile Include="Message.fs" />
+    <Compile Include="SessionFamilyTree.fs" />
     <Compile Include="Ownership.fs" />
     <PackageExport Include="Ownership.fs" Member="Ownership" />
     <PackageExport Include="Ownership.fs" Member="SessionTopologyStore" />
     <PackageExport Include="Ownership.fs" Member="sessionTopologyStore" />
     <PackageExport Include="Ownership.fs" Member="SignalBroadcaster" />
+    <PackageExport Include="SessionFamilyTree.fs" Member="SessionFamilyTree" />
   </ItemGroup>
 </Project>

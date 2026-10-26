@@ -42,3 +42,17 @@
 
 7. [knowledge-reuse-008/011/012/013] 公开索引状态机：独占持有私有 frozen 快照与 dirty 失效标记。首次冻结即使空 cases 也生成 epoch = 0n、dirty = false；后续无变化且非 dirty 时不推进 epoch；invalidate 或内容/顺序变动推进 epoch；返回防御性深/浅拷贝隔离外部修改；locate 与 shelfmarkFor 保持确定性；独立实例与单例相互隔离。
     - 证明：`tests/014.test.mjs`.
+
+
+8. [knowledge-reuse-006 / interaction-authority-018 / capability-enforcement-006] Bookkeeper 会话附着与提示词单次授权自治状态机 (BookkeeperLedger)：
+    - 绑定附着：bind(sessionId, txId, ownerSessionId) 登记活附着 {txId, ownerSessionId, attachment: "bookkeeper:" + txId}。重复 bind 同一 sessionId 原子覆盖旧附着，并清空该会话原有的待办提示词授权（防跨事务代际泄露）；
+    - 解绑撤销：unbind(sessionId) 幂等移除附着，并原子撤销该会话所有关联待办提示词授权（防解绑后幽灵授权残留）；
+    - 状态查询：isAttached 判定附着有效性，作为能力准入的 owner-held attachment 事实依据；tryTxId/txIdFor 提供只读事务映射；getAttachment 提供防御性浅拷贝原生对象，严禁泄露内部可变别名；
+    - 单次授权门禁：authorize 仅对当前处于附着状态的会话生效且强绑定当前 txId。tryConsume 严格要求当前会话存在未消费授权、所属附着仍存在且 txId 一致、传入的 explicitAgent 与 text 均严格逐字节精确匹配，三者满足时原子删除条目并返回 true；任何参数不匹配或未授权均返回 false 且绝不删除已有授权（防误消费与防篡改）；
+    - 会话隔离：所有操作按 sessionId 隔离，互不影响；clear 排空所有会话绑定与授权。
+    - 推理：Bookkeeper 是无公开权限的专用内部辅助会话，其工具准入完全取决于会话是否处于附着状态；提示词派发必须满足单次消费与参数逐字节一致门禁，解绑清空授权杜绝代际泄漏。
+
+# SPEC (续2)
+
+8. [LEMMA 8] 附着生命周期（bind/unbind/txIdFor/isAttached/getAttachment）、授权单次消费与精确匹配（agent/text 不匹配拒绝且保留）、解绑清空授权、重新绑定清空旧授权、未附着拒绝授权、多会话强隔离及单例独立性等边界反例全部成立。
+    - 证明：tests/017.test.mjs。
