@@ -149,3 +149,7 @@ type DelegateBatchLaw() =
                 if r = role then Some id else None)
 
         if List.contains current order then frozenArray order else null
+
+type JoinGuardScope = JoinGuardReservationStore.JoinGuardScope
+type JoinGuardReservationStore = JoinGuardReservationStore.JoinGuardReservationStore
+let joinGuardReservationStore = JoinGuardReservationStore.joinGuardReservationStore

@@ -68,3 +68,233 @@ test('SPEC[chat-execution-3] malformed recovery input is refused', () => {
   assert.throws(() => recover({ current: S, policy: { resolution: 'Other', matches: true } }), /resolution/)
   assert.throws(() => recover({ persistence: 'Maybe' }), /persistence/)
 })
+
+
+// --- HOST-004: SessionQuiescenceGate process-local admission gate tests ---
+import { SessionQuiescenceGate, sessionQuiescenceGate } from 'wanxiangli/chat-execution'
+
+test('SPEC[quiescence-gate-001] BeginProviderAttempt -> ObserveIdle -> TryConsume 成功', () => {
+  const gate = new SessionQuiescenceGate()
+  const session = 'ses-normal-002'
+
+  gate.BeginProviderAttempt(session)
+  const permit = gate.ObserveIdle(session)
+  assert.ok(permit, 'permit must be returned')
+
+  const res = gate.TryConsume(permit)
+  assert.deepEqual(res, { ok: true, reason: null })
+})
+
+test('SPEC[quiescence-gate-002] 重复 TryConsume 报 AlreadyConsumed', () => {
+  const gate = new SessionQuiescenceGate()
+  const session = 'ses-duplicate-consume-002'
+
+  gate.BeginProviderAttempt(session)
+  const permit1 = gate.ObserveIdle(session)
+  const permit2 = gate.ObserveIdle(session)
+  assert.equal(permit1, permit2, 'replayed idle in same state returns identical token')
+
+  assert.deepEqual(gate.TryConsume(permit1), { ok: true, reason: null })
+  assert.deepEqual(gate.TryConsume(permit1), { ok: false, reason: 'AlreadyConsumed' })
+  assert.deepEqual(gate.TryConsume(permit2), { ok: false, reason: 'AlreadyConsumed' })
+})
+
+test('SPEC[quiescence-gate-003] TryRelease 归还后可再消费', () => {
+  const gate = new SessionQuiescenceGate()
+  const session = 'ses-release-002'
+
+  gate.BeginProviderAttempt(session)
+  const permit = gate.ObserveIdle(session)
+
+  assert.deepEqual(gate.TryRelease(permit), { ok: false, reason: 'NoFreshIdle' })
+  assert.deepEqual(gate.TryConsume(permit), { ok: true, reason: null })
+  assert.deepEqual(gate.TryRelease(permit), { ok: true, reason: null })
+  assert.deepEqual(gate.TryConsume(permit), { ok: true, reason: null })
+  assert.deepEqual(gate.TryConsume(permit), { ok: false, reason: 'AlreadyConsumed' })
+})
+
+test('SPEC[quiescence-gate-004] 未经 BeginProviderAttempt 的 ObserveIdle 不可消费 (NoFreshIdle)', () => {
+  const gate = new SessionQuiescenceGate()
+  const session = 'ses-no-attempt-002'
+
+  const unownedIdle = gate.ObserveIdle(session)
+  assert.ok(unownedIdle)
+
+  const res = gate.TryConsume(unownedIdle)
+  assert.deepEqual(res, { ok: false, reason: 'NoFreshIdle' })
+})
+
+test('SPEC[quiescence-gate-005] activeToolCounts > 0 时禁止消费 (NoFreshIdle)，EndToolExecution 恢复', () => {
+  const gate = new SessionQuiescenceGate()
+  const session = 'ses-tools-002'
+
+  gate.BeginProviderAttempt(session)
+  const permit = gate.ObserveIdle(session)
+
+  gate.BeginToolExecution(session)
+  assert.deepEqual(gate.TryConsume(permit), { ok: false, reason: 'NoFreshIdle' })
+
+  gate.BeginToolExecution(session)
+  assert.deepEqual(gate.TryConsume(permit), { ok: false, reason: 'NoFreshIdle' })
+
+  gate.EndToolExecution(session)
+  assert.deepEqual(gate.TryConsume(permit), { ok: false, reason: 'NoFreshIdle' })
+
+  gate.EndToolExecution(session)
+  assert.deepEqual(gate.TryConsume(permit), { ok: true, reason: null })
+})
+
+test('SPEC[quiescence-gate-006] 新 BeginProviderAttempt 使旧 permit 报 Superseded', () => {
+  const gate = new SessionQuiescenceGate()
+  const session = 'ses-superseded-002'
+
+  gate.BeginProviderAttempt(session)
+  const oldPermit = gate.ObserveIdle(session)
+
+  gate.BeginProviderAttempt(session)
+  const newPermit = gate.ObserveIdle(session)
+
+  assert.deepEqual(gate.TryConsume(oldPermit), { ok: false, reason: 'Superseded' })
+  assert.deepEqual(gate.TryRelease(oldPermit), { ok: false, reason: 'Superseded' })
+  assert.deepEqual(gate.TryConsume(newPermit), { ok: true, reason: null })
+})
+
+test('SPEC[quiescence-gate-007] ObservePhysicalUserMessage 幂等性与新消息撤销当前 attempt (Revoked)', () => {
+  const gate = new SessionQuiescenceGate()
+  const session = 'ses-physical-msg-002'
+
+  gate.ObservePhysicalUserMessage(session, 'msg-1')
+  gate.BeginProviderAttempt(session)
+  const permit = gate.ObserveIdle(session)
+
+  gate.ObservePhysicalUserMessage(session, 'msg-1')
+  assert.deepEqual(gate.TryConsume(permit), { ok: true, reason: null })
+
+  gate.ObservePhysicalUserMessage(session, 'msg-2')
+  assert.deepEqual(gate.TryRelease(permit), { ok: false, reason: 'Revoked' })
+
+  gate.BeginProviderAttempt(session)
+  const freshPermit = gate.ObserveIdle(session)
+  assert.deepEqual(gate.TryConsume(freshPermit), { ok: true, reason: null })
+})
+
+test('SPEC[quiescence-gate-008] RevokeCurrentAttempt 永久撤销直到下一轮 BeginProviderAttempt', () => {
+  const gate = new SessionQuiescenceGate()
+  const session = 'ses-revoke-002'
+
+  gate.BeginProviderAttempt(session)
+  const permit = gate.ObserveIdle(session)
+
+  gate.RevokeCurrentAttempt(session)
+  assert.deepEqual(gate.TryConsume(permit), { ok: false, reason: 'Revoked' })
+
+  const delayedIdle = gate.ObserveIdle(session)
+  assert.deepEqual(gate.TryConsume(delayedIdle), { ok: false, reason: 'Revoked' })
+
+  gate.BeginProviderAttempt(session)
+  const nextPermit = gate.ObserveIdle(session)
+  assert.deepEqual(gate.TryConsume(nextPermit), { ok: true, reason: null })
+})
+
+test('SPEC[quiescence-gate-009] 跨实例 WrongOwner 拒绝', () => {
+  const gateA = new SessionQuiescenceGate()
+  const gateB = new SessionQuiescenceGate()
+  const session = 'ses-owner-002'
+
+  gateA.BeginProviderAttempt(session)
+  const permitA = gateA.ObserveIdle(session)
+
+  assert.deepEqual(gateB.TryConsume(permitA), { ok: false, reason: 'WrongOwner' })
+  assert.deepEqual(gateB.TryRelease(permitA), { ok: false, reason: 'WrongOwner' })
+
+  assert.deepEqual(gateA.TryConsume({}), { ok: false, reason: 'WrongOwner' })
+  assert.deepEqual(gateA.TryConsume(null), { ok: false, reason: 'WrongOwner' })
+  assert.deepEqual(gateA.TryConsume('fake-token'), { ok: false, reason: 'WrongOwner' })
+
+  assert.deepEqual(gateA.TryConsume(permitA), { ok: true, reason: null })
+})
+
+test('SPEC[quiescence-gate-010] DropSession 保留 serial 墓碑防止重用碰撞', () => {
+  const gate = new SessionQuiescenceGate()
+  const session = 'ses-drop-002'
+
+  gate.BeginProviderAttempt(session)
+  const permit = gate.ObserveIdle(session)
+
+  gate.DropSession(session)
+  assert.deepEqual(gate.TryConsume(permit), { ok: false, reason: 'NoFreshIdle' })
+
+  gate.BeginProviderAttempt(session)
+  assert.deepEqual(gate.TryConsume(permit), { ok: false, reason: 'Superseded' })
+
+  const freshPermit = gate.ObserveIdle(session)
+  assert.deepEqual(gate.TryConsume(freshPermit), { ok: true, reason: null })
+})
+
+test('SPEC[quiescence-gate-011] permit.toJSON() 抛错', () => {
+  const gate = new SessionQuiescenceGate()
+  const session = 'ses-json-002'
+
+  gate.BeginProviderAttempt(session)
+  const permit = gate.ObserveIdle(session)
+
+  assert.throws(
+    () => JSON.stringify(permit),
+    /QuiescencePermit is process-local and cannot be serialized/
+  )
+  assert.throws(
+    () => JSON.stringify({ wrapper: permit }),
+    /QuiescencePermit is process-local and cannot be serialized/
+  )
+})
+
+test('SPEC[quiescence-gate-012] LivePermitCount 资源计数正确', () => {
+  const gate = new SessionQuiescenceGate()
+  const session = 'ses-count-002'
+
+  assert.equal(gate.LivePermitCount, 0)
+
+  for (let i = 0; i < 10; i++) {
+    gate.BeginProviderAttempt(session)
+    const p1 = gate.ObserveIdle(session)
+    const p2 = gate.ObserveIdle(session)
+    assert.equal(gate.LivePermitCount, 1)
+  }
+
+  gate.RevokeCurrentAttempt(session)
+  assert.equal(gate.LivePermitCount, 0)
+
+  gate.BeginProviderAttempt(session)
+  gate.ObserveIdle(session)
+  assert.equal(gate.LivePermitCount, 1)
+
+  gate.DropSession(session)
+  assert.equal(gate.LivePermitCount, 0)
+})
+
+test('SPEC[quiescence-gate-013] CaptureCurrentAttempt 与 ObserveIdleFor 行为正确', () => {
+  const gate = new SessionQuiescenceGate()
+  const session = 'ses-observe-idle-for-002'
+
+  gate.BeginProviderAttempt(session)
+  const observation = gate.CaptureCurrentAttempt(session)
+  assert.ok(observation)
+
+  const permit = gate.ObserveIdleFor(observation)
+  assert.ok(permit)
+  assert.deepEqual(gate.TryConsume(permit), { ok: true, reason: null })
+
+  gate.BeginProviderAttempt(session)
+  const stalePermit = gate.ObserveIdleFor(observation)
+  assert.equal(stalePermit, null)
+})
+
+test('SPEC[quiescence-gate-014] 全局单例 sessionQuiescenceGate 正常可用', () => {
+  assert.ok(sessionQuiescenceGate instanceof SessionQuiescenceGate)
+  const session = 'ses-singleton-002'
+
+  sessionQuiescenceGate.BeginProviderAttempt(session)
+  const permit = sessionQuiescenceGate.ObserveIdle(session)
+  assert.deepEqual(sessionQuiescenceGate.TryConsume(permit), { ok: true, reason: null })
+  sessionQuiescenceGate.DropSession(session)
+})

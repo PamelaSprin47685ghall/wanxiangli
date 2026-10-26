@@ -74,3 +74,15 @@ export interface ProgramSessions {
 }
 export function ProgramSession(sessionId: string): ProgramSessionInstance
 export function Program(): ProgramSessions
+
+export declare class ProgramCallers {
+  constructor()
+  noteCaller(sessionId: string, callId: string, name: string): void
+  clearCaller(sessionId: string, callId: string): void
+  callerName(sessionId: string, callId: string): string | undefined
+  clearSession(sessionId: string): void
+  clearAll(): void
+  readonly count: number
+  inspect(): { readonly count: number; readonly keys: string[] }
+}
+export declare const programCallers: ProgramCallers

@@ -6,8 +6,15 @@
     <Compile Include="Wire.fs" />
     <Compile Include="Program.fs" />
     <Compile Include="State.fs" />
+    <Compile Include="WorkspaceLifecycle.fs" />
     <Compile Include="Work.fs" />
     <PackageExport Include="Work.fs" Member="Work" />
     <PackageExport Include="Work.fs" Member="abandonLocalState" />
+    <PackageExport Include="WorkspaceLifecycle.fs" Member="RootWorkspaceCell" />
+    <PackageExport Include="WorkspaceLifecycle.fs" Member="rootWorkspaceCell" />
+    <PackageExport Include="WorkspaceLifecycle.fs" Member="SharedEventStorePool" />
+    <PackageExport Include="WorkspaceLifecycle.fs" Member="sharedEventStorePool" />
+    <PackageExport Include="WorkspaceLifecycle.fs" Member="SharedAsyncJournalPool" />
+    <PackageExport Include="WorkspaceLifecycle.fs" Member="sharedAsyncJournalPool" />
   </ItemGroup>
 </Project>

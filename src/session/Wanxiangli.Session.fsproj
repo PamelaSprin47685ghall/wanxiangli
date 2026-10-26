@@ -1,10 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Wanxiangli.Ownership</RootNamespace>
+    <!-- Fable-only compilation unit. No dotnet build; see AGENTS.md. -->
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Wire.fs" />
     <Compile Include="Message.fs" />
     <Compile Include="Ownership.fs" />
+    <PackageExport Include="Ownership.fs" Member="Ownership" />
+    <PackageExport Include="Ownership.fs" Member="SessionTopologyStore" />
+    <PackageExport Include="Ownership.fs" Member="sessionTopologyStore" />
+    <PackageExport Include="Ownership.fs" Member="SignalBroadcaster" />
   </ItemGroup>
 </Project>

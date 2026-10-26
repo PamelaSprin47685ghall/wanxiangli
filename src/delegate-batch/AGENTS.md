@@ -18,3 +18,10 @@
 # SPEC
 
 1. [LEMMA 1, 2, 3] 证明：`tests/001.test.mjs`；与 vibe-fs 旧 `SyncDelegateStoreOps` 逐项对照见 vibe-fs `evidence/CUT-13/`。
+
+# Package-15 JoinGuardReservationStore
+
+1. [使用者] 进程内 JoinGuard 针对 (sessionId, terminalProviderRun) 的单飞提醒去重由 JoinGuardReservationStore 自治拥有。
+2. [规矩] formatKey 严格生成 "join-guard:" + sessionId + ":" + terminalProviderRun。
+3. [原子性] tryReserve 在全局锁内原子检查外部 hasOutstandingJoinClaim 谓词、全局 processKeys 以及传入的局部 scope：任一已占用或外部有未决 claim 则拒绝（返回 None/undefined）；通过时原子写入 processKeys 与 scope 并返回 Some(key)。
+4. [释放与清理] release 同步从 processKeys、传入 scope 与已追踪 scopes 移除 key；clearSession 按前缀同步清理指定会话；clearAll 清空全部状态。

@@ -124,3 +124,29 @@ recordNativeRequest(sessionId: string, payload: unknown, model: unknown): boolea
 }
 
 export const outboundViewStore: OutboundViewStore
+
+export interface PairGuidanceMemoryEntry {
+  readonly ordinal: bigint | number
+  readonly callId: string
+  readonly markerText: string
+  readonly callGapKey: string
+  readonly resultGapKey: string
+  readonly raw: unknown
+}
+
+export class PairGuidanceMemoryStore {
+  constructor()
+  readonly source: string
+  readonly idPrefix: string
+  read(sessionKey: string): readonly PairGuidanceMemoryEntry[]
+  append(sessionKey: string, occurrence: unknown): void
+  clear(sessionKey: string): void
+  clearAll(): void
+  nextOrdinal(history: readonly unknown[]): bigint | number
+  isOccupied(visible: readonly unknown[], callGapKey: string, resultGapKey: string): boolean
+  findOrphanedCallIds(history: readonly unknown[], syntheticCallIds: readonly string[]): readonly string[]
+  stableCallId(sessionId: string, ordinal: bigint | number): string
+}
+
+export const pairGuidanceMemoryStore: PairGuidanceMemoryStore
+export const pairGuidanceSource: string

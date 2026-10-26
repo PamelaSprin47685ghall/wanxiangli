@@ -321,3 +321,6 @@ type ChatExecutionLaw() =
     /// failure-policy resolution authorize. Unknown physical or persistence
     /// outcomes are never settled by guess: they go to manual intervention.
     member _.recover(input: obj) : obj = recover input
+
+type SessionQuiescenceGate = Wanxiangli.ChatExecution.SessionQuiescenceGate.SessionQuiescenceGate
+let sessionQuiescenceGate = Wanxiangli.ChatExecution.SessionQuiescenceGate.sessionQuiescenceGate

@@ -5,6 +5,16 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="AblationRuntime.fs" />
     <Compile Include="Ablation.fs" />
+    <PackageExport Include="Ablation.fs" Member="Ablation" />
+    <PackageExport Include="AblationRuntime.fs" Member="AblationToolMapStore" />
+    <PackageExport Include="AblationRuntime.fs" Member="ablationToolMapStore" />
+    <PackageExport Include="AblationRuntime.fs" Member="AblationFactMapStore" />
+    <PackageExport Include="AblationRuntime.fs" Member="ablationFactMapStore" />
+    <PackageExport Include="AblationRuntime.fs" Member="AblationGateState" />
+    <PackageExport Include="AblationRuntime.fs" Member="ablationGateState" />
+    <PackageExport Include="AblationRuntime.fs" Member="AblationConfig" />
+    <PackageExport Include="AblationRuntime.fs" Member="ablationConfig" />
   </ItemGroup>
 </Project>

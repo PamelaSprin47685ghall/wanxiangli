@@ -1,10 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Wanxiangli.Association</RootNamespace>
     <!-- Fable-only compilation unit. No dotnet build; see AGENTS.md. -->
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="TurnBindingStore.fs" />
     <Compile Include="SessionAssociationLaw.fs" />
+    <PackageExport Include="SessionAssociationLaw.fs" Member="SessionAssociationLaw" />
+    <PackageExport Include="TurnBindingStore.fs" Member="TurnBindingStore" />
+    <PackageExport Include="TurnBindingStore.fs" Member="turnBindingStore" />
   </ItemGroup>
 </Project>

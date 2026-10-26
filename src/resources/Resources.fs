@@ -185,3 +185,12 @@ type Resources(?rootDir: string) =
     /// The live global preference as an external name string.
     member _.currentGlobalLanguage() : string =
         GlobalProviderLanguage.current () |> ProviderLanguage.externalName
+
+    member _.setHostConfigPreference(raw: string) : unit =
+        providerLanguageStore.setHostConfigPreference raw
+
+    member _.clearHostConfigPreference() : unit =
+        providerLanguageStore.clearHostConfigPreference ()
+
+    member _.hostConfigPreference() : string =
+        providerLanguageStore.getHostConfigPreference ()

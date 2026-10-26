@@ -1,10 +1,19 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Wanxiangli.Degeneration</RootNamespace>
     <!-- Fable-only compilation unit. No dotnet build; see AGENTS.md. -->
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="ReliabilityCounters.fs" />
     <Compile Include="Degeneration.fs" />
+    <PackageExport Include="ReliabilityCounters.fs" Member="ReliabilityDiagnosticsStore" />
+    <PackageExport Include="ReliabilityCounters.fs" Member="reliabilityDiagnosticsStore" />
+    <PackageExport Include="ReliabilityCounters.fs" Member="createReliabilityDiagnosticsStore" />
+    <PackageExport Include="ReliabilityCounters.fs" Member="ReliabilityCounters" />
+    <PackageExport Include="ReliabilityCounters.fs" Member="reliabilityCounters" />
+    <PackageExport Include="ReliabilityCounters.fs" Member="createReliabilityCounters" />
+    <PackageExport Include="Degeneration.fs" Member="Degeneration" />
   </ItemGroup>
 </Project>

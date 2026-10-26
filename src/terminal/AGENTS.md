@@ -1,6 +1,6 @@
 # wanxiangli/terminal
 
-Autonomous Smalltalk/Actor-style objects for terminal facts, sticky replay, run deduplication, and reference-counted sharing.
+Autonomous Smalltalk/Actor-style objects for terminal facts, sticky replay, run deduplication, reference-counted sharing, and projection message visibility waiting.
 
 ## Responsibilities
 
@@ -19,3 +19,11 @@ Autonomous Smalltalk/Actor-style objects for terminal facts, sticky replay, run 
    - Reference-counted registry of `TerminalRegistry` instances by string key.
    - First-wins acquisition.
    - Release requires reference equality (`obj.ReferenceEquals`).
+
+3. **MessageVisibilityHub**:
+   - Owns per-session one-shot waiters (`Dictionary<string, ResizeArray<VisibilityWaiter>>`) and deadline backstop coordination.
+   - Neutral timer/delay contract: accepts custom delay factory, `ITimerPort`-like objects with `.Delay(ms)`, or falls back to native `setTimeout`/`clearTimeout`.
+   - `Notify(sessionId)` atomically takes and removes all waiters for the session, cancels their deadline backstops, and resolves completion tasks.
+   - `AwaitChange(sessionId, budgetMs)` registers a waiter and attaches deadline settlement. Settled waiter removes itself from the dictionary and drops the session key when empty.
+   - `PendingCount(sessionId)` provides leak detection probe; zero waiters leaves no dangling keys.
+   - `Clear(sessionId)` and `ClearAll()` support session and global drain/cleanup.

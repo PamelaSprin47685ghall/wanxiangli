@@ -275,3 +275,6 @@ type CasebookIndex() =
 
 /// 全局唯一单例
 let casebookIndex = CasebookIndex()
+
+type FetchFlightRegistry = Wanxiangli.Casebook.FetchFlightRegistry.FetchFlightRegistry
+let fetchFlightRegistry = Wanxiangli.Casebook.FetchFlightRegistry.fetchFlightRegistry

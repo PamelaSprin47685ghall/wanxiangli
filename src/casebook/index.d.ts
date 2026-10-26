@@ -125,3 +125,41 @@ export declare class SessionDraftStore {
 
 /** 进程内唯一会话草稿注册表；ES 模块缓存保证全进程同一实例。 */
 export declare const sessionDraftStore: SessionDraftStore
+
+/**
+ * 进程内 Casebook Fetch 单飞注册表（Package-16，FetchInFlightRegistry）。
+ * 追踪同一 (workspaceRoot, shelfmark) 在执行期间的 in-flight 请求，
+ * 确保并发调用共享同一个 Promise/Task、校验 storeToken 引用一致性，
+ * 并在完成（无论成功或异常/拒绝）后自动从注册表中移除。
+ */
+export declare class FetchFlightRegistry {
+  constructor()
+  /**
+   * 获取正在执行的 in-flight Promise，或调用 factory 创建并注册新的 in-flight Promise。
+   * 若存在正在执行的请求：
+   * - storeToken 引用一致（===）时，直接返回该正在执行的 Promise；
+   * - storeToken 引用不一致时，抛出 "Casebook fetch flight store binding mismatch" 异常。
+   * 当 Promise 结束（成功兑现或抛错拒绝）后，自动从注册表中移除。
+   */
+  getOrCreate<T = string>(
+    workspaceRoot: string,
+    shelfmark: string,
+    storeToken: unknown,
+    factory: () => Promise<T>
+  ): Promise<T>
+  /**
+   * 手动从注册表中移除指定的 in-flight 请求；若存在则返回 true，否则返回 false。
+   */
+  remove(workspaceRoot: string, shelfmark: string): boolean
+  /**
+   * 返回当前正在执行的 in-flight 请求数量。
+   */
+  activeCount(): number
+  /**
+   * 清空所有正在执行的 in-flight 请求注册（不中断正在执行的异步操作自身）。
+   */
+  clear(): void
+}
+
+/** 进程内唯一 Casebook Fetch 单飞注册表；ES 模块缓存保证全进程同一实例。 */
+export declare const fetchFlightRegistry: FetchFlightRegistry

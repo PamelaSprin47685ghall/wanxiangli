@@ -1,3 +1,20 @@
+export interface LargeGateInstance {
+  getCount(): number
+  tryAcquire(): boolean
+  enqueue(onGrant: () => boolean): () => void
+  acquire(signal?: AbortSignal | unknown): Promise<void>
+  release(): void
+}
+export class LargeGate implements LargeGateInstance {
+  constructor()
+  getCount(): number
+  tryAcquire(): boolean
+  enqueue(onGrant: () => boolean): () => void
+  acquire(signal?: AbortSignal | unknown): Promise<void>
+  release(): void
+}
+export const largeGate: LargeGateInstance
+
 export { Filesystem, type AnchorSpec, type GrepHit, type StagedMutation, type VisibleEntry, type VisibleEntriesResult, type Result as FilesystemResult } from './files/types.js'
 export { ProcessSession, type ProcessOptions, type ProcessState, type OutputSlice, type StartResult, type WriteResult, type SignalResult, type SignalName as ProcessSignalName, type Failure as ProcessFailure } from './process/types.js'
 export { Terminal, type TerminalOptions, type TerminalExit, type TerminalState, type PtyDriver, type OpenResult, type CloseResult as TerminalCloseResult, type ReadResult as TerminalReadResult, type SignalName as TerminalSignalName, type Failure as TerminalFailure } from './pty/types.js'

@@ -30,3 +30,51 @@ export interface AblationMessages {
 }
 
 export function Ablation(): AblationMessages
+
+export class AblationToolMapStore {
+  resetCache(): void
+  tryNode(toolName: string, loader: () => readonly (readonly [string, string])[]): string | null
+}
+
+export class AblationFactMapStore {
+  resetCache(): void
+  tryNode(factTag: string, loader: () => readonly (readonly [string, string])[]): string | null
+}
+
+export class AblationGateState {
+  useRegistry(registry: unknown): void
+  resetRegistry(): void
+  installedRegistry(): unknown
+  resolveRegistry(fallback: () => unknown): unknown
+
+  readonly deniedFactPath: string
+  toolDenied(modeOfNode: (node: string) => string, tryToolNode: (toolName: string) => string | null | undefined, toolName: string): boolean
+  toolSchemaDenied(modeOfNode: (node: string) => string, tryToolNode: (toolName: string) => string | null | undefined, toolName: string): boolean
+  factDenied(modeOfNode: (node: string) => string, tryFactNode: (factTag: string) => string | null | undefined, factTag: string): boolean
+  primaryAgentAllowed(isActiveNode: (node: string) => boolean, agentName: string): boolean
+  fissionVisible(isActiveNode: (node: string) => boolean): boolean
+}
+
+export interface ResolveOverridesSuccess {
+  readonly ok: true
+  readonly pairs: readonly (readonly [string, string])[]
+}
+
+export interface ResolveOverridesFailure {
+  readonly ok: false
+  readonly node: string
+  readonly raw: string
+}
+
+export type ResolveOverridesOutcome = ResolveOverridesSuccess | ResolveOverridesFailure
+
+export class AblationConfig {
+  envKeyForNode(nodeId: string): string
+  resolveProfile(readEnv: (name: string) => string): string | null
+  resolveOverrides(nodeIds: readonly string[], readEnv: (name: string) => string): ResolveOverridesOutcome
+}
+
+export const ablationToolMapStore: AblationToolMapStore
+export const ablationFactMapStore: AblationFactMapStore
+export const ablationGateState: AblationGateState
+export const ablationConfig: AblationConfig

@@ -1,10 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Wanxiangli.ChatExecution</RootNamespace>
     <!-- Fable-only compilation unit. No dotnet build; see AGENTS.md. -->
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="SessionQuiescenceGate.fs" />
     <Compile Include="ChatExecutionLaw.fs" />
+    <PackageExport Include="ChatExecutionLaw.fs" Member="ChatExecutionLaw" />
+    <PackageExport Include="SessionQuiescenceGate.fs" Member="SessionQuiescenceGate" />
+    <PackageExport Include="SessionQuiescenceGate.fs" Member="sessionQuiescenceGate" />
   </ItemGroup>
 </Project>

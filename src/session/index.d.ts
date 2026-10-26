@@ -51,3 +51,28 @@ export interface Ownership {
   head(): { readonly registryId: string; readonly revision: number; readonly digest: string };
 }
 export const Ownership: { new(registryId: string, records?: readonly string[]): Ownership };
+
+export interface SessionTopologyStore {
+  readonly parentsMap: any;
+  readonly directoriesMap: any;
+  putParent(childId: string, parentId: string): void;
+  getParent(childId: string): string | null;
+  tryGetParent(childId: string): string | undefined;
+  removeParent(childId: string): boolean;
+  clearParents(): void;
+  putDirectory(sessionId: string, directory: string): void;
+  getDirectory(sessionId: string): string | null;
+  tryGetDirectory(sessionId: string): string | undefined;
+  removeDirectory(sessionId: string): boolean;
+  clearDirectories(): void;
+  clearSession(sessionId: string): void;
+  clearAll(): void;
+}
+export const SessionTopologyStore: { new(): SessionTopologyStore };
+export const sessionTopologyStore: SessionTopologyStore;
+
+export interface SignalBroadcaster {
+  subscribe(listener: (signal: any) => any): { dispose(): void };
+  snapshot(): readonly ((signal: any) => any)[];
+}
+export const SignalBroadcaster: { new(): SignalBroadcaster };

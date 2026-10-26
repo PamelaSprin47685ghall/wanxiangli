@@ -1,6 +1,8 @@
-namespace Wanxiangli.Resources
+[<AutoOpen>]
+module Wanxiangli.Resources.Language
 
 open System
+open Fable.Core
 
 /// Closed provider-facing language algebra (PROMPT-017 / HOST-026).
 [<RequireQualifiedAccess>]
@@ -112,17 +114,114 @@ module ProviderLanguage =
     /// HOST-026: child / attached / InternalLeaf language = owner | commissioner.
     let inheritFrom (owner: ProviderLanguage) : ProviderLanguage = owner
 
+[<AutoOpen>]
+module private ProviderLanguageHelpers =
+
+    let toObservation (value: obj) : string option =
+        if isNull value then None
+        else
+            let s = string value
+            if String.IsNullOrWhiteSpace s then None else Some s
+
+/// Autonomous state holder for process-wide provider language configuration,
+/// host config preference and observation ladder resolution (HOST-026).
+[<AttachMembers>]
+type ProviderLanguageStore(?initialLanguage: string) =
+
+    let mutable currentLang =
+        match initialLanguage with
+        | Some raw when not (String.IsNullOrWhiteSpace raw) ->
+            ProviderLanguage.parse raw
+        | _ -> ProviderLanguage.English
+
+    let mutable hostConfigPref: string option = None
+
+    member _.current() : string =
+        ProviderLanguage.externalName currentLang
+
+    member _.currentLanguage() : ProviderLanguage =
+        currentLang
+
+    member _.refresh(resolve: unit -> string) : string =
+        currentLang <- ProviderLanguage.parse (resolve ())
+        ProviderLanguage.externalName currentLang
+
+    member _.refreshWithLanguage(resolve: unit -> ProviderLanguage) : unit =
+        currentLang <- resolve ()
+
+    member _.setHostConfigPreference(raw: string) : unit =
+        if isNull (box raw) then
+            hostConfigPref <- None
+        else
+            hostConfigPref <- Some raw
+
+    member _.clearHostConfigPreference() : unit =
+        hostConfigPref <- None
+
+    member _.hostConfigPreference() : string option =
+        hostConfigPref
+
+    member _.getHostConfigPreference() : string =
+        match hostConfigPref with
+        | Some v -> v
+        | None -> null
+
+    member _.forSessionText(_sessionText: string) : string =
+        ProviderLanguage.externalName currentLang
+
+    member _.tryParseLanguage(raw: string) : obj =
+        match ProviderLanguage.tryParse raw with
+        | Some language -> box (ProviderLanguage.externalName language)
+        | None -> null
+
+    member _.parseLanguage(raw: string) : string =
+        ProviderLanguage.parse raw |> ProviderLanguage.externalName
+
+    member _.resolvePreference
+        (explicit: obj, hostConfig: obj, vscodeNls: obj, posixLocale: obj, intlLocale: obj)
+        : obj =
+        let explicitOpt = toObservation explicit
+        let hostConfigOpt =
+            match toObservation hostConfig with
+            | Some _ as v -> v
+            | None -> hostConfigPref
+        let vscodeNlsOpt = toObservation vscodeNls
+        let posixLocaleOpt = toObservation posixLocale
+        let intlLocaleOpt = toObservation intlLocale
+
+        match
+            ProviderLanguage.fromObservationLadder
+                explicitOpt
+                hostConfigOpt
+                vscodeNlsOpt
+                posixLocaleOpt
+                intlLocaleOpt
+        with
+        | Ok lang ->
+            box {| ok = true; value = ProviderLanguage.externalName lang; error = "" |}
+        | Error err ->
+            box {| ok = false; value = ""; error = err |}
+
+    member this.resolveLadder
+        (explicit: obj, hostConfig: obj, vscodeNls: obj, posixLocale: obj, intlLocale: obj)
+        : obj =
+        this.resolvePreference(explicit, hostConfig, vscodeNls, posixLocale, intlLocale)
+
+    member this.resolveFromObservations
+        (explicit: obj, vscodeNls: obj, posixLocale: obj, intlLocale: obj)
+        : obj =
+        this.resolvePreference(explicit, null, vscodeNls, posixLocale, intlLocale)
+
+let providerLanguageStore = ProviderLanguageStore()
+
 /// HOST-026: the live global preference is the only language authority.
 /// Every Class A render reads it, so changing the setting changes the
 /// language of the next request even mid-session.
 [<RequireQualifiedAccess>]
 module GlobalProviderLanguage =
 
-    // DSL-MUTABLE: resource — live global preference cache, replaced by host configuration refresh
-    let mutable private currentLanguage = ProviderLanguage.English
+    let refresh (resolve: unit -> ProviderLanguage) : unit =
+        providerLanguageStore.refreshWithLanguage resolve
 
-    /// Re-resolve the live global preference. Called at startup and whenever
-    /// the host preference changes.
-    let refresh (resolve: unit -> ProviderLanguage) : unit = currentLanguage <- resolve ()
-
-    let current () : ProviderLanguage = currentLanguage
+    let current () : ProviderLanguage =
+        providerLanguageStore.currentLanguage ()

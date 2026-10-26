@@ -7,6 +7,7 @@ open Fable.Core
 open Fable.Core.JsInterop
 open Wanxiangli.Program
 open Wanxiangli.Program.Native
+open Wanxiangli.Program.Caller
 
 type private Observation = { Pause: int; Command: int }
 
@@ -170,6 +171,7 @@ type private Sessions() =
         task {
             match sessions.TryGetValue sessionId with
             | false, _ ->
+                programCallers.clearSession sessionId
                 return
                     createObj
                         [ "sessionId" ==> sessionId
@@ -180,6 +182,7 @@ type private Sessions() =
 
                 if field outcome "state" = "closed" then
                     sessions.Remove sessionId |> ignore
+                    programCallers.clearSession sessionId
 
                 return outcome
         }

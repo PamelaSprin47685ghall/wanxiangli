@@ -34,3 +34,46 @@ export declare class SessionAssociationLaw {
   readonly contractVersion: 1
   link(input: LinkInput): LinkVerdict
 }
+
+export interface ActiveRunBindingRecord {
+  readonly sessionId: string
+  readonly runId?: string | null
+  readonly authorityRootUserMessageId?: string | null
+  readonly physicalUserMessageId?: string | null
+  readonly continuationMessageIds: readonly string[]
+  readonly role?: string | null
+  readonly directory?: string | null
+  readonly inheritedAuthorityOwner?: string | null
+}
+
+export interface ProjectedRunBinding {
+  readonly activeRootId?: string | null
+  readonly canonicalRole?: string | null
+  readonly inheritedOwnerSessionId?: string | null
+  readonly inheritedOwnerRootId?: string | null
+  readonly inheritedOwnerRole?: string | null
+  readonly lanePhysicalId?: string | null
+}
+
+export declare class TurnBindingStore {
+  bindUserMessage(sessionId: string, physical: string, agentRole?: string | null): boolean
+  bindContinuationUserMessage(sessionId: string, physical: string): boolean
+  bindPhysicalUserMaterial(sessionId: string, physical: string): boolean
+  bindActiveRun(binding: ActiveRunBindingRecord): boolean
+  activeRunBinding(sessionId: string, projectedSummary?: ProjectedRunBinding | null): ActiveRunBindingRecord | null
+  tryPhysicalUserMessage(sessionId: string): string | null
+  clearSession(sessionId: string): boolean
+  getUserMessageBinding(sessionId: string): string | null
+  getContinuationMessageIds(sessionId: string): readonly string[]
+  getActiveBinding(sessionId: string): ActiveRunBindingRecord | null
+  allUserMessageBindings(): readonly { readonly sessionId: string; readonly physical: string }[]
+  snapshot(sessionId: string): {
+    readonly sessionId: string
+    readonly userMessageBinding: string | null
+    readonly activeBinding: ActiveRunBindingRecord | null
+    readonly continuationMessageIds: readonly string[]
+  } | null
+  clearAll(): void
+}
+
+export declare const turnBindingStore: TurnBindingStore

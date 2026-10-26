@@ -5,9 +5,12 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="MessageVisibilityHub.fs" />
     <Compile Include="Terminal.fs" />
     <PackageExport Include="Terminal.fs" Member="TerminalOutcome" />
     <PackageExport Include="Terminal.fs" Member="TerminalRegistry" />
     <PackageExport Include="Terminal.fs" Member="TerminalBus" />
+    <PackageExport Include="MessageVisibilityHub.fs" Member="MessageVisibilityHub" />
+    <PackageExport Include="MessageVisibilityHub.fs" Member="messageVisibilityHub" />
   </ItemGroup>
 </Project>

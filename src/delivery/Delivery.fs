@@ -341,3 +341,252 @@ let Delivery () : DeliveryMessages =
                 returnedKeys.Clear()
                 epochs.Clear()
                 generation <- generation + 1) }
+[<Emit("Array.isArray($0)")>]
+let private isArray (value: obj) : bool = jsNative
+
+[<Emit("typeof $0")>]
+let private valueType (value: obj) : string = jsNative
+
+[<Emit("/^\\s*$/.test($0)")>]
+let private isBlankText (text: string) : bool = jsNative
+
+[<Emit("$0.startsWith('turn:') || $0.startsWith('prose:')")>]
+let private isBodyKey (key: string) : bool = jsNative
+
+[<Emit("$0 && $0.ok === true ? $0.ticket : null")>]
+let private extractTicket (outcome: obj) : obj = jsNative
+
+let private isAbsentObj (value: obj) : bool =
+    isNull value || jsTypeof value = "undefined"
+
+let private historyPiece (text: string) : Piece =
+    { Key = "material:" + JS.JSON.stringify text
+      Text = text }
+
+let private historyEntryPiece (entry: obj) : Piece =
+    if isAbsentObj entry then historyPiece ""
+    elif valueType entry = "string" then historyPiece (unbox<string> entry)
+    elif not (isAbsentObj entry?text) then historyPiece (string entry?text)
+    else historyPiece ""
+
+let private selectPieces (view: obj) (alreadySet: HashSet<string>) : Piece list =
+    if not (isArray view) then []
+    else
+        let items: obj array = unbox view
+        items
+        |> Array.toList
+        |> List.map historyEntryPiece
+        |> List.filter (fun piece -> not (alreadySet.Contains piece.Key))
+
+let private currentPieceKey (sessionId: string) (providerRun: string option) (toolCallId: string option) (prose: string) : string =
+    match providerRun, toolCallId with
+    | Some run, Some call ->
+        "turn:" + JS.JSON.stringify [| sessionId; run; call |]
+    | _ ->
+        "prose:" + JS.JSON.stringify [| sessionId; prose |]
+
+let private makeCurrentPiece (sessionId: string) (providerRun: string option) (toolCallId: string option) (prose: string) : Piece option =
+    if isBlankText prose then None
+    else
+        let key = currentPieceKey sessionId providerRun toolCallId prose
+        Some { Key = key; Text = prose }
+
+let private splitPieces (pieces: Piece list) : (string array * string array) =
+    let body, carry = pieces |> List.partition (fun piece -> isBodyKey piece.Key)
+    let bodyTexts = body |> List.map (fun p -> p.Text) |> List.toArray
+    let carryTexts = carry |> List.map (fun p -> p.Text) |> List.toArray
+    (bodyTexts, carryTexts)
+
+let private createHandoffResult (body: string array) (carry: string array) : obj =
+    createObj [ "body" ==> body; "carry" ==> carry ]
+
+let private appendCurrentIfNew (pieces: Piece list) (alreadySet: HashSet<string>) (currentOpt: Piece option) : Piece list =
+    match currentOpt with
+    | Some current when not (alreadySet.Contains current.Key) -> pieces @ [ current ]
+    | _ -> pieces
+
+let private resolveCurrentOpt (sessionId: string) (runOpt: string option) (callOpt: string option) (assistantOpt: string option) : Piece option =
+    match assistantOpt with
+    | Some prose -> makeCurrentPiece sessionId runOpt callOpt prose
+    | None -> None
+
+let private materialPieces (sessionId: string) (view: obj) (runOpt: string option) (callOpt: string option) (assistantOpt: string option) (alreadySet: HashSet<string>) : Piece list =
+    let history = selectPieces view alreadySet
+    let currentOpt = resolveCurrentOpt sessionId runOpt callOpt assistantOpt
+    appendCurrentIfNew history alreadySet currentOpt
+
+let private pieceToObj (piece: Piece) : obj =
+    createObj [ "key" ==> piece.Key; "text" ==> piece.Text ]
+
+let private objToPiece (item: obj) : Piece =
+    { Key = string item?key; Text = string item?text }
+
+let private handOffCandidates (delivery: DeliveryMessages) (ticket: obj) (candidates: Piece list) : obj =
+    let candidateObjs = candidates |> List.map pieceToObj |> List.toArray
+    let returnedObjs = delivery.handOff (ticket, candidateObjs)
+    let returnedPieces = returnedObjs |> Array.map objToPiece |> Array.toList
+    let bodyTexts, carryTexts = splitPieces returnedPieces
+    createHandoffResult bodyTexts carryTexts
+
+let private claimTicket (delivery: DeliveryMessages) (sessionId: string) (request: obj) : obj option =
+    let outcome = delivery.claim (sessionId, request)
+    let ticket = extractTicket outcome
+    if isAbsentObj ticket then None else Some ticket
+
+let private fenceFromTicket (ticket: obj) : (string option * string option) =
+    let fence = ticket?fence
+    if isAbsentObj fence then (None, None)
+    else (Some (string fence?providerRun), Some (string fence?toolCallId))
+
+let private runHandoffCandidates (delivery: DeliveryMessages) (sessionId: string) (ticket: obj) (assistant: string option) : obj =
+    let view = ticket?view
+    if isAbsentObj view then
+        handOffCandidates delivery ticket [] |> ignore
+        null
+    else
+        let runOpt, callOpt = fenceFromTicket ticket
+        let alreadyArr = delivery.returned sessionId
+        let alreadySet = HashSet<string>(alreadyArr)
+        let candidates = materialPieces sessionId view runOpt callOpt assistant alreadySet
+        handOffCandidates delivery ticket candidates
+
+let private performHandoff (delivery: DeliveryMessages) (sessionId: string) (request: obj) (assistant: string option) : obj =
+    let ticketOpt = claimTicket delivery sessionId request
+    match ticketOpt with
+    | None -> null
+    | Some ticket -> runHandoffCandidates delivery sessionId ticket assistant
+
+let private buildBodyPiece (currentOpt: Piece option) (bodyLastIndex: int) (index: int) (text: string) : Piece =
+    match currentOpt with
+    | Some current when index = bodyLastIndex && current.Text = text -> current
+    | _ -> historyPiece text
+
+let private witnessCandidates (sessionId: string) (ticket: obj) (bodyTexts: string array) (carryTexts: string array) (assistant: string) : Piece list =
+    let bodyList = bodyTexts |> Array.toList
+    let carryList = carryTexts |> Array.toList
+    let runOpt, callOpt = fenceFromTicket ticket
+    let currentOpt = makeCurrentPiece sessionId runOpt callOpt assistant
+    let bodyLastIndex = List.length bodyList - 1
+    let bodyPieces = bodyList |> List.mapi (buildBodyPiece currentOpt bodyLastIndex)
+    let carryPieces = carryList |> List.map historyPiece
+    carryPieces @ bodyPieces
+
+let private runWitnessHandoff (delivery: DeliveryMessages) (sessionId: string) (ticket: obj) (bodyTexts: string array) (carryTexts: string array) (assistant: string) : obj =
+    let candidates = witnessCandidates sessionId ticket bodyTexts carryTexts assistant
+    handOffCandidates delivery ticket candidates
+
+let private performWitnessHandoff (delivery: DeliveryMessages) (sessionId: string) (providerRun: string) (toolCallId: string) (bodyTexts: string array) (carryTexts: string array) (assistant: string) : obj =
+    let fenceObj = createObj [ "providerRun" ==> providerRun; "toolCallId" ==> toolCallId ]
+    let request = createObj [ "mode" ==> "run"; "fence" ==> fenceObj ]
+    let ticketOpt = claimTicket delivery sessionId request
+    match ticketOpt with
+    | None -> null
+    | Some ticket -> runWitnessHandoff delivery sessionId ticket bodyTexts carryTexts assistant
+
+let private performRunHandoff (delivery: DeliveryMessages) (sessionId: string) (providerRun: string) (toolCallId: string) (assistant: string option) : obj =
+    let fenceObj = createObj [ "providerRun" ==> providerRun; "toolCallId" ==> toolCallId ]
+    let request = createObj [ "mode" ==> "run"; "fence" ==> fenceObj ]
+    performHandoff delivery sessionId request assistant
+
+let private performCacheHandoff (delivery: DeliveryMessages) (sessionId: string) (assistant: string option) : obj =
+    let request = createObj [ "mode" ==> "cache" ]
+    performHandoff delivery sessionId request assistant
+
+let private performPeekHandoff (delivery: DeliveryMessages) (sessionId: string) (assistant: string option) : obj =
+    let request = createObj [ "mode" ==> "peek" ]
+    performHandoff delivery sessionId request assistant
+
+let private performObserveClaim (delivery: DeliveryMessages) (sessionId: string) (providerRun: string) (toolCallId: string) : bool =
+    let fenceObj = createObj [ "providerRun" ==> providerRun; "toolCallId" ==> toolCallId ]
+    let request = createObj [ "mode" ==> "observe"; "fence" ==> fenceObj ]
+    let ticketOpt = claimTicket delivery sessionId request
+    ticketOpt.IsSome
+
+let private cleanAssistant (assistant: obj) : string option =
+    if isAbsentObj assistant then None
+    elif jsTypeof assistant <> "string" then None
+    elif isBlankText (unbox<string> assistant) then None
+    else Some (unbox<string> assistant)
+
+let private cleanAssistantOpt (assistant: string) : string option =
+    if isBlankText assistant then None else Some assistant
+
+let private extractFenceOptions (fence: obj) : (string option * string option) =
+    if isAbsentObj fence then (None, None)
+    else (Some (string fence?providerRun), Some (string fence?toolCallId))
+
+[<AttachMembers>]
+type JsDeliveredValues() =
+    let delivery = Delivery()
+
+    member _.recordView(sessionId: string, view: obj) : unit =
+        delivery.stage(sessionId, view)
+
+    member _.recordFencedView(sessionId: string, providerRun: string, toolCallId: string, view: obj) : unit =
+        let fence = createObj [ "providerRun" ==> providerRun; "toolCallId" ==> toolCallId ]
+        delivery.deliver(sessionId, fence, view)
+
+    member _.take(sessionId: string) : obj =
+        delivery.take(sessionId)
+
+    member _.peek(sessionId: string) : obj =
+        delivery.peek(sessionId)
+
+    member _.peekCached(sessionId: string) : obj =
+        delivery.peekCached(sessionId)
+
+    member _.peekView(sessionId: string) : obj =
+        delivery.peekCached(sessionId)
+
+    member _.peekFence(sessionId: string) : obj =
+        delivery.fence(sessionId)
+
+    member _.alreadyReturned(sessionId: string) : string array =
+        delivery.returned(sessionId)
+
+    member _.ownsCell(sessionId: string, providerRun: string, toolCallId: string) : bool =
+        performObserveClaim delivery sessionId providerRun toolCallId
+
+    member _.select(sessionId: string, view: obj, already: string array) : obj array =
+        let alreadySet = HashSet<string>(already)
+        let pieces = selectPieces view alreadySet
+        pieces |> List.map pieceToObj |> List.toArray
+
+    member _.materialize(sessionId: string, carry: obj, fence: obj, assistant: string) : obj =
+        let runOpt, callOpt = extractFenceOptions fence
+        let assistantOpt = cleanAssistantOpt assistant
+        let pieces = materialPieces sessionId carry runOpt callOpt assistantOpt (HashSet<string>())
+        let bodyTexts, carryTexts = splitPieces pieces
+        createHandoffResult bodyTexts carryTexts
+
+    member _.tryTakeMaterialForCall(sessionId: string, providerRun: string, toolCallId: string, assistant: obj) : obj =
+        let assistantOpt = cleanAssistant assistant
+        performRunHandoff delivery sessionId providerRun toolCallId assistantOpt
+
+    member _.tryTakeWitnessMaterial(sessionId: string, providerRun: string, toolCallId: string, bodyTexts: string array, carryTexts: string array, assistant: string) : obj =
+        performWitnessHandoff delivery sessionId providerRun toolCallId bodyTexts carryTexts assistant
+
+    member _.tryTakeMaterialWith(sessionId: string, assistant: obj) : obj =
+        let assistantOpt = cleanAssistant assistant
+        performCacheHandoff delivery sessionId assistantOpt
+
+    member _.tryTakeMaterial(sessionId: string) : obj =
+        performCacheHandoff delivery sessionId None
+
+    member _.tryPeekMaterial(sessionId: string) : obj =
+        performPeekHandoff delivery sessionId None
+
+    member _.tryPeekMaterialWith(sessionId: string, assistant: obj) : obj =
+        let assistantOpt = cleanAssistant assistant
+        performPeekHandoff delivery sessionId assistantOpt
+
+    member _.clear(sessionId: string) : unit =
+        delivery.clear(sessionId)
+
+    member _.clearReturned(sessionId: string) : unit =
+        delivery.clearReturned(sessionId)
+
+    member _.clearAll() : unit =
+        delivery.clearAll()
+
+let jsDeliveredValues = JsDeliveredValues()

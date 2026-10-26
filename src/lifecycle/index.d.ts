@@ -104,3 +104,48 @@ export interface Work {
 }
 export const Work: { new(workId: string, records?: readonly string[]): Work };
 export function abandonLocalState(directory: string): void;
+
+/**
+ * Autonomous process-lifetime first-bind cell for root workspace path.
+ */
+export class RootWorkspaceCell {
+  constructor();
+  TryBind(candidate?: string | null): boolean;
+  tryBind(candidate?: string | null): boolean;
+  TryRead(): string | undefined;
+  tryRead(): string | null;
+  Clear(): void;
+  clear(): void;
+}
+
+export const rootWorkspaceCell: RootWorkspaceCell;
+
+/**
+ * Autonomous reference-counted pool for shared workspace event store instances.
+ */
+export class SharedEventStorePool {
+  constructor();
+  Acquire<T = any>(commonDir: string, createStore: (commonDir: string) => T): T;
+  TryCurrent<T = any>(commonDir: string): T | undefined;
+  Release(commonDir: string): boolean;
+  SnapshotCount(commonDir: string): number;
+  Clear(): void;
+}
+
+export const sharedEventStorePool: SharedEventStorePool;
+
+/**
+ * Autonomous pool managing asynchronous opening, identity verification,
+ * fail-closed pruning on opening rejection, and instance refcount release.
+ */
+export class SharedAsyncJournalPool {
+  constructor();
+  AcquireOrStart<T = any>(directory: string, startReady: () => T): [T, boolean];
+  SettleSuccess(directory: string, readyTask: any, instance: any): void;
+  SettleFailure(directory: string, readyTask: any): void;
+  ReleaseTarget<T = any>(target: any): T | undefined;
+  SnapshotCount(directory: string): number;
+  Clear(): void;
+}
+
+export const sharedAsyncJournalPool: SharedAsyncJournalPool;

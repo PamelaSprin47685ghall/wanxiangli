@@ -25,8 +25,46 @@ export interface Resources {
   ): PreferenceResolution;
   refreshGlobalLanguage(resolve: () => string): void;
   currentGlobalLanguage(): string;
+  setHostConfigPreference(raw: string): void;
+  clearHostConfigPreference(): void;
+  hostConfigPreference(): string | null;
 }
 export const Resources: {
   new(rootDir?: string): Resources;
   packageRootFrom(startDirectory: string): string;
 };
+
+export class ProviderLanguageStore {
+  constructor(initialLanguage?: string);
+  current(): LanguageName;
+  refresh(resolve: () => string): LanguageName;
+  setHostConfigPreference(raw: string): void;
+  clearHostConfigPreference(): void;
+  hostConfigPreference(): string | undefined;
+  getHostConfigPreference(): string | null;
+  forSessionText(sessionText: string): LanguageName;
+  tryParseLanguage(raw: string): LanguageName | null;
+  parseLanguage(raw: string): LanguageName;
+  resolvePreference(
+    explicitPreference: string | null,
+    hostConfig: string | null,
+    vscodeNls: string | null,
+    posixLocale: string | null,
+    intlLocale: string | null
+  ): PreferenceResolution;
+  resolveLadder(
+    explicit: string | null,
+    hostConfig: string | null,
+    vscodeNls: string | null,
+    posixLocale: string | null,
+    intlLocale: string | null
+  ): PreferenceResolution;
+  resolveFromObservations(
+    explicit: string | null,
+    vscodeNls: string | null,
+    posixLocale: string | null,
+    intlLocale: string | null
+  ): PreferenceResolution;
+}
+
+export const providerLanguageStore: ProviderLanguageStore;

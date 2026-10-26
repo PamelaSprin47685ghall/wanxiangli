@@ -24,3 +24,10 @@
     - 证明：`tests/002.test.mjs`。
 3. [LEMMA 4] 非法包络（λ 不在 (0,1)、上下界倒置、非有限数、accessor 字段）在建立时被拒绝；reset 回到先验；检测器互相隔离。
     - 证明：`tests/003.test.mjs`。
+
+## ReliabilityDiagnosticsStore
+
+承接宿主可靠性诊断观测计数（Wave-2 Package-20）。
+- 自治管理 12 类不可逆观测计数（冲突、队列满、致命结算、6类恢复决议、钩子失败、回退推进、流中止）。
+- 内部并发保护，提供单调递增 `Record(kind)`、不可变快照 `Snapshot()` 与归零 `Reset()`。
+- 导出类 `ReliabilityDiagnosticsStore`、单例 `reliabilityDiagnosticsStore` 及工厂 `createReliabilityDiagnosticsStore()`（同时提供 `ReliabilityCounters` 别名）。

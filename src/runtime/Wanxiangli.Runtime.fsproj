@@ -13,6 +13,7 @@
     <Compile Include="process/Native.fs" />
     <Compile Include="process/OutputTail.fs" />
     <Compile Include="process/ProcessSession.fs" />
+    <Compile Include="process/LargeGate.fs" />
     <Compile Include="pty/Native.fs" />
     <Compile Include="pty/Terminal.fs" />
     <Compile Include="spool/Native.fs" />
@@ -28,6 +29,8 @@
     <Compile Include="Runtime.fs" />
     <PackageExport Include="files/Filesystem.fs" Member="Filesystem" />
     <PackageExport Include="process/ProcessSession.fs" Member="ProcessSession" />
+    <PackageExport Include="process/LargeGate.fs" Member="LargeGate" />
+    <PackageExport Include="process/LargeGate.fs" Member="largeGate" />
     <PackageExport Include="pty/Terminal.fs" Member="Terminal" />
     <PackageExport Include="spool/OutputSpool.fs" Member="OutputSpool" />
     <PackageExport Include="time/Time.fs" Member="Time" />

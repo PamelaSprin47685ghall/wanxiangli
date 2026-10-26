@@ -7,11 +7,14 @@
   <ItemGroup>
     <Compile Include="BookkeeperStaging.fs" />
     <Compile Include="SessionDraftStore.fs" />
+    <Compile Include="FetchFlightRegistry.fs" />
     <Compile Include="CasebookIndexLaw.fs" />
     <PackageExport Include="BookkeeperStaging.fs" Member="BookkeeperStaging" />
     <PackageExport Include="BookkeeperStaging.fs" Member="bookkeeperStaging" />
     <PackageExport Include="SessionDraftStore.fs" Member="SessionDraftStore" />
     <PackageExport Include="SessionDraftStore.fs" Member="sessionDraftStore" />
+    <PackageExport Include="FetchFlightRegistry.fs" Member="FetchFlightRegistry" />
+    <PackageExport Include="FetchFlightRegistry.fs" Member="fetchFlightRegistry" />
     <PackageExport Include="CasebookIndexLaw.fs" Member="CasebookIndex" />
     <PackageExport Include="CasebookIndexLaw.fs" Member="casebookIndex" />
     <PackageExport Include="CasebookIndexLaw.fs" Member="CasebookIndexLaw" />

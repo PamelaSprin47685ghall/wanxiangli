@@ -2,6 +2,7 @@ module Wanxiangli.Ownership.Ownership
 
 open System.Collections.Generic
 open Fable.Core
+open Fable.Core.JsInterop
 open Wanxiangli.Ownership
 open Wire
 
@@ -289,3 +290,71 @@ let Ownership (registryId: string) (initialRecords: obj): OwnershipMessages =
         member _.blockers(id) = guard (fun () -> findScope (identifier (box id)) |> unsettled |> Array.map view)
         member _.records() = guard (fun () -> entries |> Seq.map (fun entry -> entry.Record) |> Seq.toArray)
         member _.head() = guard (fun () -> make [ "registryId", box registryId; "revision", box entries.Count; "digest", box (digest ()) ]) }
+
+
+[<AttachMembers>]
+type SessionTopologyStore() =
+    let parents = System.Collections.Generic.Dictionary<string, string>()
+    let directories = System.Collections.Generic.Dictionary<string, string>()
+
+    member _.parentsMap = parents
+    member _.directoriesMap = directories
+
+    member _.putParent(childId: string, parentId: string) : unit =
+        parents.[childId] <- parentId
+
+    member _.getParent(childId: string) : string =
+        match parents.TryGetValue(childId) with
+        | true, v -> v
+        | false, _ -> null
+
+    member _.tryGetParent(childId: string) : string option =
+        match parents.TryGetValue(childId) with
+        | true, v -> Some v
+        | false, _ -> None
+
+    member _.removeParent(childId: string) : bool =
+        parents.Remove(childId)
+
+    member _.clearParents() : unit =
+        parents.Clear()
+
+    member _.putDirectory(sessionId: string, directory: string) : unit =
+        directories.[sessionId] <- directory
+
+    member _.getDirectory(sessionId: string) : string =
+        match directories.TryGetValue(sessionId) with
+        | true, v -> v
+        | false, _ -> null
+
+    member _.tryGetDirectory(sessionId: string) : string option =
+        match directories.TryGetValue(sessionId) with
+        | true, v -> Some v
+        | false, _ -> None
+
+    member _.removeDirectory(sessionId: string) : bool =
+        directories.Remove(sessionId)
+
+    member _.clearDirectories() : unit =
+        directories.Clear()
+
+    member _.clearSession(sessionId: string) : unit =
+        parents.Remove(sessionId) |> ignore
+        directories.Remove(sessionId) |> ignore
+
+    member _.clearAll() : unit =
+        parents.Clear()
+        directories.Clear()
+
+let sessionTopologyStore = SessionTopologyStore()
+
+[<AttachMembers>]
+type SignalBroadcaster() =
+    let listeners = ResizeArray<obj -> obj>()
+
+    member _.subscribe(listener: obj -> obj) : obj =
+        listeners.Add(listener)
+        createObj [ "dispose" ==> (fun () -> listeners.Remove(listener) |> ignore) ]
+
+    member _.snapshot() : (obj -> obj) array =
+        listeners.ToArray()

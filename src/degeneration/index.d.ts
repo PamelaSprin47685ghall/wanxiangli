@@ -35,3 +35,46 @@ export interface DegenerationMessages {
 }
 
 export function Degeneration(envelope: DegenerationEnvelope): DegenerationMessages
+
+export type ReliabilityObservationKind =
+  | 'identityConflict'
+  | 'queueFull'
+  | 'fatalSettlement'
+  | 'recovery:observeOnly'
+  | 'recovery:resumeAdmission'
+  | 'recovery:reconcileStartedProvider'
+  | 'recovery:markTerminal'
+  | 'recovery:failClosed'
+  | 'recovery:manualIntervention'
+  | 'hookFailure'
+  | 'fallbackAdvanced'
+  | 'streamAbort'
+
+export interface ReliabilityCounterSnapshot {
+  readonly identityConflicts: bigint
+  readonly queueFull: bigint
+  readonly fatalSettlements: bigint
+  readonly recoveryObserveOnly: bigint
+  readonly recoveryResumeAdmission: bigint
+  readonly recoveryReconcileStartedProvider: bigint
+  readonly recoveryMarkTerminal: bigint
+  readonly recoveryFailClosed: bigint
+  readonly recoveryManualIntervention: bigint
+  readonly hookFailures: bigint
+  readonly fallbackAdvances: bigint
+  readonly streamAborts: bigint
+}
+
+export class ReliabilityDiagnosticsStore {
+  constructor()
+  Record(kind: ReliabilityObservationKind | string): void
+  Snapshot(): ReliabilityCounterSnapshot
+  Reset(): void
+}
+
+export class ReliabilityCounters extends ReliabilityDiagnosticsStore {}
+
+export const reliabilityDiagnosticsStore: ReliabilityDiagnosticsStore
+export const reliabilityCounters: ReliabilityCounters
+export function createReliabilityDiagnosticsStore(): ReliabilityDiagnosticsStore
+export function createReliabilityCounters(): ReliabilityCounters

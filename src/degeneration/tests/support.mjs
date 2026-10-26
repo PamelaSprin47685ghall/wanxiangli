@@ -1,6 +1,22 @@
-import { Degeneration } from '../../../dist/degeneration/Degeneration.js'
+import {
+  Degeneration,
+  ReliabilityDiagnosticsStore,
+  reliabilityDiagnosticsStore,
+  createReliabilityDiagnosticsStore,
+  ReliabilityCounters,
+  reliabilityCounters,
+  createReliabilityCounters,
+} from '../../../dist/degeneration/Degeneration.js'
 
-export { Degeneration }
+export {
+  Degeneration,
+  ReliabilityDiagnosticsStore,
+  reliabilityDiagnosticsStore,
+  createReliabilityDiagnosticsStore,
+  ReliabilityCounters,
+  reliabilityCounters,
+  createReliabilityCounters,
+}
 export const envelope = (overrides = {}) => ({
   vocabularySize: 100,
   lambda: 0.5,

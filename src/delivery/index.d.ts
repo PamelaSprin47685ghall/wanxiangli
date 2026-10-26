@@ -67,3 +67,38 @@ export interface DeliveryMessages {
 }
 
 export function Delivery(): DeliveryMessages
+
+export interface DeliveryHandoffResult {
+  readonly body: string[]
+  readonly carry: string[]
+}
+
+/**
+ * 进程级 JS 交付暂存与材料选材自治对象。
+ * 拥有会话级交付格、围栏比对、历史材料过滤与见证选材的完整行为。
+ */
+export class JsDeliveredValues {
+  constructor()
+  recordView(sessionId: string, view: unknown): void
+  recordFencedView(sessionId: string, providerRun: string, toolCallId: string, view: unknown): void
+  take(sessionId: string): unknown
+  peek(sessionId: string): unknown
+  peekCached(sessionId: string): unknown
+  peekView(sessionId: string): unknown
+  peekFence(sessionId: string): DeliveryFence | null
+  alreadyReturned(sessionId: string): string[]
+  ownsCell(sessionId: string, providerRun: string, toolCallId: string): boolean
+  select(sessionId: string, view: unknown, already: readonly string[]): DeliveryPiece[]
+  materialize(sessionId: string, carry: unknown, fence: DeliveryFence | null, assistant?: string | null): DeliveryHandoffResult
+  tryTakeMaterialForCall(sessionId: string, providerRun: string, toolCallId: string, assistant?: string | null): DeliveryHandoffResult | null
+  tryTakeWitnessMaterial(sessionId: string, providerRun: string, toolCallId: string, bodyTexts: readonly string[], carryTexts: readonly string[], assistant: string): DeliveryHandoffResult | null
+  tryTakeMaterialWith(sessionId: string, assistant?: string | null): DeliveryHandoffResult | null
+  tryTakeMaterial(sessionId: string): DeliveryHandoffResult | null
+  tryPeekMaterial(sessionId: string): DeliveryHandoffResult | null
+  tryPeekMaterialWith(sessionId: string, assistant?: string | null): DeliveryHandoffResult | null
+  clear(sessionId: string): void
+  clearReturned(sessionId: string): void
+  clearAll(): void
+}
+
+export const jsDeliveredValues: JsDeliveredValues

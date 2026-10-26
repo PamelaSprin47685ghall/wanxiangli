@@ -6,5 +6,8 @@
     <Compile Include="Language.fs" />
     <Compile Include="Template.fs" />
     <Compile Include="Resources.fs" />
+    <PackageExport Include="Resources.fs" Member="Resources" />
+    <PackageExport Include="Language.fs" Member="ProviderLanguageStore" />
+    <PackageExport Include="Language.fs" Member="providerLanguageStore" />
   </ItemGroup>
 </Project>

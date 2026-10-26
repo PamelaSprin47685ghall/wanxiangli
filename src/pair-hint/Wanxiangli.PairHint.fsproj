@@ -6,9 +6,14 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="OutboundViewStore.fs" />
+    <Compile Include="PairGuidanceMemoryStore.fs" />
     <Compile Include="PairHint.fs" />
     <PackageExport Include="OutboundViewStore.fs" Member="OutboundViewStore" />
     <PackageExport Include="OutboundViewStore.fs" Member="outboundViewStore" />
+    <PackageExport Include="PairGuidanceMemoryStore.fs" Member="PairGuidanceMemoryStore" />
+    <PackageExport Include="PairGuidanceMemoryStore.fs" Member="pairGuidanceMemoryStore" />
+    <PackageExport Include="PairGuidanceMemoryStore.fs" Member="pairGuidanceSource" />
+    <PackageExport Include="PairGuidanceMemoryStore.fs" Member="PairGuidanceMemoryEntry" />
     <PackageExport Include="PairHint.fs" Member="PairHint" />
   </ItemGroup>
 </Project>

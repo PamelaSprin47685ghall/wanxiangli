@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
-import { Delivery } from '../../../dist/delivery/Delivery.js'
+import { Delivery, JsDeliveredValues, jsDeliveredValues } from '../../../dist/delivery/Delivery.js'
 
-export { Delivery }
+export { Delivery, JsDeliveredValues, jsDeliveredValues }
 export const fence = (providerRun = 'run-1', toolCallId = 'call-1') => ({ providerRun, toolCallId })
 export const piece = (key, text = `text of ${key}`) => ({ key, text })
 export const keys = pieces => pieces.map(value => value.key)

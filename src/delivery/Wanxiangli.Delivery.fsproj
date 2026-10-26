@@ -6,5 +6,8 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Delivery.fs" />
+    <PackageExport Include="Delivery.fs" Member="Delivery" />
+    <PackageExport Include="Delivery.fs" Member="JsDeliveredValues" />
+    <PackageExport Include="Delivery.fs" Member="jsDeliveredValues" />
   </ItemGroup>
 </Project>

@@ -177,3 +177,12 @@ let Degeneration (envelope: obj) : DegenerationMessages =
             classify envelope (finite "weightedDistinctTokens" (box weightedDistinctTokens))
 
         member _.envelope() = published }
+
+type ReliabilityDiagnosticsStore = Wanxiangli.Degeneration.ReliabilityCounters.ReliabilityDiagnosticsStore
+type ReliabilityCounters = Wanxiangli.Degeneration.ReliabilityCounters.ReliabilityCounters
+
+let reliabilityDiagnosticsStore = Wanxiangli.Degeneration.ReliabilityCounters.reliabilityDiagnosticsStore
+let reliabilityCounters = Wanxiangli.Degeneration.ReliabilityCounters.reliabilityCounters
+
+let createReliabilityDiagnosticsStore () = Wanxiangli.Degeneration.ReliabilityCounters.createReliabilityDiagnosticsStore ()
+let createReliabilityCounters () = Wanxiangli.Degeneration.ReliabilityCounters.createReliabilityCounters ()

@@ -18,3 +18,21 @@
 # SPEC
 
 1. [LEMMA 1, 2, 3] 证明：`tests/001.test.mjs`；与 vibe-fs 旧 `SessionAssociationProjection.linkSatellite` 逐项对照见 vibe-fs `evidence/CUT-12/`。
+
+3. [使用者] TurnBindingStore 进程内自治管理逻辑会话的 userMessageBindings、activeBindings 与 continuationMessageIds 状态。
+    - 理由：Package-14 (TurnBinding.Store 状态所有权抽取)；状态与合流规则迁入库，消除宿主可变字典。
+
+# LEMMA
+
+4. [AXIOM 3] TurnBindingStore 绑定与合流契约：
+    - BindUserMessage 派生 root (PROMPT-002 promotion)，更新 physical 游标并保留已有 role。
+    - BindContinuationUserMessage 累积 continuation 集合并更新 physical 游标。
+    - BindPhysicalUserMaterial 仅更新 physical 游标，不造 root 也不造 continuation。
+    - BindActiveRun 合并 continuation 集合。
+    - activeRunBinding 合流时 durable authority 拥有 root，explicit 保留 physical/role/directory，continuationIds 取并集，Fission lane 继承 owner root。
+    - tryPhysicalUserMessage 优先查 activeBindings，回退 userMessageBindings。
+    - clearSession 彻底清空三字典并保持会话间状态隔离。
+
+# SPEC
+
+2. [LEMMA 4] 证明：`tests/002.test.mjs`（TurnBindingStore 7 大边界与反例规范）。

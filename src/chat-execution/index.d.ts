@@ -84,3 +84,52 @@ export declare class ChatExecutionLaw {
   /** Restart recovery: the single next step authorized for one exact execution. */
   recover(input: RecoveryInput): RecoveryDecision
 }
+
+export interface QuiescencePermit {
+  readonly toJSON: () => never
+}
+
+export interface QuiescenceDecision {
+  readonly ok: boolean
+  readonly reason: 'WrongOwner' | 'NoFreshIdle' | 'AlreadyConsumed' | 'Revoked' | 'Superseded' | null
+}
+
+export declare class SessionQuiescenceGate {
+  BeginProviderAttempt(sessionId: string): void
+  beginProviderAttempt(sessionId: string): void
+
+  BeginToolExecution(sessionId: string): void
+  beginToolExecution(sessionId: string): void
+
+  EndToolExecution(sessionId: string): void
+  endToolExecution(sessionId: string): void
+
+  ObservePhysicalUserMessage(sessionId: string, physicalUserMessageId: string): void
+  observePhysicalUserMessage(sessionId: string, physicalUserMessageId: string): void
+
+  ObserveIdle(sessionId: string): QuiescencePermit
+  observeIdle(sessionId: string): QuiescencePermit
+
+  CaptureCurrentAttempt(sessionId: string): QuiescencePermit
+  captureCurrentAttempt(sessionId: string): QuiescencePermit
+
+  ObserveIdleFor(observation: unknown): QuiescencePermit | undefined
+  observeIdleFor(observation: unknown): QuiescencePermit | undefined
+
+  TryConsume(permit: unknown): QuiescenceDecision
+  tryConsume(permit: unknown): QuiescenceDecision
+
+  TryRelease(permit: unknown): QuiescenceDecision
+  tryRelease(permit: unknown): QuiescenceDecision
+
+  RevokeCurrentAttempt(sessionId: string): void
+  revokeCurrentAttempt(sessionId: string): void
+
+  DropSession(sessionId: string): void
+  dropSession(sessionId: string): void
+
+  readonly LivePermitCount: number
+  livePermitCount(): number
+}
+
+export declare const sessionQuiescenceGate: SessionQuiescenceGate

@@ -5,6 +5,9 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="CasebookSettlementOwner.fs" />
     <Compile Include="CasebookMaintenanceLaw.fs" />
+    <PackageExport Include="CasebookSettlementOwner.fs" Member="CasebookSettlementOwner" />
+    <PackageExport Include="CasebookMaintenanceLaw.fs" Member="CasebookMaintenanceLaw" />
   </ItemGroup>
 </Project>

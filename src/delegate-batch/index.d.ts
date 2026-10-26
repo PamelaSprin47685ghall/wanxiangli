@@ -50,3 +50,24 @@ export declare class DelegateBatchLaw {
   /** the role's call ids in Host order when the current call is among them, else null */
   observedBatch(input: DelegateBatchObservedInput): readonly string[] | null
 }
+
+export declare class JoinGuardReservationStore {
+  constructor()
+  nudgeKey(sessionId: string, terminalProviderRun: string): string
+  formatKey(sessionId: string, terminalProviderRun: string): string
+  createScope(): Set<string>
+  tryReserve(
+    scope: Set<string> | unknown,
+    sessionId: string,
+    terminalProviderRun: string,
+    hasOutstandingJoinClaim?: boolean | (() => boolean) | null
+  ): string | undefined
+  release(scope: Set<string> | unknown, key: string): void
+  clearSession(sessionId: string, scope?: Set<string> | unknown): void
+  clear(scope?: Set<string> | unknown): void
+  clearAll(): void
+  readonly processCount: number
+  snapshot(): readonly string[]
+}
+
+export declare const joinGuardReservationStore: JoinGuardReservationStore

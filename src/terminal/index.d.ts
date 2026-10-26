@@ -43,3 +43,40 @@ export class TerminalBus {
   Release<T = any>(key: string, target: T): boolean;
   Count(key: string): number;
 }
+
+/**
+ * Neutral cancelable deadline handle for visibility wait backstop.
+ */
+export interface DeadlineHandle {
+  readonly Delay: Promise<void>;
+  readonly delay?: Promise<void>;
+  Cancel(): void;
+  cancel?(): void;
+}
+
+export type DelayFactory = (budgetMilliseconds: number) => DeadlineHandle | { Delay?: Promise<void>; delay?: Promise<void>; Cancel?: () => void; cancel?: () => void };
+
+export interface TimerPortLike {
+  Delay(ms: number): any;
+  Dispose?(): void;
+}
+
+/**
+ * Autonomous hub for event-driven projection visibility catch-up.
+ * Waiters are per-session one-shot completions with a deadline backstop.
+ */
+export class MessageVisibilityHub {
+  constructor(timerArg?: DelayFactory | TimerPortLike);
+  Notify(sessionId: string): void;
+  notify(sessionId: string): void;
+  AwaitChange(sessionId: string, budgetMilliseconds: number): Promise<void>;
+  awaitChange(sessionId: string, budgetMilliseconds: number): Promise<void>;
+  PendingCount(sessionId: string): number;
+  pendingCount(sessionId: string): number;
+  Clear(sessionId: string): void;
+  clear(sessionId: string): void;
+  ClearAll(): void;
+  clearAll(): void;
+}
+
+export const messageVisibilityHub: MessageVisibilityHub;

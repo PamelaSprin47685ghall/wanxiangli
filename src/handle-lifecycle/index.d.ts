@@ -127,3 +127,91 @@ export declare class JoinAttemptRegistry {
 }
 
 export declare const joinAttemptRegistry: JoinAttemptRegistry
+
+export interface RegisterPendingOptions {
+  readonly agentId: string
+  readonly token: unknown
+  readonly childId?: string | null
+  readonly role?: string | null
+  readonly payload?: unknown
+  readonly subscription?: unknown
+}
+
+export interface RegisterPendingVerdict {
+  readonly registered: boolean
+  readonly agentId: string
+  readonly token: unknown
+  readonly childId: string
+  readonly previousReplaced: boolean
+}
+
+export interface ClaimPendingVerdict {
+  readonly claimed: boolean
+  readonly agentId: string
+  readonly token: unknown
+  readonly subscription: unknown | null
+  readonly payload: unknown | null
+  readonly reason: 'NotFound' | 'TokenMismatch' | 'AlreadyFinished' | null
+}
+
+export interface SettleCancelledVerdict {
+  readonly claimed: boolean
+  readonly agentId: string
+  readonly token: unknown
+  readonly subscription: unknown | null
+  readonly payload: unknown | null
+  readonly reason: 'NotFound' | 'TokenMismatch' | 'AlreadyFinished' | null
+}
+
+export interface RemoveByAgentVerdict {
+  readonly removed: boolean
+  readonly agentId: string
+  readonly token: unknown | null
+  readonly subscription: unknown | null
+  readonly payload: unknown | null
+}
+
+export interface DrainRunItem {
+  readonly agentId: string
+  readonly token: unknown
+  readonly subscription: unknown | null
+  readonly payload: unknown | null
+}
+
+export interface PendingRunSnapshot {
+  readonly agentId: string
+  readonly childId: string
+  readonly token: unknown
+  readonly role: string | null
+  readonly finished: boolean
+  readonly payload: unknown
+}
+
+export declare class PendingRunStore {
+  readonly payloadView: any
+  rawView(): any
+  register(
+    agentIdOrOptions: string | RegisterPendingOptions,
+    token?: unknown,
+    childId?: string,
+    role?: string | null,
+    payload?: unknown,
+    subscription?: unknown
+  ): RegisterPendingVerdict
+  attachSubscription(agentId: string, token: unknown, subscription: unknown): boolean
+  claim(agentId: string, token: unknown): ClaimPendingVerdict
+  removeClaimed(agentId: string, token: unknown): boolean
+  settleParentCancelled(agentId: string, token: unknown): SettleCancelledVerdict
+  removeByAgentId(agentId: string): RemoveByAgentVerdict
+  drainAll(): readonly DrainRunItem[]
+  drainCancelled(agentIds: readonly string[]): readonly unknown[]
+  isFinished(agentId: string, token?: unknown): boolean
+  containsAgent(agentId: string): boolean
+  tryGetPayload(agentId: string): unknown
+  readonly count: number
+  activePayloads(): readonly unknown[]
+  snapshotOutstanding(): readonly PendingRunSnapshot[]
+  clear(): void
+}
+
+export declare const pendingRunStore: PendingRunStore
