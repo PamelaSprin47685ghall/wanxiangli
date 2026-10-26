@@ -174,9 +174,9 @@ let private initializeReminder (language: string) : string =
 
 let private negotiateReminder (language: string) : string =
     if isChinese language then
-        "[系统：先调用 negotiate(questions: string) 向委托者澄清本次任务。把需要确认的多个具体问题集中写入 questions 参数；调用一经受理即视为完成，不必等待答复；之后即可调用 resetScope 初始化 scope。委托者的答复会随后作为 steer 到达，不阻塞时序。后续可以继续提问，不影响正常的 resetScope。]"
+        "[系统：先调用 negotiate(questions: string) 向委托者澄清本次任务。把需要确认的多个具体问题集中写入 questions 参数；调用一经受理即视为协商完成，时序继续，不必也不要等待答复；之后即可调用 resetScope 初始化 scope。若取得委托者答复，可能随后作为 steer 补到，不阻塞时序。后续可以继续提问，不影响正常的 resetScope。]"
     else
-        "[System: Before any resetScope initialization, call negotiate(questions: string) NOW. Ask the delegator all questions needed to clarify this assignment. Group related questions into the single plural questions argument. Once the call is accepted, negotiation is complete: do not wait for the answer, and call resetScope promptly. The delegator’s answer arrives later as a user steer and never blocks the timeline. You may negotiate again at any time; later calls never delay resetScope.]"
+        "[System: Before any resetScope initialization, call negotiate(questions: string) NOW. Ask the delegator all questions needed to clarify this assignment. Group related questions into the single plural questions argument. Once the call is accepted, negotiation is complete and the timeline continues: do not wait for any answer, and call resetScope promptly. If the delegator’s answer is obtained, it may arrive later as a user steer; it never blocks the timeline. You may negotiate again at any time; later calls never delay resetScope.]"
 
 let private askPreviousScopeReminder (language: string) : string =
     if isChinese language then
