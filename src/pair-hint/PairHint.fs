@@ -31,10 +31,13 @@ type PairHintMessages =
     abstract negotiationRequired: recipient: string -> bool
     abstract rememberSystem: sessionId: string * system: string array -> unit
     abstract rememberMessages: sessionId: string * messages: obj array -> unit
+    abstract rememberTransform: sessionId: string * input: obj array * output: obj array -> unit
+    abstract latestPrevious: sessionId: string -> obj
     abstract rememberModel: sessionId: string * model: obj -> unit
     abstract modelFor: sessionId: string -> obj
     abstract startTemporary: tempId: string * delegatorId: string -> obj
-    abstract startTemporaryFromFrozen: tempId: string * snapshot: obj -> obj
+    abstract startTemporaryPrevious: tempId: string * sourceSessionId: string * metadata: obj -> obj
+    abstract projectPreviousMessages: messages: obj array -> obj
     abstract modelForTemporary: tempId: string -> obj
     abstract isTemporary: sessionId: string -> bool
     abstract finishTemporary: tempId: string -> unit
@@ -105,10 +108,7 @@ type private ScopeSession() =
             pending <- NoPending
             initialized <- budgetKnown
 
-    member _.StartTurn() =
-        // pending 期间时序不前进，预算不递减
-        if pending = NoPending && budgetKnown then
-            budget <- max 0 (budget - 1)
+    member _.StartTurn() = ()
 
     member _.Observe(nextKey: string, nextTime: float option, hasReset: bool) =
         if promptKey = nextKey then
@@ -496,7 +496,7 @@ let private latestReset (messages: NeutralMessage array) : (int * int) option =
                 if neutralIsReset part then barrier <- Some(message.Index, part.Part)
     barrier
 
-let private neutralSelection (message: NeutralMessage) (barrier: (int * int) option) : int array option option =
+let private neutralSelection (message: NeutralMessage) (barrier: (int * int) option) (retainedIds: Set<string>) : int array option option =
     match barrier with
     | None -> Some None
     | Some(activeMessage, _) when message.Index > activeMessage -> Some None
@@ -508,12 +508,27 @@ let private neutralSelection (message: NeutralMessage) (barrier: (int * int) opt
     | Some _ when message.Operator && (message.Kind = "user" || message.Kind = "custom") -> Some None
     | Some _ when message.Kind = "result" -> Some None
     | Some _ when message.Kind = "assistant" ->
-        let retained = retainedPartIndices message.Calls
-        if retained.Length = 0 then None else Some(Some retained)
+        let ordinaryToolParts =
+            message.Calls
+            |> Array.choose (fun call ->
+                if call.Id <> "" && call.Tool <> "" && not (isAlwaysRetained call) then Some call.Part
+                elif call.ResultFor <> "" && not (Set.contains call.ResultFor retainedIds) then Some call.Part
+                else None)
+            |> Set.ofArray
+        let preserved =
+            [| for part in 0 .. message.PartCount - 1 do
+                   if not (Set.contains part ordinaryToolParts) then yield part |]
+        if preserved.Length = 0 then None else Some(Some preserved)
     | _ -> None
 
 let private candidateSelections (messages: NeutralMessage array) (barrier: (int * int) option) =
-    messages |> Array.map (fun m -> m, neutralSelection m barrier)
+    let retainedIds =
+        messages
+        |> Array.collect (fun message -> message.Calls)
+        |> Array.filter isAlwaysRetained
+        |> Array.map (fun call -> call.Id)
+        |> Set.ofArray
+    messages |> Array.map (fun m -> m, neutralSelection m barrier retainedIds)
 
 let private allowedCalls (candidates: (NeutralMessage * int array option option) array) : Dictionary<string, string> =
     let known = Dictionary<string, string>()
@@ -555,18 +570,8 @@ let private toolHint (scope: ScopeSession) (remember: bool) (identity: string) (
           "field" ==> fieldName
           "tail" ==> suffix ]
 
-let private hintsAt (scope: ScopeSession) (remember: bool) (message: NeutralMessage) (selectedParts: int array option) =
-    let initialized, budget = scope.Initialized, scope.Budget
-    if not initialized || not scope.BudgetKnown || scope.IsPending then [||]
-    elif message.Kind = "result" && message.ResultField <> "" then
-        let identity = if message.ResultFor <> "" then "call:" + message.ResultFor else "message:" + string message.Index + ":result"
-        [| toolHint scope remember identity message.Index -1 message.ResultField (budgetSuffix budget) |]
-    elif message.Kind = "assistant" then
-        [| for part in message.Calls do
-               if part.Field <> "" && (selectedParts.IsNone || Array.contains part.Part selectedParts.Value) then
-                   let identity = if part.Id <> "" then "call:" + part.Id else "message:" + string message.Index + ":part:" + string part.Part
-                   yield toolHint scope remember identity message.Index part.Part part.Field (budgetSuffix budget) |]
-    else [||]
+let private hintsAt (_scope: ScopeSession) (_remember: bool) (_message: NeutralMessage) (_selectedParts: int array option) =
+    [||] : obj array
 
 let private neutralSelections (entries: NeutralMessage array) =
     let barrier = latestReset entries
@@ -612,13 +617,13 @@ let private preparedNeutralPlan (scope: ScopeSession) (language: string) (messag
     createObj
         [ "slots" ==> slots
           "hints" ==> tails
-          "strong" ==> (if active && not sideRequest && not scope.Initialized then
+          "strong" ==> (if active && not sideRequest && scope.IsPending then
                                box (match scope.PendingKind with
                                     | "negotiate" -> negotiateReminder language
                                     | "askPreviousScope" -> askPreviousScopeReminder language
-                                    | _ -> initializeReminder language)
+                                    | _ -> "")
                            else null)
-          "weak" ==> (if weak then box (weakReminder language) else null)
+          "weak" ==> null
           "active" ==> active
           "budget" ==> scope.Budget
           "budgetKnown" ==> scope.BudgetKnown
@@ -626,6 +631,31 @@ let private preparedNeutralPlan (scope: ScopeSession) (language: string) (messag
           "negotiationRequired" ==> scope.NegotiationRequired
           "pendingKind" ==> scope.PendingKind
           "previousScopePending" ==> scope.PreviousScopePending ]
+
+let private isResetWirePart (part: obj) =
+    let direct = fieldText part "tool"
+    let name = if direct <> "" then direct else fieldText part "name"
+    let kind = fieldText part "type"
+    name = "resetScope" && (kind = "tool" || kind = "toolCall" || kind = "tool-call" || kind = "")
+
+let private precedingScopeMessages (messages: obj array) : obj array option =
+    let resets =
+        messages
+        |> Array.mapi (fun i message ->
+            if role message <> "assistant" then None
+            else blocks message |> Array.tryFindIndexBack isResetWirePart |> Option.map (fun j -> i, j))
+        |> Array.choose id
+    match Array.tryLast resets with
+    | None -> None
+    | Some (index, partIndex) ->
+        let before = messages |> Array.take index
+        let resetMessage = messages[index]
+        let earlier = blocks resetMessage |> Array.take partIndex
+        let projected =
+            if earlier.Length = 0 then before
+            elif hasParts resetMessage then Array.append before [| withParts resetMessage earlier |]
+            else Array.append before [| withContent resetMessage (box earlier) |]
+        if projected.Length = 0 then None else Some projected
 
 [<Emit("structuredClone($0)")>]
 let private cloneWire (_value: obj) : obj = jsNative
@@ -641,69 +671,84 @@ let PairHint () : PairHintMessages =
     let mutable nextGeneration = 0
     let mutable nextReceipt = 0
     let mutable nextAskReceipt = 0
-    let recordedSystems = Dictionary<string, string array>()
-    let recordedMessages = Dictionary<string, obj array>()
-    let recordedModels = Dictionary<string, obj>()
     let temporaryNegotiations = Dictionary<string, obj>()
     let temporaryToolViolations = Dictionary<string, int>()
+    // One replaceable view per actual work session; temporary sessions retain only source identity.
+    let latestViews = Dictionary<string, obj>()
+    let viewFor sessionId =
+        match latestViews.TryGetValue sessionId with
+        | true, view -> view
+        | _ -> createObj []
+    let updateView sessionId (updates: (string * obj) list) =
+        if not (temporaryNegotiations.ContainsKey sessionId) then
+            let view = copy(viewFor sessionId)
+            for name, value in updates do view?(name) <- value
+            latestViews[sessionId] <- view
+    let observedMessages (sessionId: string) (preferInput: bool) : obj array option =
+        match latestViews.TryGetValue sessionId with
+        | false, _ -> None
+        | true, view ->
+            let preferred = if preferInput then field view "input" else field view "output"
+            if isArray preferred then Some(unbox<obj array> preferred)
+            else None
+
 
     let rememberSystem (sessionId: string) (system: string array) =
-        if not (temporaryNegotiations.ContainsKey sessionId) && not (isNull (box system)) then
-            recordedSystems[sessionId] <- unbox<string array> (cloneWire (box system))
+        if not (isNull(box system)) then updateView sessionId [ "system", cloneWire(box system) ]
 
     let rememberMessages (sessionId: string) (messages: obj array) =
-        if not (temporaryNegotiations.ContainsKey sessionId) && not (isNull (box messages)) && messages.Length > 0 then
-            recordedMessages[sessionId] <- unbox<obj array> (cloneWire (box messages))
+        if not (isNull(box messages)) && messages.Length > 0 then
+            updateView sessionId [ "output", cloneWire(box messages); "input", cloneWire(box messages) ]
+
+    let rememberTransform (sessionId: string) (input: obj array) (output: obj array) =
+        if not (isNull(box input)) && not (isNull(box output)) && output.Length > 0 then
+            updateView sessionId [ "input", cloneWire(box input); "output", cloneWire(box output) ]
 
     let rememberModel (sessionId: string) (model: obj) =
-        if not (temporaryNegotiations.ContainsKey sessionId) && not (isNull model) then
-            recordedModels[sessionId] <- cloneWire model
+        if not (isNull model) then updateView sessionId [ "model", cloneWire model ]
 
     let modelFor (sessionId: string) : obj =
-        match recordedModels.TryGetValue sessionId with
-        | true, model -> cloneWire model
-        | false, _ -> null
+        let model = field (viewFor sessionId) "model"
+        if isNull model then null else cloneWire model
+
+    let latestPrevious (sessionId: string) : obj =
+        let candidate =
+            observedMessages sessionId true
+            |> Option.bind precedingScopeMessages
+        candidate |> Option.map (fun old -> box(cloneWire(box old))) |> Option.defaultValue null
 
     let startTemporary (tempId: string) (delegatorId: string) : obj =
-        match recordedMessages.TryGetValue delegatorId, recordedSystems.TryGetValue delegatorId, recordedModels.TryGetValue delegatorId with
-        | (true, messages), (true, system), (true, model) when messages.Length > 0 && system.Length > 0 && not (isNull model) ->
-            let view =
-                createObj
-                    [ "delegator", box delegatorId
-                      "messages", cloneWire (box messages)
-                      "system", cloneWire (box system)
-                      "model", cloneWire model ]
-            temporaryNegotiations[tempId] <- view
+        let view = viewFor delegatorId
+        let messages = field view "output"
+        let system = field view "system"
+        let model = field view "model"
+        if isArray messages && (unbox<obj array> messages).Length > 0 && isArray system && (unbox<obj array> system).Length > 0 && not (isNull model) then
+            // The temporary session keeps an identity link only; read the latest
+            // actual delegator provider view on every temporary provider hook.
+            temporaryNegotiations[tempId] <- createObj [ "liveDelegator", box delegatorId ]
             createObj [ "ok" ==> true ]
-        | _ ->
+        else
             createObj
                 [ "ok" ==> false
-                  "reason" ==> "delegator has no complete provider-wire snapshot (messages, system and actual model) to reuse" ]
+                  "reason" ==> "delegator has no complete latest transform view (messages, system and model)" ]
 
-    let startTemporaryFromFrozen (tempId: string) (snapshot: obj) : obj =
-        let system = if isNull snapshot then null else snapshot?system
-        let messages = if isNull snapshot then null else snapshot?messages
-        let model = if isNull snapshot then null else snapshot?model
-        if not (isArray system && isArray messages) || isNull model then
-            createObj [ "ok" ==> false; "reason" ==> "incomplete frozen provider request" ]
+    let startTemporaryPrevious (tempId: string) (sourceSessionId: string) (metadata: obj) : obj =
+        let oldModel = if isNull metadata then null else metadata?model
+        let oldSystem = if isNull metadata then null else metadata?system
+        // The latest transform may advance between temp creation and provider send;
+        // inspect its boundary only at the physical temporary provider request.
+        if isNull oldModel || not (isArray oldSystem) then
+            createObj [ "ok" ==> false; "reason" ==> "no verified old Scope system and model evidence" ]
         else
-            let sys = unbox<string array> system
-            let msgs = unbox<obj array> messages
-            let provider = fieldText model "providerID"
-            let modelId = fieldText model "modelID"
-            let complete = sys.Length > 0 && msgs.Length > 0 && provider <> "" && modelId <> ""
-            if not complete then
-                createObj [ "ok" ==> false; "reason" ==> "missing frozen provider system, messages or model identity" ]
-            else
-                temporaryNegotiations[tempId] <- createObj
-                    [ "delegator", box (fieldText snapshot "sessionId")
-                      "messages", cloneWire messages
-                      "system", cloneWire system
-                      "model", cloneWire model ]
-                createObj [ "ok" ==> true ]
+            temporaryNegotiations[tempId] <-
+                createObj [ "previousDelegator", box sourceSessionId
+                            "system", cloneWire oldSystem
+                            "model", cloneWire oldModel ]
+            createObj [ "ok" ==> true ]
 
     let modelForTemporary (tempId: string) : obj =
         match temporaryNegotiations.TryGetValue tempId with
+        | true, view when not (isNull view?liveDelegator) -> modelFor (string view?liveDelegator)
         | true, view -> cloneWire view?model
         | _ -> null
 
@@ -725,18 +770,29 @@ let PairHint () : PairHintMessages =
         | true, count -> count
         | false, _ -> 0
 
-    let projectSystem (tempId: string) (system: string array) : obj =
+    let projectSystem (tempId: string) (_system: string array) : obj =
         match temporaryNegotiations.TryGetValue tempId with
+        | true, view when not (isNull view?liveDelegator) ->
+            let latest = field (viewFor(string view?liveDelegator)) "system"
+            if isNull latest then null else cloneWire latest
         | true, view -> cloneWire view?system
         | false, _ -> null
 
     let projectMessages (tempId: string) (question: obj) : obj =
-        match temporaryNegotiations.TryGetValue tempId with
-        | true, view ->
-            let prefix = unbox<obj array> (cloneWire view?messages)
-            let q = cloneWire question
-            box (Array.append prefix [| q |])
-        | false, _ -> null
+        let latest =
+            match temporaryNegotiations.TryGetValue tempId with
+            | true, view when not (isNull view?previousDelegator) ->
+                let source = string view?previousDelegator
+                let old = latestPrevious source
+                if isNull old then None else Some(cloneWire old)
+            | true, view when not (isNull view?liveDelegator) ->
+                observedMessages (string view?liveDelegator) false
+                |> Option.map (fun output -> cloneWire(box output))
+            | true, view -> Some(cloneWire view?messages)
+            | false, _ -> None
+        match latest with
+        | Some prefix -> box (Array.append (unbox<obj array> prefix) [| cloneWire question |])
+        | None -> null
 
     let current (sessionId: string) : ScopeSession =
         match sessions.TryGetValue sessionId with
@@ -771,9 +827,7 @@ let PairHint () : PairHintMessages =
             previousScopeQuestions.Remove r |> ignore
             preparedPreviousReplies.Remove r |> ignore
             confirmedPreviousReplies.Remove r |> ignore
-        recordedSystems.Remove sessionId |> ignore
-        recordedMessages.Remove sessionId |> ignore
-        recordedModels.Remove sessionId |> ignore
+        latestViews.Remove sessionId |> ignore
         temporaryNegotiations.Remove sessionId |> ignore
         temporaryToolViolations.Remove sessionId |> ignore
 
@@ -891,10 +945,13 @@ let PairHint () : PairHintMessages =
         member _.negotiationRequired(recipient) = (current recipient).NegotiationRequired
         member _.rememberSystem(sessionId, system) = rememberSystem sessionId system
         member _.rememberMessages(sessionId, messages) = rememberMessages sessionId messages
+        member _.rememberTransform(sessionId, input, output) = rememberTransform sessionId input output
+        member _.latestPrevious(sessionId) = latestPrevious sessionId
         member _.rememberModel(sessionId, model) = rememberModel sessionId model
         member _.modelFor(sessionId) = modelFor sessionId
         member _.startTemporary(tempId, delegatorId) = startTemporary tempId delegatorId
-        member _.startTemporaryFromFrozen(tempId, snapshot) = startTemporaryFromFrozen tempId snapshot
+        member _.startTemporaryPrevious(tempId, sourceSessionId, metadata) = startTemporaryPrevious tempId sourceSessionId metadata
+        member _.projectPreviousMessages(messages) = precedingScopeMessages messages |> Option.map box |> Option.defaultValue null
         member _.modelForTemporary(tempId) = modelForTemporary tempId
         member _.isTemporary(sessionId) = isTemporary sessionId
         member _.finishTemporary(tempId) = finishTemporary tempId

@@ -27,7 +27,7 @@ test('SPEC[pair-hint-008] a delegated assignment requires questions before any r
   assert.equal(owner.negotiationRequired(id),false)
   const after=owner.planRequest(id,[user('task'),tool('read-1'),user('answer')])
   assert.equal(after.negotiationRequired,false)
-  assert.match(after.strong,/resetScope immediately/)
+  assert.equal(after.strong,null, 'after negotiate the first estimate prompt belongs to ScopeProgress, not PairHint')
   assert.equal(after.hints.filter(h=>h.kind==='user').length,0)
   owner.clearSession(id)
 })

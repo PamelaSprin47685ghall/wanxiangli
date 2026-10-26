@@ -7,17 +7,17 @@ const call = (id, tool = 'read', terminalField = 'output') => ({kind:'assistant'
 const result = id => ({kind:'result',operator:false,resultFor:id,resultField:'content',parts:[]})
 const toolHint = (plan, index) => plan.hints.find(h => h.kind==='tool' && h.index===index)
 
-test('SPEC[pair-hint-014] before the first reset there is one NEW strong steer on every real request, never a user or tool tail', () => {
+test('SPEC[pair-hint-014] before an estimate PairHint does not fabricate reset advice; ScopeProgress owns the independent strong steer', () => {
   const owner = PairHint(), sid='first-scope-014'
   const raw=[user('first',1),call('read-1'),result('read-1')]
   const initial=owner.planRequest(sid,raw,'zh-CN')
   assert.equal(initial.initialized,false)
-  assert.match(initial.strong,/先调用 resetScope/)
+  assert.equal(initial.strong,null)
   assert.equal(initial.weak,null)
   assert.deepEqual(initial.hints,[])
   assert.equal(initial.budget,0)
   const next=owner.planRequest(sid,[...raw,call('read-2'),result('read-2')],'zh-CN')
-  assert.match(next.strong,/先调用 resetScope/)
+  assert.equal(next.strong,null)
   assert.deepEqual(next.hints,[])
   assert.equal(next.weak,null)
   assert.equal(raw.length,3,'raw provider history is not changed by the planner')
@@ -37,21 +37,21 @@ test('SPEC[pair-hint-014] after a reset, later operator messages and agent-attri
   assert.equal(first.initialized,true)
   assert.equal(first.strong,null)
   const pinned=toolHint(first,2)?.tail
-  assert.equal(pinned,'[Remaining turnBudget: 6]')
+  assert.equal(pinned,undefined,'tool-result budget suffixes were retired')
   owner.startTurn(sid)
   const later=[...base,user('real-next-task',2),user('negotiate-reply',3,false),call('read'),result('read')]
   const continuation=owner.planRequest(sid,later,'zh-CN')
   assert.equal(continuation.initialized,true)
-  assert.equal(continuation.budget,5)
+  assert.deepEqual(continuation.hints,[],'operator and agent messages cannot create an old budget suffix')
   assert.equal(continuation.strong,null)
   assert.equal(continuation.weak,null)
   assert.equal(continuation.hints.some(h=>h.kind==='user'),false)
   assert.equal(toolHint(continuation,2)?.tail,pinned,'historical suffix pinned')
-  assert.equal(toolHint(continuation,6)?.tail,'[Remaining turnBudget: 5]')
+  assert.equal(toolHint(continuation,6)?.tail,undefined)
   owner.startTurn(sid)
-  assert.equal(owner.turnBudget(sid),4)
+  assert.deepEqual(continuation.hints,[])
   const further=owner.planRequest(sid,[...later,user('real-third-message',4)],'zh-CN')
-  assert.equal(further.budget,4)
+  assert.deepEqual(further.hints,[])
   assert.equal(further.initialized,true)
   assert.equal(further.strong,null)
   assert.equal(further.hints.some(h=>h.kind==='user'),false)
@@ -71,7 +71,7 @@ test('SPEC[pair-hint-014] mandatory negotiate before first reset and askPrevious
   assert.equal(prepared.ok,true)
   assert.equal(owner.confirmNegotiationSteer(accepted.receipt,sid),true)
   const initial=owner.planRequest(sid,[...raw,user('agent-steer',2,false)],'en')
-  assert.match(initial.strong,/resetScope immediately/)
+  assert.equal(initial.strong,null,'baseline reporting belongs to ScopeProgress')
   assert.deepEqual(initial.hints,[])
   owner.resetSession(sid,7)
   assert.equal(owner.planRequest(sid,[...raw,call('reset','resetScope')],'en').strong,null)
@@ -92,14 +92,14 @@ test('SPEC[pair-hint-014] old agent-attributed user replies are not operator mes
   const selected=owner.planFilter(history).map(x=>x.index)
   assert.deepEqual(selected,[0,2,3,4,5], 'previous epoch agent steer is old process, not an operator message')
   const plan=owner.planRequest('agent-authorship-014',history,'en')
-  assert.match(plan.strong,/resetScope immediately/, 'a cold actor with no budget must strongly request a new reset')
+  assert.equal(plan.strong,null,'cold initial estimate is decided by ScopeProgress')
   owner.clearSession('agent-authorship-014')
 })
 
-test('SPEC[pair-hint-014] a cold session with reset history but no trustworthy budget repeats strong initialization',()=>{
+test('SPEC[pair-hint-014] a cold session with reset history does not fabricate old budget hints',()=>{
   const owner=PairHint(), sid='cold-rehydrated-014'
   const outcome=owner.planRequest(sid,[user('old',1),call('reset','resetScope'),result('reset'),user('new',2)],'en')
-  assert.match(outcome.strong,/resetScope immediately/)
+  assert.equal(outcome.strong,null,'cold recovery no longer guesses a reset obligation')
   assert.equal(outcome.initialized,false)
   assert.equal(outcome.hints.some(h=>h.kind==='user'),false)
   owner.clearSession(sid)

@@ -68,10 +68,13 @@ export interface PairHintMessages {
   negotiationRequired(recipient: string): boolean
   rememberSystem(sessionId: string, system: readonly string[]): void
   rememberMessages(sessionId: string, messages: readonly unknown[]): void
+  rememberTransform(sessionId: string, input: readonly unknown[], output: readonly unknown[]): void
+  latestPrevious(sessionId: string): readonly unknown[] | null
   rememberModel(sessionId: string, model: unknown): void
   modelFor(sessionId: string): unknown
   startTemporary(tempId: string, delegatorId: string): { ok: boolean, reason?: string }
-  startTemporaryFromFrozen(tempId: string, snapshot: unknown): { ok: boolean, reason?: string }
+  startTemporaryPrevious(tempId: string, sourceSessionId: string, previousScopeMetadata: unknown): { ok: boolean, reason?: string }
+  projectPreviousMessages(latestProviderMessages: readonly unknown[]): readonly unknown[] | null
   modelForTemporary(tempId: string): unknown
   isTemporary(sessionId: string): boolean
   finishTemporary(tempId: string): void

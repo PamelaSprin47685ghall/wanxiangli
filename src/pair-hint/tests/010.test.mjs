@@ -72,7 +72,7 @@ test('SPEC[pair-hint-010] both MUST pending states freeze turnBudget and repeat 
   }
 })
 
-test('SPEC[pair-hint-010] normal budget suffix resumes on newly encountered results only after askPreviousScope first receipt', () => {
+test('SPEC[pair-hint-010] first askPreviousScope receipt releases pending without adding any old budget suffix', () => {
   const owner = PairHint()
   const session = 'pending-unlocked-010'
   const original = [user('operator'), call('reset-1', 'resetScope'), result('reset-1')]
@@ -85,8 +85,10 @@ test('SPEC[pair-hint-010] normal budget suffix resumes on newly encountered resu
   assert.equal(accepted.ok, true)
   owner.startTurn(session)
   const next = owner.planRequest(session, [...original, call('new', 'read'), result('new')], 'en')
-  assert.equal(tail(next, 2), '[Remaining turnBudget: 5]', 'the first visible budget suffix after acceptance reflects current turns')
-  assert.equal(tail(next, 4), '[Remaining turnBudget: 5]')
-  assert.equal(owner.turnBudget(session), 5)
+  assert.equal(next.strong,null, 'real first question unlocks subsequent normal work')
+  assert.equal(next.pendingKind,'none')
+  assert.equal(tail(next,2),undefined)
+  assert.equal(tail(next,4),undefined)
+  assert.deepEqual(next.hints,[], 'progress accounting cannot pollute preserved tool results')
   owner.clearSession(session)
 })

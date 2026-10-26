@@ -25,7 +25,6 @@ module internal Projection =
         | "DevOpsConsultation" -> Some "DevOps"
         | "Fission" -> Some "Fission"
         | "Horizon" -> Some "Horizon"
-        | "Advisor" -> Some "Advisor"
         | "Ask" -> Some "Ask"
         | "ReviewAssessment"
         | "Review" -> Some "Review"
@@ -64,7 +63,6 @@ module internal Projection =
           "DevOps", "devops", []
           "Fission", "fission", []
           "Horizon", "horizon", []
-          "Advisor", "advisor", []
           "Ask", "ask", []
           "Review", "review", [] ]
 

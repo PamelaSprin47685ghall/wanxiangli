@@ -21,39 +21,39 @@ test('SPEC[pair-hint-006] the neutral plan cuts an assistant batch at the latest
   assert.deepEqual(plan.slots.map(s => s.index), [0, 3, 4, 5, 6, 8, 9])
   assert.deepEqual(plan.slots[4].parts, [1, 2])
   assert.equal(plan.budgetKnown,false)
-  assert.match(plan.strong,/resetScope immediately/,'historical reset alone cannot establish remaining budget')
+  assert.equal(plan.strong,null,'initial budget estimation belongs to ScopeProgress, not PairHint')
   assert.deepEqual(plan.hints,[],'no fabricated budget after cold history')
   assert.deepEqual(messages, raw, 'the planner does not edit the host projection')
   scope.clearSession(session)
 })
 
-test('SPEC[pair-hint-006] the same session owns its budget and prompt transitions independent of host wire names', () => {
+test('SPEC[pair-hint-006] PairHint keeps user prompts and tools unchanged without owning progress estimation', () => {
   const session = 'neutral-budget'
   scope.planRequest(session, [user('1:begin', 1)])
   scope.resetSession(session, 7)
   let plan = scope.planRequest(session, [user('1:begin', 1), assistant(part('reset', 'resetScope', 'output'))])
   assert.equal(plan.initialized, true)
   assert.equal(plan.budget, 7)
-  assert.ok(plan.hints.some(x => x.index === 1 && x.tail === '[Remaining turnBudget: 7]'))
+  assert.deepEqual(plan.hints,[],'the old tool-result budget countdown is retired')
   scope.startTurn(session)
   plan = scope.planRequest(session, [user('1:begin', 1), assistant(part('reset', 'resetScope', 'output'))])
-  assert.equal(plan.budget, 6)
+  assert.equal(plan.weak, null)
   plan = scope.planRequest(session, [user('1:begin', 1), assistant(part('reset', 'resetScope', 'output')), user('2:new', 2)])
-  assert.equal(plan.budget, 6)
+  assert.equal(plan.weak, null)
   assert.equal(plan.initialized, true)
   assert.equal(plan.strong, null)
   assert.equal(plan.hints.some(h => h.kind === 'user' && h.index === 2), false)
   scope.clearSession(session)
 })
 
-test('SPEC[pair-hint-006] a neutral side request cannot change the prompt boundary or budget', () => {
+test('SPEC[pair-hint-006] a neutral side request cannot change the prompt boundary or synthesize progress notices', () => {
   const session = 'neutral-side'
   scope.planRequest(session, [user('1:task', 1)])
   scope.resetSession(session, 5)
   const side = { kind: 'user', operator: false, sideRequest: true, key: 'side', timestamp: 99, parts: [] }
   const plan = scope.planRequest(session, [user('1:task', 1), side])
   assert.equal(plan.initialized, true)
-  assert.equal(plan.budget, 5)
+  assert.equal(plan.strong, null)
   assert.equal(plan.weak, null)
   assert.equal(plan.slots.length, 2)
   assert.equal(scope.appendTailOnce('done', '[Remaining turnBudget: 5]'), 'done\0\uFEFF[Remaining turnBudget: 5]')

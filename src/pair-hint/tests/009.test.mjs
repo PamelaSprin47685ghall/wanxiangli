@@ -9,32 +9,19 @@ const assistant = (id, name = 'read', terminalField = 'output') => ({
 const result = id => ({ kind: 'result', operator: false, resultFor: id, resultField: 'content', parts: [] })
 const tail = (plan, kind) => plan.hints.find(h => h.kind === kind)?.tail
 
-test('SPEC[pair-hint-009] actual state-owned reminders honor the explicitly supplied provider language', () => {
+test('SPEC[pair-hint-009] ordinary requests have no legacy budget reminders in either provider language', () => {
   for (const language of ['en', 'zh-CN']) {
-    const owner = PairHint()
-    const session = 'locale-' + language
-    const first = owner.planRequest(session, [user('task'), assistant('read')], language)
-    assert.equal(first.initialized, false)
-    assert.equal(first.negotiationRequired, false)
-    assert.equal(first.weak, null)
-    assert.ok(first.strong)
-    assert.deepEqual(first.hints, [], 'initial reset encouragement never rides on user or tool history')
-    if (language === 'zh-CN') {
-      assert.match(first.strong, /估计第一个细粒度任务/)
-      assert.doesNotMatch(first.strong, /\[System:|Estimate the turnBudget|Then call/)
-    } else assert.match(first.strong, /Estimate the turnBudget/)
-    owner.resetSession(session, 1)
-    owner.startTurn(session)
-    const reset = owner.planRequest(session, [user('task'), assistant('reset', 'resetScope'), result('reset')], language)
-    assert.equal(reset.budget, 0)
-    assert.ok(reset.weak)
-    if (language === 'zh-CN') {
-      assert.match(reset.weak, /已用尽|剩余 0/)
-      assert.doesNotMatch(reset.weak, /\[System:|If you|when convenient|Weak, optional/)
-    } else {
-      assert.match(reset.weak, /turnBudget is exhausted/)
-      assert.doesNotMatch(reset.weak, /If you are not busy/)
-    }
+    const owner=PairHint(), session='locale-'+language
+    const raw=[user('task'),assistant('read')]
+    const first=owner.planRequest(session,raw,language)
+    assert.equal(first.strong,null)
+    assert.equal(first.weak,null)
+    assert.deepEqual(first.hints,[])
+    owner.resetSession(session,0)
+    const again=owner.planRequest(session,[...raw,assistant('reset','resetScope'),result('reset')],language)
+    assert.equal(again.strong,null)
+    assert.equal(again.weak,null)
+    assert.deepEqual(again.hints,[])
     owner.clearSession(session)
   }
 })
@@ -56,29 +43,29 @@ test('SPEC[pair-hint-009] Chinese first-negotiate mandatory instruction is exclu
   assert.doesNotMatch(prepared.steer, /^Delegator answered/)
   assert.equal(owner.confirmNegotiationSteer(asked.receipt, session), true)
   const next = owner.planRequest(session, [user('assignment'), user('steer', 2)], 'zh-CN')
-  assert.match(next.strong, /估计第一个细粒度任务/)
+  assert.equal(next.strong, null, 'progress initialization belongs to the dedicated progress owner')
   assert.equal(next.hints.length, 0)
   owner.clearSession(session)
 })
 
-test('SPEC[pair-hint-009] first rendered tool suffix stays exactly frozen when the provider language changes mid-epoch', () => {
-  const owner = PairHint()
-  const session = 'frozen-locale-switch'
-  const base = [user('assignment'), assistant('r0', 'resetScope'), assistant('read', 'read')]
-  owner.planRequest(session, [base[0]], 'zh-CN')
-  owner.resetSession(session, 3)
-  const earlier = owner.planRequest(session, base, 'zh-CN')
-  const pinned = earlier.hints.find(h => h.index === 1).tail
-  assert.equal(pinned, '[Remaining turnBudget: 3]', 'wire budget format is a protocol sentinel, not an English instruction')
-  owner.startTurn(session)
-  const newer = owner.planRequest(session, [...base, assistant('next')], 'en')
-  assert.equal(newer.hints.find(h => h.index === 1).tail, pinned)
-  assert.equal(newer.hints.find(h => h.index === 3).tail, '[Remaining turnBudget: 2]')
+test('SPEC[pair-hint-009] switching languages does not add or rewrite old tool output suffixes', () => {
+  const owner=PairHint(),session='frozen-locale-switch'
+  const base=[user('assignment'),assistant('r0','resetScope'),assistant('read','read')]
+  const raw=structuredClone(base)
+  owner.planRequest(session,[base[0]],'zh-CN')
+  owner.resetSession(session,0)
+  const first=owner.planRequest(session,base,'zh-CN')
+  const later=owner.planRequest(session,[...base,assistant('next')],'en')
+  assert.deepEqual(first.hints,[])
+  assert.deepEqual(later.hints,[])
+  assert.equal(later.strong,null)
+  assert.deepEqual(base,raw)
   owner.clearSession(session)
 })
 
 test('SPEC[pair-hint-009] unsupported language cannot silently render English and leak it into Chinese sessions', () => {
   const owner = PairHint()
+  owner.bindDelegation('unrecognized','parent')
   assert.throws(() => owner.planRequest('unrecognized', [user('prompt')], 'xx-ZZ'), /language|Expected/)
   owner.clearSession('unrecognized')
 })

@@ -47,7 +47,7 @@ type private Session(sessionId: string, runtime: obj) =
             rejected
                 targetName
                 "INVALID_ARGUMENT"
-                "unpark requires a name and an optional value; planB belongs to the tool request"
+                "unpark requires a name and an optional value; intent belongs to the tool request"
         elif memberName = "abandon" && args.Length <> 1 then
             rejected targetName "INVALID_ARGUMENT" "abandon requires one program name"
         elif
@@ -76,7 +76,7 @@ type private Session(sessionId: string, runtime: obj) =
         let name = text nameValue
         let source = get options "program"
         let callId = field options "callId"
-        let planB = get options "planB"
+        let intent = get options "intent"
 
         if closed then
             rejected name "SESSION_CLOSED" "the program session is closed"
@@ -84,9 +84,9 @@ type private Session(sessionId: string, runtime: obj) =
             not (validName nameValue)
             || not (isText source)
             || String.IsNullOrWhiteSpace(text source)
-            || (budget planB).IsNone
+            || (budget intent).IsNone
         then
-            rejected name "INVALID_ARGUMENT" "name, program and planB are required strings; planB must be non-empty"
+            rejected name "INVALID_ARGUMENT" "name, program and intent are required strings; intent must be non-empty"
         else
             let replay =
                 if callId = "" then
@@ -98,7 +98,7 @@ type private Session(sessionId: string, runtime: obj) =
 
             match replay with
             | Some(previousName, previousSource, previousPlan, result) when
-                previousName = name && previousSource = text source && previousPlan = text planB
+                previousName = name && previousSource = text source && previousPlan = text intent
                 ->
                 result
             | Some _ -> rejected name "CALL_REPLAY_MISMATCH" "the physical tool call already belongs to another request"
@@ -107,13 +107,13 @@ type private Session(sessionId: string, runtime: obj) =
             | None ->
                 let observed = observations ()
                 let capabilities = strings (get options "capabilities") |> Set.ofArray
-                let window = RequestWindow(runtime, now runtime + (budget planB).Value)
+                let window = RequestWindow(runtime, now runtime + (budget intent).Value)
                 let program = Run(options, runtime, window, control name capabilities observed)
                 programs.Add(name, program)
                 let result = program.Start()
 
                 if callId <> "" then
-                    calls.Add(callId, (name, text source, text planB, result))
+                    calls.Add(callId, (name, text source, text intent, result))
 
                 result
 

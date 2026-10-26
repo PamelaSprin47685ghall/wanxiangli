@@ -7,7 +7,7 @@ test('SPEC[program-004] late SDK failure during drain park survives resume',{tim
   try{
     const result=await h.run('sdk-error',"try{this.slow();return this.call("+json(forbidden)+");}finally{await this.mark('finally','ran');}",{
       slow:()=>{operation=(async()=>{await writeFile(join(h.root,'effect'),'kept');await gate.promise;throw new Error('SDK_FAILED_DURING_PARK');})();return operation;}
-    },{planB:'xxxx'});
+    },{intent:'xxxx'});
     assert.equal(result.state,'parked',json(result));assert.equal(result.reason,'sdk-drain');assert.equal(result.command.started,false);
     gate.resolve();await assert.rejects(operation,/SDK_FAILED_DURING_PARK/);
     const done=await h.resume('sdk-error',undefined,WAIT);
@@ -37,7 +37,7 @@ test('SPEC[program-004] abandon permits an authorized cleanup call in finally',{
 test('SPEC[program-004] program code cannot manufacture a call budget',{timeout:15000},async t=>{
   const h=await harness(t);
   const cmd=command("require('node:fs').writeFileSync(process.argv[1],'started')",join(h.root,'bypass'));
-  const r=await h.run('bypass',"const planB='x'.repeat(48000);return this.call("+json(cmd)+",planB);",{}, {planB:'xxxx'});
+  const r=await h.run('bypass',"const intent='x'.repeat(48000);return this.call("+json(cmd)+",intent);",{}, {intent:'xxxx'});
   assert.equal(r.state,'failed',json(r));assert.equal(r.code,'CALL_COMMAND_UNSUPPORTED');
   assert.equal(await exists(join(h.root,'bypass')),false);
 });
@@ -45,7 +45,7 @@ test('SPEC[program-004] program code cannot manufacture a call budget',{timeout:
 test('SPEC[program-004] read-only controls cannot borrow target Exec',{timeout:15000},async t=>{
   const h=await harness(t);
   const cmd=command("const fs=require('node:fs');const publish=(path,text)=>{fs.writeFileSync(path+'.pending',text);fs.renameSync(path+'.pending',path);};let received='';process.stdin.setEncoding('utf8');process.stdin.on('data',text=>{received+=text;if(received.includes('still-alive\\n'))publish(process.argv[2],received);});publish(process.argv[1],String(process.pid));setInterval(()=>{},1000);",join(h.root,'pid'),join(h.root,'input'));
-  assert.equal((await h.run('owned',"return this.call("+json(cmd)+");",{}, {planB:'xxxx'})).state,'parked');await file(join(h.root,'pid'));
+  assert.equal((await h.run('owned',"return this.call("+json(cmd)+");",{}, {intent:'xxxx'})).state,'parked');await file(join(h.root,'pid'));
   for(const [name,body]of [['read-signal',"return this.signal('owned','SIGTERM');"],['read-send',"return this.send('owned','forbidden');"]]){
     const denied=await h.run(name,body,{}, {capabilities:['Read']});assert.equal(denied.state,'failed',json(denied));
   }

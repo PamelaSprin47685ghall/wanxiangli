@@ -2,76 +2,71 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { PairHint } from '../../../dist/pair-hint/PairHint.js'
 
-const user = (key, time) => ({ kind: 'user', operator: true, key, timestamp: time, parts: [] })
-const assistant = (id, tool, terminalField = 'output') => ({
-  kind: 'assistant', operator: false, parts: [{ id, tool, terminalField }],
-})
-const result = id => ({ kind: 'result', operator: false, resultFor: id, resultField: 'content', parts: [] })
-const suffix = (plan, index) => plan.hints.find(t => t.kind === 'tool' && t.index === index)?.tail
+const user=(key,time)=>({kind:'user',operator:true,key,timestamp:time,parts:[]})
+const assistant=(id,tool,terminalField='output')=>({kind:'assistant',operator:false,parts:[{id,tool,terminalField}]})
+const result=id=>({kind:'result',operator:false,resultFor:id,resultField:'content',parts:[]})
 
-test('SPEC[pair-hint-007] a completed tool result is byte-identical in successive requests of the same epoch', () => {
-  const hints = PairHint(), sid = 'prefix-stable-opencode'
-  const prompt = user('100:task', 100)
-  const reset = assistant('reset-1', 'resetScope')
-  const read = assistant('read-1', 'read')
-  hints.planRequest(sid, [prompt])
-  hints.resetSession(sid, 6)
-  const previous = hints.planRequest(sid, [prompt, reset])
-  assert.equal(suffix(previous, 1), '[Remaining turnBudget: 6]')
-  hints.startTurn(sid)
-  const current = hints.planRequest(sid, [prompt, reset, read])
-  assert.equal(current.budget, 5)
-  assert.equal(suffix(current, 1), suffix(previous, 1), 'previous provider prefix must stay byte-identical')
-  assert.equal(suffix(current, 2), '[Remaining turnBudget: 5]', 'new work should reveal the current budget')
-  hints.clearSession(sid)
+test('SPEC[pair-hint-007] an existing reset and ordinary tool output never acquire a synthetic countdown in later requests',()=>{
+  const owner=PairHint(),sid='prefix-stable-opencode'
+  const prompt=user('100:task',100),reset=assistant('reset-1','resetScope'),read=assistant('read-1','read')
+  const raw=[prompt,reset,read],original=structuredClone(raw)
+  owner.planRequest(sid,[prompt])
+  owner.resetSession(sid,0)
+  const previous=owner.planRequest(sid,[prompt,reset])
+  owner.startTurn(sid)
+  const current=owner.planRequest(sid,raw)
+  assert.deepEqual(previous.hints,[])
+  assert.deepEqual(current.hints,[])
+  assert.equal(current.strong,null)
+  assert.deepEqual(current.slots.map(x=>x.index),[0,1,2])
+  assert.deepEqual(raw,original,'all historical bytes remain unchanged')
+  owner.clearSession(sid)
 })
 
-test('SPEC[pair-hint-007] old OMP result suffixes remain pinned after later turns and operator steer', () => {
-  const hints = PairHint(), sid = 'prefix-stable-omp'
-  const prompt = user('100:task', 100)
-  const reset = assistant('r', 'resetScope', '')
-  const output = result('r')
-  hints.planRequest(sid, [prompt])
-  hints.resetSession(sid, 4)
-  const before = hints.planRequest(sid, [prompt, reset, output])
-  assert.equal(suffix(before, 2), '[Remaining turnBudget: 4]')
-  hints.startTurn(sid)
-  const after = hints.planRequest(sid, [prompt, reset, output, user('200:change', 200)])
-  assert.equal(after.budget, 3)
-  assert.equal(after.initialized, true)
-  assert.equal(after.strong, null)
-  assert.equal(suffix(after, 2), suffix(before, 2), 'a new prompt cannot retroactively replace historical wire bytes')
-  hints.clearSession(sid)
+test('SPEC[pair-hint-007] an agent-attributed answer and a later operator instruction do not rewrite OMP reset results',()=>{
+  const owner=PairHint(),sid='prefix-stable-omp'
+  const prompt=user('100:task',100),reset=assistant('r','resetScope',''),output=result('r')
+  const raw=[prompt,reset,output,user('200:change',200)]
+  const original=structuredClone(raw)
+  owner.planRequest(sid,[prompt])
+  owner.resetSession(sid,0)
+  const first=owner.planRequest(sid,raw.slice(0,3))
+  owner.startTurn(sid)
+  const later=owner.planRequest(sid,raw)
+  assert.deepEqual(first.hints,[])
+  assert.deepEqual(later.hints,[])
+  assert.equal(later.strong,null)
+  assert.deepEqual(raw,original)
+  owner.clearSession(sid)
 })
 
-test('SPEC[pair-hint-007] new reset creates a cold epoch and lets previously retained reset pairs be rebuilt', () => {
-  const hints = PairHint(), sid = 'prefix-reanchor'
-  const prompt = user('100:task', 100), first = assistant('r1', 'resetScope')
-  hints.planRequest(sid, [prompt])
-  hints.resetSession(sid, 5)
-  const before = hints.planRequest(sid, [prompt, first])
-  hints.startTurn(sid)
-  hints.resetSession(sid, 8)
-  const after = hints.planRequest(sid, [prompt, first, assistant('r2', 'resetScope')])
-  assert.equal(suffix(before, 1), '[Remaining turnBudget: 5]')
-  assert.equal(suffix(after, 1), '[Remaining turnBudget: 8]', 'a committed scope reset is an explicit cold prefix boundary')
-  hints.clearSession(sid)
+test('SPEC[pair-hint-007] later reset reanchors tool history without recreating countdown suffixes',()=>{
+  const owner=PairHint(),sid='prefix-reanchor'
+  const prompt=user('100:task',100),first=assistant('r1','resetScope'),second=assistant('r2','resetScope')
+  owner.planRequest(sid,[prompt])
+  owner.resetSession(sid,0)
+  const before=owner.planRequest(sid,[prompt,first])
+  owner.resetSession(sid,0)
+  const after=owner.planRequest(sid,[prompt,first,second])
+  assert.deepEqual(before.hints,[])
+  assert.deepEqual(after.hints,[])
+  assert.deepEqual(after.slots.map(x=>x.index),[0,1,2])
+  owner.clearSession(sid)
 })
 
-
-test('SPEC[pair-hint-007] side-request previews do not freeze unseen results using a stale budget', () => {
-  const hints = PairHint(), sid = 'prefix-side-preview'
-  const prompt = user('100:task', 100)
-  const reset = assistant('reset-1', 'resetScope')
-  const read = assistant('read-1', 'read')
-  hints.planRequest(sid, [prompt])
-  hints.resetSession(sid, 6)
-  const side = { kind: 'user', operator: false, sideRequest: true, parts: [] }
-  const preview = hints.planRequest(sid, [prompt, reset, read, side])
-  assert.equal(suffix(preview, 2), '[Remaining turnBudget: 6]')
-  hints.startTurn(sid)
-  const actual = hints.planRequest(sid, [prompt, reset, read])
-  assert.equal(suffix(actual, 2), '[Remaining turnBudget: 5]', 'a side preview cannot pin a future ordinary result')
-  assert.equal(suffix(hints.planRequest(sid, [prompt, reset, read]), 2), suffix(actual, 2))
-  hints.clearSession(sid)
+test('SPEC[pair-hint-007] side-request previews do not contaminate the next ordinary request',()=>{
+  const owner=PairHint(),sid='prefix-side-preview'
+  const prompt=user('100:task',100),reset=assistant('reset-1','resetScope'),read=assistant('read-1','read')
+  const side={kind:'user',operator:false,sideRequest:true,parts:[]}
+  const raw=[prompt,reset,read],original=structuredClone(raw)
+  owner.planRequest(sid,[prompt])
+  owner.resetSession(sid,0)
+  const preview=owner.planRequest(sid,[...raw,side])
+  const actual=owner.planRequest(sid,raw)
+  assert.deepEqual(preview.hints,[])
+  assert.deepEqual(actual.hints,[])
+  assert.equal(preview.strong,null)
+  assert.deepEqual(actual.slots.map(x=>x.index),[0,1,2])
+  assert.deepEqual(raw,original)
+  owner.clearSession(sid)
 })

@@ -11,8 +11,8 @@
 
 1. [AXIOM 1] 最新 reset 是唯一清理边界。之前的用户消息与 reset 对保留，之后完整保留；同批工具调用在 reset 的块位置切分。
 2. [AXIOM 2] 用户消息和工具结果有两种独立的后缀写入位置，但只在模型即将收到的请求副本中呈现。真实工具返回值、用户原文与持久化历史保持原样；同一提示不重复添加。
-3. [AXIOM 1, 2] 第一次 reset 前的所有正常 Provider 请求都由唯一 ScopeSession 输出一个**独立强 steer** 催促预算初始化；用户原文和工具结果绝不承载催重置命令。成功首次 reset 后沿用预算，之后任何真实用户消息和 agent 回答都不使预算归零；第二次及以后的 reset 才进入 askPreviousScope 强 steer 首问阶段。已初始化工具结果仅带预算观察，预算归零时可另加不打断工作的弱 steer。
-4. [AXIOM 1, 2] 已呈现的工具结果是同一 prefix epoch 内的历史字节，`ScopeSession` 按调用身份冻结首次提示尾巴；预算变动或新用户 steer 不回写旧结果，提交 reset 才清除本 epoch 的冻结记录。Side-request 不抢先冻结普通请求尚未呈现的结果。
+3. [AXIOM 1, 2] 预算与倒数提示已独立迁往 `wanxiangli/scope-progress`：有效 `todowrite` 的必填估计按真实 ProviderRun 聚合 `min`，没有报告的请求免费；估计 0 导致下一主回合由宿主发送单独强 `resetScope` steer。PairHint 只负责 `negotiate` 和第二次起 `askPreviousScope` 尚待首问时的独立强 steer；普通用户/代理消息不修改进度状态。工具结果不追加倒数。
+4. [AXIOM 1, 2] 保留已观测 Provider 原文、工具调用和配对结果的真实字节，普通旧工具过程才按 reset barrier 移除；可获得的 assistant thinking/text 不能因为与旧普通工具同消息而丢失。Side-request 不修改真实工作 Session，也不污染最新主会话视图。
 
 ## SPEC
 
@@ -29,14 +29,14 @@
 10. tests/010.test.mjs：negotiate 与 askPreviousScope 首问的相同时序冻结、不同解锁见证，首问后 budget 恢复和旧工具结果提示字节冻结。
 11. tests/011.test.mjs：assume、negotiate、askPreviousScope/askPrevious、advisor 原始工具调用和成对结果历次 reset 保留；未配对伪结果与普通旧调用不得混进来。
 12. tests/012.test.mjs：KPI 枚举乘法因子是单一自治预算计算函数，原始预算乘因子后向上取整，缺失未知枚举拒绝。
-13. tests/013.test.mjs：同一个只读临时会话协议可从旧 Provider 冻结上下文执行模型回问；receipt ID 只接受同问题、真实 steer 确认一次且删除会话后迟到回执无效。真实 steer 确认后只删除待确认答复标志，不清掉本轮查询身份；同一 toolCallId 以后重放仍须返回 replay，不可重做收费模型调用。
+13. tests/013.test.mjs：`negotiate`、`askPreviousScope` 和 Advisor 工作者短命咨询共用唯一最近 transform 输入/输出视图，temp session 只保存来源和视角；旧我咨询只看最后一次 reset 以前的实际 input，不漏新 Scope；下一 transform 覆盖旧版本。receipt ID 同问题幂等，物理 steer 确认后仍保留原始询问身份，不重复付费。
 
 14. tests/014.test.mjs：首次 reset 前每次请求独立 strong steer、绝不写用户/工具原文；首次 reset 后包括真人追加指令和任何 agent 载体消息都延续当前预算，不重新催 reset；旧 epoch 的 agent-attributed user 回复也不能伪装成永久保留的操作员消息；未完成首次 negotiate 与第二次起 askPreviousScope 义务只在强 steer 持续提示；冷历史虽含 reset 但本进程预算未恢复时必须像尚无预算那样持续强催真正重置，不能当已初始化并虚报 0。
 
 
 15. tests/015.test.mjs：冷重启后的历史 `resetScope` 只证明旧事件存在，未确证当前预算时必须持续通过强 agent steer 催重新 `resetScope`；不得把内存默认 0 当作已耗尽预算、发弱提示或改写工具尾巴。真正重置获得预算后仍按实际回合递减，只有真实 0 触发弱提醒。
 
-16. tests/016.test.mjs：OutboundViewStore 自治存储对象：渐进式封存、重入覆写重置、原生请求原子直封与残缺拒绝、深拷贝防外部篡改、discardSealed 单次排空、会话隔离清理、serializeSnapshot 契约（providerID, modelID, variant, toolsCaptured, nativePayload）与 startTemporaryFromFrozen 端到端消费。
+16. tests/016.test.mjs：可获得的 assistant thinking/text 穿越 reset；旧普通工具调用与返回配对裁剪，`assume/negotiate/askPreviousScope/askPrevious/advisor/resetScope` 关键工具调用与配对结果始终保留。独立 `OutboundViewStore` 负责真实 Provider archive/serialize/discardSealed 事实，**不**用已删除的 `startTemporaryFromFrozen` 在咨询期再次复制整段历史。
 
 ## 协商补充公理（2026-10-24）
 
@@ -46,4 +46,4 @@
 
 ## 边界
 
-ScopeSession 拥有 turnBudget 与当前 prompt 身份，组合者只提供 turn 开始、真实用户消息和 reset 已提交的事实；Journal/前缀世代与 Pair Hint 的宿主日志位置仍归各自的 owner。HNI 中立输入不包含宿主原始消息；物理载体的解码/回写只在宿主适配器执行，工具回调和历史数据不得承担注入职责。
+PairHint 的 ScopeSession 只拥有 negotiate/askPrevious 首问和上下文过滤。`ScopeProgress` 自治持有计费回合的 `min` 和 `ResetDue`。PairHint 中**每个真实工作 Session 仅一份覆写式 `latestViews`**（transform 原始 input / Provider-facing output + system/model 观察值）；临时咨询登记 Session 及投影身份，实际发网时从唯一视图读取。下一次 transform 覆写上一次；不为 temp session 复制完整请求。持久 Blob/AgentJournal 的事实归独立 owner，不能把临时内存当作持久历史。

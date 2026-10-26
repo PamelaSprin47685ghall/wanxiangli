@@ -4,7 +4,7 @@ import {assert,readFile,writeFile,join,delay,WAIT,json,command,deferred,exists,f
 test('SPEC 3: signal and stdin do not resume the target',{timeout:15000},async t=>{
  const h=await harness(t);
  const cmd=command("const fs=require('node:fs');const [pid,signaled,input]=process.argv.slice(1);let received='';process.on('SIGUSR2',()=>fs.writeFileSync(signaled,'yes'));process.stdin.setEncoding('utf8');process.stdin.on('data',text=>{received+=text;if(!received.includes('quit\\n'))return;fs.writeFileSync(input,received);process.stdout.write('accepted:'+received,()=>process.exit(7));});fs.writeFileSync(pid,String(process.pid));setInterval(()=>{},1000);",join(h.root,'pid'),join(h.root,'signal'),join(h.root,'input'));
- const p=await h.run('server','const r=this.call('+json(cmd)+');await this.mark("continued","yes");return r;',{}, {planB:'xxxx'});
+ const p=await h.run('server','const r=this.call('+json(cmd)+');await this.mark("continued","yes");return r;',{}, {intent:'xxxx'});
  assert.equal(p.state,'parked',json(p));await file(join(h.root,'pid'));const pid=Number(await readFile(join(h.root,'pid'),'utf8'));
  const sent=await h.control('return this.signal("server","SIGUSR2");');assert.equal(sent.sent,true);await file(join(h.root,'signal'));assert.equal(alive(pid),true);
  assert.equal(await exists(join(h.root,'continued')),false);
@@ -14,19 +14,19 @@ test('SPEC 3: signal and stdin do not resume the target',{timeout:15000},async t
  const r=await h.resume('server');assert.equal(r.value.exitCode,7);assert.equal(r.value.stdout,'accepted:hello\nquit\n');
 });
 test('SPEC 3: signal exit keeps a null code and actual signal',{timeout:15000},async t=>{
- const h=await harness(t);await h.run('signaled','return this.call('+json(runningCommand(h.root,'signal'))+');',{}, {planB:'xxxx'});
+ const h=await harness(t);await h.run('signaled','return this.call('+json(runningCommand(h.root,'signal'))+');',{}, {intent:'xxxx'});
  await file(join(h.root,'signal-pid'));const pid=Number(await readFile(join(h.root,'signal-pid'),'utf8'));
  await h.control('return this.signal("signaled","SIGTERM");');await until(()=>!alive(pid),'SIGTERM did not stop command');
  const r=await h.resume('signaled');assert.equal(r.value.exitCode,null);assert.equal(r.value.signal,'SIGTERM');
 });
 test('SPEC 3: abandon runs native finally and confirms termination',{timeout:15000},async t=>{
- const h=await harness(t);await h.run('cancel','try {return this.call('+json(runningCommand(h.root,'cancel'))+');}finally{await this.mark("finally","ran");}',{}, {planB:'xxxx'});
+ const h=await harness(t);await h.run('cancel','try {return this.call('+json(runningCommand(h.root,'cancel'))+');}finally{await this.mark("finally","ran");}',{}, {intent:'xxxx'});
  await file(join(h.root,'cancel-pid'));const pid=Number(await readFile(join(h.root,'cancel-pid'),'utf8'));
  const r=await h.control('return this.abandon("cancel");');assert.equal(r.state,'abandoned',json(r));assert.equal(r.forced,false);assert.equal(alive(pid),false);
  assert.equal(await readFile(join(h.root,'finally'),'utf8'),'ran');assert.deepEqual(await h.resume('cancel'),r);
 });
 test('SPEC 3: close shares command and explicit pause cleanup',{timeout:15000},async t=>{
- const h=await harness(t);await h.run('command','try {return this.call('+json(runningCommand(h.root,'close'))+');}finally{await this.mark("command-finally","ran");}',{}, {planB:'xxxx'});
+ const h=await harness(t);await h.run('command','try {return this.call('+json(runningCommand(h.root,'close'))+');}finally{await this.mark("command-finally","ran");}',{}, {intent:'xxxx'});
  await h.run('explicit','try{return this.park("wait");}finally{await this.mark("explicit-finally","ran");}');
  await file(join(h.root,'close-pid'));const pid=Number(await readFile(join(h.root,'close-pid'),'utf8'));
  const closed=await h.session.close();assert.equal(closed.state,'closed',json(closed));assert.equal(alive(pid),false);
@@ -48,7 +48,7 @@ test('SPEC 3: UTF-8 bytes price the drain window',{timeout:10000},async t=>{
  const h=await harness(t),times=[],cmd=command("require('node:fs').writeFileSync(process.argv[1],'started');",join(h.root,'started'));
  for(const [name,plan] of [['utf8','中'.repeat(4)],['ascii','x'.repeat(12)]]){
   const release=deferred();let started;
-  try{started=performance.now();const p=await h.run(name,'this.slow();return this.call('+json(cmd)+');',{slow:()=>release.promise},{planB:plan});
+  try{started=performance.now();const p=await h.run(name,'this.slow();return this.call('+json(cmd)+');',{slow:()=>release.promise},{intent:plan});
    const elapsed=performance.now()-started,budget=Buffer.byteLength(plan)*50;times.push(elapsed);
    assert.equal(p.reason,'sdk-drain',json(p));assert.equal(p.command.started,false);
    assert.ok(elapsed>=budget-60 && elapsed<budget+350,'elapsed '+elapsed+' budget '+budget);assert.equal(await exists(join(h.root,'started')),false);

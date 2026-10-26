@@ -8,35 +8,35 @@ const call=(id,tool,terminalField='')=>({id,tool,terminalField})
 const assistant=(...parts)=>({kind:'assistant',operator:false,parts})
 const result=id=>({kind:'result',operator:false,resultFor:id,resultField:'content',parts:[]})
 
-test('SPEC[pair-hint-003] prefix separator is appended once and only to provider copy',()=>{
+test('SPEC[pair-hint-003] historical marker helper appends a literal separator once, without changing its input',()=>{
   const text='output'
-  const suffix='[Remaining turnBudget: 2]'
+  const suffix='historical text'
   const once=owner.appendTailOnce(text,suffix)
   assert.equal(once,'output\0\uFEFF'+suffix)
   assert.equal(owner.appendTailOnce(once,suffix),once)
   assert.equal(text,'output')
 })
 
-test('SPEC[pair-hint-003] uninitialized active output gets the reminder and reset output gets the new budget',()=>{
+test('SPEC[pair-hint-003] initial Scope progress hints are delegated to ScopeProgress, not PairHint tool tails',()=>{
   const sid='neutral-init-tail'
   const initial=owner.planRequest(sid,[user('start'),assistant(call('read','read','output'))])
-  assert.match(initial.strong,/Then call resetScope immediately/)
-  assert.deepEqual(initial.hints,[], 'initialization is an independent strong steer, not a tool suffix')
+  assert.equal(initial.strong,null)
+  assert.deepEqual(initial.hints,[])
   const after=owner.planRequest(sid,[user('start'),assistant(call('read','read','output'),call('reset','resetScope','output'))])
-  assert.equal(after.budgetKnown,false)
-  assert.equal(after.initialized,false)
-  assert.match(after.strong,/Then call resetScope immediately/,'cold reset history is not a budget observation')
-  assert.deepEqual(after.hints,[],'unknown budget must never emit a fake [Remaining turnBudget: 0]')
+  assert.equal(after.strong,null)
+  assert.equal(after.weak,null)
+  assert.deepEqual(after.hints,[])
   owner.clearSession(sid)
 })
 
-test('SPEC[pair-hint-003] initialized exhausted budget makes only a weak, optional steer',()=>{
+test('SPEC[pair-hint-003] a legacy exhausted budget is not interpreted as a new ScopeProgress ResetDue',()=>{
   const sid='neutral-zero'
   owner.planRequest(sid,[user('start')])
   owner.resetSession(sid,1)
   owner.startTurn(sid)
   const plan=owner.planRequest(sid,[user('start'),assistant(call('reset','resetScope')),result('reset')])
-  assert.match(plan.weak,/Do not interrupt, pause, or abandon/)
-  assert.equal(plan.budget,0)
+  assert.equal(plan.strong,null)
+  assert.equal(plan.weak,null)
+  assert.deepEqual(plan.hints,[])
   owner.clearSession(sid)
 })

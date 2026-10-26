@@ -43,7 +43,7 @@ export type ProgramReceipt =
 export interface ProgramOptions {
   readonly name: string
   readonly program: string
-  readonly planB: string
+  readonly intent: string
   readonly callId?: string
   readonly baseClass: string
   readonly capabilities: readonly string[]

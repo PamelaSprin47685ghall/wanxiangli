@@ -326,7 +326,7 @@ type internal Run
                 request
                 (failure
                     "CALL_COMMAND_UNSUPPORTED"
-                    "call requires exactly one command string; planB belongs to the tool request")
+                    "call requires exactly one command string; intent belongs to the tool request")
         else
             callGeneration <- callGeneration + 1
             let generation = callGeneration

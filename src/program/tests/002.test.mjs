@@ -15,7 +15,7 @@ test('SPEC 2: expired drain never starts until unpark',{timeout:15000},async t=>
  const h=await harness(t),release=deferred(),sdk=join(h.root,'sdk'),starts=join(h.root,'starts');
  const cmd=command("require('node:fs').appendFileSync(process.argv[1],'start\\n');",starts);
  try{const p=await h.run('drain','this.slow();const r=this.call('+json(cmd)+');await this.mark("continued","yes");return r;',
- {slow:async()=>{await release.promise;await writeFile(sdk,'saved');return 'saved';}}, {planB:'xxxx'});
+ {slow:async()=>{await release.promise;await writeFile(sdk,'saved');return 'saved';}}, {intent:'xxxx'});
  assert.equal(p.state,'parked',json(p));assert.equal(p.reason,'sdk-drain');assert.equal(p.command.started,false);assert.ok(p.pendingOperations>0);
  release.resolve();await file(sdk);assert.equal(await exists(starts),false);assert.equal(await exists(join(h.root,'continued')),false);
  const r=await h.resume('drain');assert.equal(r.state,'completed',json(r));assert.equal(r.value.exitCode,0);assert.equal(await readFile(starts,'utf8'),'start\n');
@@ -26,7 +26,7 @@ for(const form of ['unawaited','Promise.all'])test('SPEC 2: '+form+' cannot pass
  const second=command("const fs=require('node:fs');if(!fs.existsSync(process.argv[1]))process.exit(98);fs.writeFileSync(process.argv[2],'second');",join(h.root,'first-ended'),join(h.root,'second-started'));
  const calls=['this.call('+json(first)+')','this.call('+json(second)+')'];
  const body=form==='unawaited'?calls.join(';')+';':'await Promise.all(['+calls.join(',')+']);';
- const p=await h.run('serial',body+'await this.mark("continued","yes");return "done";',{}, {planB:'xxxx'});
+ const p=await h.run('serial',body+'await this.mark("continued","yes");return "done";',{}, {intent:'xxxx'});
  assert.equal(p.state,'parked',json(p));await file(join(h.root,'first-started'));
  assert.equal(await exists(join(h.root,'second-started')),false);assert.equal(await exists(join(h.root,'continued')),false);
  await writeFile(join(h.root,'first-release'),'go');await file(join(h.root,'first-ended'));
@@ -35,7 +35,7 @@ for(const form of ['unawaited','Promise.all'])test('SPEC 2: '+form+' cannot pass
  assert.equal(await readFile(join(h.root,'second-started'),'utf8'),'second');
 });
 test('SPEC 2: exit after park preserves continuation and true call result',{timeout:15000},async t=>{
- const h=await harness(t);const p=await h.run('call','const r=this.call('+json(heldCommand(h.root,'call','real-output'))+');await this.mark("continued","yes");return r;',{}, {planB:'xxxx'});
+ const h=await harness(t);const p=await h.run('call','const r=this.call('+json(heldCommand(h.root,'call','real-output'))+');await this.mark("continued","yes");return r;',{}, {intent:'xxxx'});
  assert.equal(p.state,'parked',json(p));await file(join(h.root,'call-started'));await writeFile(join(h.root,'call-release'),'go');await file(join(h.root,'call-ended'));
  assert.equal(await exists(join(h.root,'continued')),false);
  const r=await h.resume('call',{exitCode:99,stdout:'fake'});assert.equal(r.state,'completed',json(r));assert.equal(r.value.exitCode,0);assert.equal(r.value.stdout,'real-output');
@@ -63,7 +63,7 @@ test('SPEC 2: old control cannot consume a later pause',{timeout:15000},async t=
  const r=await h.resume('target','second-value');assert.deepEqual(r.value,{first:'first-value',second:'second-value'});
 });
 test('SPEC 2: old signal cannot hit the next command',{timeout:15000},async t=>{
- const h=await harness(t);await h.run('target','const first=this.call('+json(heldCommand(h.root,'first','first'))+');const second=this.call('+json(heldCommand(h.root,'second','second'))+');return {first,second};',{}, {planB:'xxxx'});
+ const h=await harness(t);await h.run('target','const first=this.call('+json(heldCommand(h.root,'first','first'))+');const second=this.call('+json(heldCommand(h.root,'second','second'))+');return {first,second};',{}, {intent:'xxxx'});
  await file(join(h.root,'first-started'));await h.run('old','this.park("hold");return this.signal("target","SIGTERM");');
  await writeFile(join(h.root,'first-release'),'go');await file(join(h.root,'first-ended'));
  const p=await h.resume('target',undefined,'xxxx');assert.equal(p.state,'parked',json(p));await file(join(h.root,'second-started'));
@@ -72,7 +72,7 @@ test('SPEC 2: old signal cannot hit the next command',{timeout:15000},async t=>{
  const r=await h.resume('target');assert.equal(r.value.first.exitCode,0);assert.equal(r.value.second.exitCode,0);
 });
 test('SPEC 2: blocked programs preserve CPU budget and other programs respond',{timeout:20000},async t=>{
- const h=await harness(t);await h.run('a','return this.call('+json(heldCommand(h.root,'a','a'))+');',{}, {planB:'xxxx'});await file(join(h.root,'a-started'));
+ const h=await harness(t);await h.run('a','return this.call('+json(heldCommand(h.root,'a','a'))+');',{}, {intent:'xxxx'});await file(join(h.root,'a-started'));
  const running=h.run('b','return this.call('+json(heldCommand(h.root,'b','b'))+');');await file(join(h.root,'b-started'));
  const healthy=await h.run('reader','await this.mark("reader","yes");return "responsive";');assert.equal(healthy.value,'responsive',json(healthy));
  await delay(1200);await writeFile(join(h.root,'b-release'),'go');assert.equal((await running).value.exitCode,0);

@@ -48,6 +48,10 @@
       "types": "./src/pair-hint/index.d.ts",
       "import": "./dist/pair-hint/PairHint.js"
     },
+    "./scope-progress": {
+      "types": "./src/scope-progress/index.d.ts",
+      "import": "./dist/scope-progress/AdvisorFlow.js"
+    },
     "./prefix": {
       "types": "./src/prefix/index.d.ts",
       "import": "./dist/prefix/Prefix.js"
@@ -258,7 +262,7 @@
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "npm run build && node --test src/lifecycle/tests/*.test.mjs src/eventstore/tests/*.test.mjs src/assembly/tests/*.test.mjs src/runtime/process/tests/*.test.mjs src/trace/tests/*.test.mjs src/session/tests/*.test.mjs src/resources/tests/*.test.mjs src/identity/tests/*.test.mjs src/events/tests/*.test.mjs src/runtime/files/tests/*.test.mjs src/runtime/time/tests/*.test.mjs src/program/wait/tests/*.test.mjs src/prefix/tests/*.test.mjs src/pair-hint/tests/*.test.mjs src/delivery/tests/*.test.mjs src/degeneration/tests/*.test.mjs src/runtime/spool/tests/*.test.mjs src/convergence/tests/*.test.mjs src/retention/tests/*.test.mjs src/segments/tests/*.test.mjs src/casebook/tests/*.test.mjs src/casebook-maintenance/tests/*.test.mjs src/casebook-access/tests/*.test.mjs src/quarantine/tests/*.test.mjs src/runtime/pty/tests/*.test.mjs src/ablation/tests/*.test.mjs src/capability/tests/*.test.mjs src/authority/tests/*.test.mjs src/projection/tests/*.test.mjs src/runtime/tests/*.test.mjs src/routing/tests/*.test.mjs src/permit/tests/*.test.mjs src/capacity/tests/*.test.mjs src/admission-queue/tests/*.test.mjs src/dispatch/tests/*.test.mjs src/borrowing/tests/*.test.mjs src/chat-execution/tests/*.test.mjs src/association/tests/*.test.mjs src/program/tests/*.test.mjs src/run-witness/tests/*.test.mjs src/git-porcelain/tests/*.test.mjs src/failure/tests/*.test.mjs src/failure-budget/tests/*.test.mjs src/attachment-lease/tests/*.test.mjs src/warm-start/tests/*.test.mjs src/handle-lifecycle/tests/*.test.mjs src/delegate-batch/tests/*.test.mjs src/ordinal/tests/*.test.mjs src/bayes/tests/*.test.mjs src/fission-group/tests/*.test.mjs src/terminal/tests/*.test.mjs scripts/tests/*.test.mjs",
+    "test": "npm run build && node --test src/lifecycle/tests/*.test.mjs src/eventstore/tests/*.test.mjs src/assembly/tests/*.test.mjs src/runtime/process/tests/*.test.mjs src/trace/tests/*.test.mjs src/session/tests/*.test.mjs src/resources/tests/*.test.mjs src/identity/tests/*.test.mjs src/events/tests/*.test.mjs src/runtime/files/tests/*.test.mjs src/runtime/time/tests/*.test.mjs src/program/wait/tests/*.test.mjs src/prefix/tests/*.test.mjs src/pair-hint/tests/*.test.mjs src/scope-progress/tests/*.test.mjs src/delivery/tests/*.test.mjs src/degeneration/tests/*.test.mjs src/runtime/spool/tests/*.test.mjs src/convergence/tests/*.test.mjs src/retention/tests/*.test.mjs src/segments/tests/*.test.mjs src/casebook/tests/*.test.mjs src/casebook-maintenance/tests/*.test.mjs src/casebook-access/tests/*.test.mjs src/quarantine/tests/*.test.mjs src/runtime/pty/tests/*.test.mjs src/ablation/tests/*.test.mjs src/capability/tests/*.test.mjs src/authority/tests/*.test.mjs src/projection/tests/*.test.mjs src/runtime/tests/*.test.mjs src/routing/tests/*.test.mjs src/permit/tests/*.test.mjs src/capacity/tests/*.test.mjs src/admission-queue/tests/*.test.mjs src/dispatch/tests/*.test.mjs src/borrowing/tests/*.test.mjs src/chat-execution/tests/*.test.mjs src/association/tests/*.test.mjs src/program/tests/*.test.mjs src/run-witness/tests/*.test.mjs src/git-porcelain/tests/*.test.mjs src/failure/tests/*.test.mjs src/failure-budget/tests/*.test.mjs src/attachment-lease/tests/*.test.mjs src/warm-start/tests/*.test.mjs src/handle-lifecycle/tests/*.test.mjs src/delegate-batch/tests/*.test.mjs src/ordinal/tests/*.test.mjs src/bayes/tests/*.test.mjs src/fission-group/tests/*.test.mjs src/terminal/tests/*.test.mjs scripts/tests/*.test.mjs",
     "prepack": "npm run build"
   },
   "devDependencies": {

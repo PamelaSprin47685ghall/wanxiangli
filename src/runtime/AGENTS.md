@@ -17,7 +17,7 @@
 
 1. [AXIOM 1, 2] Runtime 拥有独立执行进程、隔离和通信。同步桥接只停住所属执行单元，宿主仍接收既有 SDK、输出与退出。模型只取得受控数据与原语，不取得宿主对象或跨边界可变别名。
 2. [AXIOM 3; 根 LEMMA 3] RuntimeTools 拥有原语与字面锚点，保留原样字符串及 UTF-16 span，不做空白折叠；歧义事实交 program 暂停。FileSession 拥有读快照和版本校验，Filesystem 承担文件能力，不用隐式重读掩盖冲突。
-3. [AXIOM 3] ProcessSession、Terminal 各自拥有进程及终端，OutputSpool 拥有输出，Time 提供物理计量与唤醒。runtime 不解释 planB，不登记程序名字，不拥有 park 表，不认识角色、评审、Work 或 deliver。
+3. [AXIOM 3] ProcessSession、Terminal 各自拥有进程及终端，OutputSpool 拥有输出，Time 提供物理计量与唤醒。runtime 不解释 intent，不登记程序名字，不拥有 park 表，不认识角色、评审、Work 或 deliver。
 4. [AXIOM 1, 3] 物理退出只报告事实，不自行放行暂停续体。计算保护不能以跨越 call 等待的 wall-clock timeout 偷扣执行预算。
 5. [AXIOM 3, 4] 请求期限与物理有界执行不同。模型 call 请求到期保留原命令；底层 ProcessSession.run 的显式 deadline_seconds、输出预算及运行硬顶继续成立，不能因删除模型面 maxDuration 而放宽。
 6. [AXIOM 3, 4; 总规则 LEMMA 1] 信号和取消请求不是资源终态。清理确认 shell 和进程组退出；强杀报告真实信号，不保证 finally 或逃逸后代。现场丢失不依据名字或输出自动重跑。

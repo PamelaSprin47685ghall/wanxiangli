@@ -1,0 +1,53 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { ScopeProgress } from '../../../dist/scope-progress/AdvisorFlow.js'
+
+test('SPEC[scope-progress-001] free rounds; min of all calls settles once regardless of arrival order', () => {
+  const p=ScopeProgress()
+  assert.equal(p.settle('s','e1','free').charged,false)
+  assert.equal(p.record('s','e1','r1','b',8).minimum,8)
+  assert.equal(p.record('s','e1','r1','a',5).minimum,5)
+  assert.equal(p.record('s','e1','r1','c',6).minimum,5)
+  assert.equal(p.record('s','e1','r1','a',5).replayed,true)
+  assert.equal(p.record('s','e1','r1','a',4).ok,false,'same physical tool identity conflicts if changed')
+  const result=p.settle('s','e1','r1')
+  assert.deepEqual([result.charged,result.estimate,result.advisor,result.resetDue],[true,5,false,false])
+  assert.equal(p.settle('s','e1','r1'),result,'one settled provider run is not charged again')
+  assert.equal(p.record('s','e1','r1','new',0).ok,false)
+})
+
+test('SPEC[scope-progress-001] comparison is only against preceding charged round; zero is latched until reset',()=>{
+  const p=ScopeProgress()
+  p.record('s','e1','first','c1',4)
+  assert.equal(p.settle('s','e1','first').advisor,false)
+  assert.equal(p.settle('s','e1','free').charged,false)
+  p.record('s','e1','stable','c1',4)
+  assert.equal(p.settle('s','e1','stable').advisor,true)
+  p.record('s','e1','down','c1',2)
+  assert.equal(p.settle('s','e1','down').advisor,false)
+  p.record('s','e1','zero','c1',0)
+  const finished=p.settle('s','e1','zero')
+  assert.equal(finished.resetDue,true)
+  assert.equal(finished.advisor,false)
+  assert.equal(p.settle('s','e1','free-again').resetDue,true)
+  p.record('s','e1','after-zero','c1',0)
+  assert.equal(p.settle('s','e1','after-zero').advisor,true)
+  p.reset('s','e2')
+  assert.equal(p.status('s').resetDue,false)
+  assert.equal(p.status('s').known,false)
+  assert.equal(p.record('s','e1','late','c1',0).ok,false,'stale epoch')
+  p.record('s','e2','first','c1',3)
+  assert.equal(p.settle('s','e2','first').advisor,false)
+})
+
+test('SPEC[scope-progress-001] concurrent ordering cannot affect the minimum or charge count',()=>{
+  const p=ScopeProgress()
+  for (const [id,score] of [['later',9],['early',3],['middle',5]]) assert.equal(p.record('second','epoch','run',id,score).ok,true)
+  const r=p.settle('second','epoch','run')
+  assert.equal(r.estimate,3)
+  assert.equal(r.charged,true)
+  assert.equal(r.advisor,false)
+  assert.equal(p.record('second','epoch','new','bad',-1).ok,false)
+  p.clear('second')
+  assert.equal(p.status('second').known,false)
+})

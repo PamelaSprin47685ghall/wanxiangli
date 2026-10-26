@@ -39,10 +39,10 @@ export async function harness(t){
  const run=(name,body,api={},extra={})=>session.execute({
    name,program:'class Js extends JsProgram { async run() {'+body+'\n}}',baseClass:BASE,
    callId:'call-'+(++sequence),api:{mark:(path,value)=>writeFile(join(root,path),value),...api},
-   root,outputRoot:root,planB:WAIT,executionBudgetMs:1000,outputBoundBytes:1<<20,capabilities:['Read','Write','Exec'],...extra
+   root,outputRoot:root,intent:WAIT,executionBudgetMs:1000,outputBoundBytes:1<<20,capabilities:['Read','Write','Exec'],...extra
  });
- const control=async(body,planB=WAIT)=>{const r=await run('control-'+(++sequence),body,{}, {planB});assert.notEqual(r.state,'failed',json(r));return r.state==='completed'?r.value:r;};
- const resume=(name,value,planB=WAIT)=>control('return this.unpark('+json(name)+','+json(value)+');',planB);
+ const control=async(body,intent=WAIT)=>{const r=await run('control-'+(++sequence),body,{}, {intent});assert.notEqual(r.state,'failed',json(r));return r.state==='completed'?r.value:r;};
+ const resume=(name,value,intent=WAIT)=>control('return this.unpark('+json(name)+','+json(value)+');',intent);
  t.after(async()=>{await session.close();await rm(root,{recursive:true,force:true});});
  return {root,session,run,control,resume};
 }

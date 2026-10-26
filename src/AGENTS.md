@@ -13,7 +13,7 @@
 | `wanxiangli/provider-calibration` | `provider-calibration/` | ProviderCalibration 进程内会话用量与声明上限的单一自治状态 owner，宿主仅写入真实观测 |
 | `wanxiangli/external-namespaces` | `external-namespaces/` | ExternalNamespaces 进程级已声明 MCP 命名空间单调集合及严格匹配；宿主配置解码和角色授权留在宿主 |
 
-program → runtime 是根规则明确的永久单向基础依赖，仅消费公开产物。模型入口恰为 name/program/planB；顶层一次性期限约束本次所有 call/unpark，成员不能续期。独立 join() 无参数，编程内 join/dag 已删除。旧八入口退出。
+program → runtime 是根规则明确的永久单向基础依赖，仅消费公开产物。模型入口恰为 name/program/intent；顶层一次性期限约束本次所有 call/unpark，成员不能续期。独立 join() 无参数，编程内 join/dag 已删除。旧八入口退出。
 
 下方既有阶段清单与历史证明只记录当时范围，不作为当前 exports 或最终验收状态；当前构建、真实执行和安装均须独立验证。
 
