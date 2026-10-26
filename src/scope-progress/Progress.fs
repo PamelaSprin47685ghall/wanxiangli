@@ -8,6 +8,7 @@ open Wanxiangli.ScopeProgress.DurableProgress
 type private ScopeState(epoch: string) =
     let rounds = Dictionary<string, Dictionary<string, int>>()
     let settled = Dictionary<string, obj>()
+    let reports = Dictionary<string, string * int>()
     let mutable previous: int option = None
     let mutable resetDue = false
 
@@ -15,10 +16,8 @@ type private ScopeState(epoch: string) =
     member _.Previous = previous
     member _.ResetDue = resetDue
 
-    member _.Record(runId: string, callId: string, estimate: int) : obj =
-        if String.IsNullOrWhiteSpace runId || String.IsNullOrWhiteSpace callId || estimate < 0 then
-            createObj [ "ok" ==> false; "reason" ==> "valid providerRunId, toolCallId and nonnegative estimate required" ]
-        elif settled.ContainsKey runId then
+    member private _.RecordRound(runId: string, callId: string, estimate: int) : obj =
+        if settled.ContainsKey runId then
             createObj [ "ok" ==> false; "reason" ==> "provider round already settled" ]
         else
             let calls =
@@ -35,7 +34,24 @@ type private ScopeState(epoch: string) =
                 createObj [ "ok" ==> true; "replayed" ==> true; "minimum" ==> (calls.Values |> Seq.min) ]
             | _ ->
                 calls[callId] <- estimate
+                reports[callId] <- runId, estimate
                 createObj [ "ok" ==> true; "replayed" ==> false; "minimum" ==> (calls.Values |> Seq.min) ]
+
+    member this.Record(runId: string, callId: string, estimate: int) : obj =
+        if String.IsNullOrWhiteSpace runId || String.IsNullOrWhiteSpace callId || estimate < 0 then
+            createObj [ "ok" ==> false; "reason" ==> "valid providerRunId, toolCallId and nonnegative estimate required" ]
+        else
+            match reports.TryGetValue callId with
+            | true, (owner, original) when owner <> runId ->
+                if original <> estimate then
+                    createObj [ "ok" ==> false; "reason" ==> "tool call identity conflicts with its original estimate" ]
+                else
+                    let minimum =
+                        match settled.TryGetValue owner with
+                        | true, result -> unbox<int> result?estimate
+                        | _ -> rounds[owner].Values |> Seq.min
+                    createObj [ "ok" ==> true; "replayed" ==> true; "minimum" ==> minimum ]
+            | _ -> this.RecordRound(runId, callId, estimate)
 
     member this.SettlePending() : obj array =
         rounds.Keys

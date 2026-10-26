@@ -10,7 +10,7 @@
 
 ## LEMMA
 
-1. 每项报告绑定 `sessionId + scopeId + providerRunId + toolCallId`。同一 Provider 回合结算一次，同身份内容冲突明确拒绝；已完成的 Process 仍记得触发身份，不能再发一次外部模型请求。
+1. 每项报告绑定 `sessionId + scopeId + providerRunId + toolCallId`。同一 Provider 回合结算一次，同身份内容冲突明确拒绝；内存与持久模式都将同一 Scope 的物理 toolCallId 绑定原 Provider 回合，改用新的内部 runId 重放不能再计费。已完成的 Process 仍记得触发身份，不能再发一次外部模型请求。
 2. Scope 标识仅随成功提交的 `ScopeReanchored` 改变；Provider Context compaction、工作任期变化及 agent-attributed steer 不能重置进度基线。
 3. 一个正在运行的咨询最多合并一项等待咨询，所有触发身份保留；阶段顺序 A→B→C→D，不容许后阶段在前阶段失败后执行。
 4. 四段问询在开始时固定宿主报告的语言，支持 `en`／`zh-CN`，不接受未知语言；模型看到的只是自然问题，不能看到内部进程、存储或临时对话身份。
