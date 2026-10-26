@@ -24,9 +24,9 @@
 
 6. tests/006.test.mjs：来自不同宿主的同一份 HNI 中立消息视图，得到相同的 reset 保留计划、用户提醒与工具结果后缀位置；旧原始消息不进入 ScopeSession。
 7. tests/007.test.mjs：先构造预算递减与新 steer 造成历史尾巴改字节的红态，再证明首次呈现冻结、冷重锚允许重建、side-request 不抢先冻结。
-8. tests/008.test.mjs：受委托方首次问答到达前只提醒 negotiate(questions)，首次真实回答 steer 后才激活 resetScope；随后可选协商不暂停重置。同一委托者绑定复用不强制重问，换委托者时旧回执失效；未 prepare 或尚未真实送达的回答不可解锁。
+8. tests/008.test.mjs：受委托方首次 negotiate(questions) 受理前只提醒 negotiate；受理即完成，立即解除 pending、激活 resetScope，时序继续，不等也不依赖答复 steer；随后可选协商不暂停重置。同一委托者绑定复用不强制重问，换委托者时旧回执失效；答复回执仍须 prepare 且由正确接收方确认才结算，但结算与否不影响门禁。
 9. tests/009.test.mjs：动态初始化、首次协商、零预算弱提醒与协商回答经实见语言呈现；中文请求不混英语 `[System:]` 行为指令，非法语言不静默退回英文；同 epoch 的已呈现结果字节不因语言切换而漂移。宿主 HNI 在 cognitive-environment/018 验证真实语言权威。
-10. tests/010.test.mjs：negotiate 与 askPreviousScope 首问的相同时序冻结、不同解锁见证，首问后 budget 恢复和旧工具结果提示字节冻结。
+10. tests/010.test.mjs：negotiate 与 askPreviousScope 首问的相同时序冻结、相同解锁见证（首次有效调用受理即解除），首问后 budget 恢复和旧工具结果提示字节冻结。
 11. tests/011.test.mjs：assume、negotiate、askPreviousScope/askPrevious、advisor 原始工具调用和成对结果历次 reset 保留；未配对伪结果与普通旧调用不得混进来。
 12. tests/012.test.mjs：KPI 枚举乘法因子是单一自治预算计算函数，原始预算乘因子后向上取整，缺失未知枚举拒绝。
 13. tests/013.test.mjs：`negotiate`、`askPreviousScope` 和 Advisor 工作者短命咨询共用唯一最近 transform 输入/输出视图，temp session 只保存来源和视角；旧我咨询只看最后一次 reset 以前的实际 input，不漏新 Scope；下一 transform 覆盖旧版本。receipt ID 同问题幂等，物理 steer 确认后仍保留原始询问身份，不重复付费。

@@ -14,17 +14,16 @@ const result = id => ({
 })
 const tail = (plan, index) => plan.hints.find(item => item.kind === 'tool' && item.index === index)?.tail
 
-test('SPEC[pair-hint-010] negotiate first answer and askPreviousScope first call have distinct admission witnesses', () => {
+test('SPEC[pair-hint-010] negotiate and askPreviousScope both unlock on the accepted first call', () => {
   const owner = PairHint()
   const delegated = 'child-negotiation-010'
   owner.bindDelegation(delegated, 'parent')
   assert.equal(owner.pendingKind(delegated), 'negotiate')
   const original = owner.askNegotiation(delegated, 'Clarify the task')
   assert.equal(original.ok, true)
-  assert.equal(owner.pendingKind(delegated), 'negotiate',
-    'merely asking does not count as receiving the parent reply')
+  assert.equal(owner.pendingKind(delegated), 'none',
+    'accepted negotiate completes the first question; the reply is not awaited')
   assert.equal(owner.prepareNegotiationReply(original.receipt, 'Parent answer').ok, true)
-  assert.equal(owner.pendingKind(delegated), 'negotiate')
   assert.equal(owner.confirmNegotiationSteer(original.receipt, delegated), true)
   assert.equal(owner.pendingKind(delegated), 'none')
 

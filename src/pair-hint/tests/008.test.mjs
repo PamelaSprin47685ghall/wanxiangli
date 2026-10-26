@@ -6,7 +6,7 @@ const owner = PairHint()
 const user = key => ({kind:'user',operator:true,key, timestamp:1, parts:[]})
 const tool = (id,name='read') => ({kind:'assistant',operator:false,parts:[{id,tool:name,terminalField:'output'}]})
 
-test('SPEC[pair-hint-008] a delegated assignment requires questions before any reset reminder', () => {
+test('SPEC[pair-hint-008] a delegated assignment requires negotiate; acceptance alone completes it', () => {
   const id='child-mandatory'
   owner.bindDelegation(id, 'parent')
   const plan = owner.planRequest(id,[user('task'),tool('read-1')])
@@ -16,12 +16,16 @@ test('SPEC[pair-hint-008] a delegated assignment requires questions before any r
   const receipt=owner.askNegotiation(id,'Which module? What invariant?')
   assert.equal(receipt.ok,true)
   assert.equal(receipt.delegator,'parent')
-  assert.equal(owner.negotiationRequired(id),true,'a sent receipt is not a reply')
+  assert.equal(receipt.first,true)
+  assert.equal(owner.negotiationRequired(id),false,'accepted negotiate completes the gate; the timeline continues without the reply')
+  const accepted=owner.planRequest(id,[user('task'),tool('read-1'),tool('read-2')])
+  assert.equal(accepted.negotiationRequired,false)
+  assert.equal(accepted.strong,null,'no negotiate reminder after acceptance')
   assert.equal(owner.prepareNegotiationReply(receipt.receipt,'').ok,false)
   const prepared=owner.prepareNegotiationReply(receipt.receipt,'Use the parser; keep input bytes.')
   assert.equal(prepared.ok,true)
   assert.match(prepared.steer,/Use the parser/)
-  assert.equal(owner.negotiationRequired(id),true,'reply is not acknowledged until the steer is delivered')
+  assert.equal(owner.negotiationRequired(id),false,'a late reply never re-locks the gate')
   assert.equal(owner.completeNegotiationReply(receipt.receipt),true)
   assert.equal(owner.completeNegotiationReply(receipt.receipt),false)
   assert.equal(owner.negotiationRequired(id),false)
@@ -58,7 +62,7 @@ test('SPEC[pair-hint-008] a previous assignment reply cannot unlock a replacemen
   assert.equal(owner.completeNegotiationReply(stale.receipt),false)
   const current=owner.askNegotiation(id,'new')
   assert.equal(current.delegator,'two')
-  assert.equal(owner.completeNegotiationReply(current.receipt),false,'a mere send receipt cannot unlock resetScope')
+  assert.equal(owner.completeNegotiationReply(current.receipt),false,'an unprepared receipt cannot be completed as an answer')
   assert.equal(owner.prepareNegotiationReply(current.receipt,'new answer').ok,true)
   assert.equal(owner.completeNegotiationReply(current.receipt),true)
   owner.clearSession(id)
@@ -80,7 +84,7 @@ test('SPEC[pair-hint-008] deleting the recipient cancels all late answer receipt
 })
 
 
-test('SPEC[pair-hint-008] only the correct recipient’s physically visible prepared steer unlocks first negotiation', () => {
+test('SPEC[pair-hint-008] only the correct recipient’s prepared steer settles the answer receipt; acceptance already unlocked', () => {
   const recipient='child-visible-reply'
   owner.bindDelegation(recipient, 'parent')
   const receipt=owner.askNegotiation(recipient, 'Where?').receipt

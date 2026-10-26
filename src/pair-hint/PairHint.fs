@@ -132,7 +132,7 @@ type private ScopeSession() =
             proposed
 
     member _.Reset(nextBudget: int) =
-        // 协商期间 resetScope 自身拒绝执行（delegation [034] 要求首次答复到达前不得提交 ScopeReanchored）
+        // 首次 negotiate 受理前 resetScope 自身拒绝执行（delegation [034]：受理即解除，不等答复 steer）
         if pending <> AwaitingNegotiation then
             budget <- max 0 nextBudget
             budgetKnown <- true
@@ -174,9 +174,9 @@ let private initializeReminder (language: string) : string =
 
 let private negotiateReminder (language: string) : string =
     if isChinese language then
-        "[系统：先调用 negotiate(questions: string) 向委托者澄清本次任务。把需要确认的多个具体问题集中写入 questions 参数；调用受理后不必等待答复，可继续不依赖答复的工作。委托者的真实答复作为 steer 到达之前，不得调用 resetScope；收到后再初始化 scope。后续可以继续提问，不影响正常的 resetScope。]"
+        "[系统：先调用 negotiate(questions: string) 向委托者澄清本次任务。把需要确认的多个具体问题集中写入 questions 参数；调用一经受理即视为完成，不必等待答复；之后即可调用 resetScope 初始化 scope。委托者的答复会随后作为 steer 到达，不阻塞时序。后续可以继续提问，不影响正常的 resetScope。]"
     else
-        "[System: Before any resetScope initialization, call negotiate(questions: string) NOW. Ask the delegator all questions needed to clarify this assignment. Group related questions into the single plural questions argument. The call acknowledges sending immediately; continue your work without waiting. Until the delegator’s answer arrives as a user steer, do not call resetScope. After that answer, call resetScope promptly. You may negotiate again at any time; later calls never delay resetScope.]"
+        "[System: Before any resetScope initialization, call negotiate(questions: string) NOW. Ask the delegator all questions needed to clarify this assignment. Group related questions into the single plural questions argument. Once the call is accepted, negotiation is complete: do not wait for the answer, and call resetScope promptly. The delegator’s answer arrives later as a user steer and never blocks the timeline. You may negotiate again at any time; later calls never delay resetScope.]"
 
 let private askPreviousScopeReminder (language: string) : string =
     if isChinese language then
@@ -849,7 +849,11 @@ let PairHint () : PairHintMessages =
             nextReceipt <- nextReceipt + 1
             let receipt = recipient + ":" + string generation + ":" + string nextReceipt
             questionsByReceipt[receipt] <- recipient, delegator, generation, questions
-            createObj [ "ok" ==> true; "receipt" ==> receipt; "delegator" ==> delegator; "questions" ==> questions ]
+            // 受理即完成：首次协商被受理即解除 pending，时序继续；答复 steer 只是迟到的内容，不再门控 resetScope。
+            let scope = current recipient
+            let first = scope.NegotiationRequired
+            if first then scope.NegotiationReplyAdmitted()
+            createObj [ "ok" ==> true; "receipt" ==> receipt; "delegator" ==> delegator; "questions" ==> questions; "first" ==> first ]
 
     let prepare (receipt: string) (answer: string) (language: string) : obj =
         match questionsByReceipt.TryGetValue receipt with
