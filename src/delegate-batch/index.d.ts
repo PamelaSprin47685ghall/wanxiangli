@@ -71,3 +71,58 @@ export declare class JoinGuardReservationStore {
 }
 
 export declare const joinGuardReservationStore: JoinGuardReservationStore
+
+export type BatchStage = 'Pending' | 'Ready' | 'Active' | 'Closed'
+export type CallStage = 'Dispatched' | 'Closed'
+
+export interface SyncBatchAdmitResult {
+  readonly verdict: 'reject' | 'single' | 'wait' | 'ready'
+  readonly reason?: DelegateBatchRejection
+  readonly invocations?: readonly string[]
+}
+
+export interface SyncBatchSettlement {
+  readonly cancelledCalls: readonly string[]
+  readonly cancelledInvocations: readonly string[]
+}
+
+export declare class SyncDelegateBatchStore {
+  constructor()
+  observeProviderToolCall(ownerSessionId: string, providerRun: string, role: string, callId: string): void
+  tryObservedBatch(ownerSessionId: string, providerRun: string, role: string, currentCall: string): readonly string[] | null
+  clearSessionObserved(ownerSessionId: string): void
+  admit(ownerScope: string, role: string, invocationKey: string, batchObj: DelegateBatchIdentity | null): SyncBatchAdmitResult
+  releaseAdmission(ownerScope: string, role: string): void
+  beginCall(
+    ownerSessionId: string,
+    ownerScope: string,
+    role: string,
+    delegateSessionId: string,
+    agent: string,
+    invocationKeys: readonly string[],
+    callId: string
+  ): { ok: true } | { ok: false; error: string }
+  tryPeekCallByDelegate(delegateSessionId: string): string | undefined
+  tryPopCallByDelegate(delegateSessionId: string): string | undefined
+  tryPopExactCall(delegateSessionId: string, callId: string): string | undefined
+  cancelScope(ownerScope: string): SyncBatchSettlement
+  clearAll(): SyncBatchSettlement
+  readonly activeCallsCount: number
+  readonly batchesCount: number
+  readonly observedRunsCount: number
+}
+
+export declare const syncDelegateBatchStore: SyncDelegateBatchStore
+
+export declare class RetiredDelegateRegistry {
+  constructor()
+  stage(ownerScope: string, delegateSessionId: string): string | undefined
+  tryGet(ownerScope: string): string | undefined
+  tryTake(ownerScope: string): string | undefined
+  clear(ownerScope: string): string | undefined
+  clearAll(): readonly string[]
+  readonly count: number
+  snapshot(): readonly (readonly [string, string])[]
+}
+
+export declare const retiredDelegateRegistry: RetiredDelegateRegistry

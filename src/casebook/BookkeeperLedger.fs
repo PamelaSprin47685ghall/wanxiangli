@@ -2,6 +2,7 @@ module Wanxiangli.Casebook.BookkeeperLedger
 
 open System.Collections.Generic
 open Fable.Core
+open Fable.Core.JsInterop
 
 [<AttachMembers>]
 type BookkeeperAttachment =
@@ -14,36 +15,124 @@ type private StoredAuthorization =
       Text: string
       TxId: string }
 
-/// 进程内 Bookkeeper 会话附着与提示词单次授权自治对象。
+type private PendingCompletion =
+    { TxId: string
+      Completion: obj }
+
+/// 进程内 Bookkeeper 会话附着、在途完成句柄与提示词单次授权自治对象。
 /// 追踪 Bookkeeper 叶子会话与暂存事务 txId 的强绑定关系，以及提示词单次消费门禁。
-/// 不泄露内部可变状态别名，解绑时同步撤销授权，不同会话彼此隔离。
+/// 不泄露内部可变状态别名；解绑、重绑或清空时内部原子触发对未完成句柄的 Error 结算。
 [<AttachMembers>]
 type BookkeeperLedger() =
     let gate = obj ()
     let live = Dictionary<string, BookkeeperAttachment>()
     let pendingPromptAuthorizations = Dictionary<string, StoredAuthorization>()
+    let pendingCompletions = Dictionary<string, PendingCompletion>()
+
+    let cancelCompletionIfPending (completion: obj) (reason: string) =
+        if not (isNull completion) then
+            try
+                let errResult = Error reason
+                if not (isNull completion?SetResult) then
+                    completion?SetResult(errResult) |> ignore
+                elif not (isNull completion?setResult) then
+                    completion?setResult(errResult) |> ignore
+                elif not (isNull completion?complete) then
+                    completion?complete(errResult) |> ignore
+                elif not (isNull completion?resolve) then
+                    completion?resolve(errResult) |> ignore
+                elif emitJsExpr (completion) "typeof $0 === 'function'" then
+                    emitJsStatement (completion, errResult) "$0($1);"
+            with _ -> ()
+
+    let completePhysicalWith (completion: obj) (outcome: obj) =
+        if not (isNull completion) then
+            try
+                if not (isNull completion?SetResult) then
+                    completion?SetResult(outcome) |> ignore
+                elif not (isNull completion?setResult) then
+                    completion?setResult(outcome) |> ignore
+                elif not (isNull completion?complete) then
+                    completion?complete(outcome) |> ignore
+                elif not (isNull completion?resolve) then
+                    completion?resolve(outcome) |> ignore
+                elif emitJsExpr (completion) "typeof $0 === 'function'" then
+                    emitJsStatement (completion, outcome) "$0($1);"
+            with _ -> ()
 
     /// 绑定 Bookkeeper 子会话到特定事务与所有者会话。
-    /// 若同一会话已存在绑定，新绑定覆盖旧绑定并原子清空关联的待办提示词授权（防跨事务代际泄露）。
+    /// 若同一会话已存在绑定，新绑定覆盖旧绑定并原子清空关联的待办提示词授权（防跨事务代际泄露）；
+    /// 若存在未完成的 pending completion，原子触发 Error 结算 ("bookkeeper session re-bound to new transaction")。
     member _.bind(sessionId: string, txId: string, ownerSessionId: string) : unit =
         if isNull sessionId || isNull txId || isNull ownerSessionId then
             ()
         else
             lock gate (fun () ->
+                match pendingCompletions.TryGetValue(sessionId) with
+                | true, pending ->
+                    pendingCompletions.Remove(sessionId) |> ignore
+                    cancelCompletionIfPending pending.Completion "bookkeeper session re-bound to new transaction"
+                | false, _ -> ()
                 live.[sessionId] <-
                     { txId = txId
                       ownerSessionId = ownerSessionId
                       attachment = "bookkeeper:" + txId }
                 pendingPromptAuthorizations.Remove(sessionId) |> ignore)
 
-    /// 解除会话附着，并原子撤销关联的提示词待办授权。
+    /// 解除会话附着，原子撤销关联的提示词待办授权；
+    /// 若存在未完成的 pending completion，原子触发 Error 结算 ("bookkeeper session retired before completion")。
     member _.unbind(sessionId: string) : unit =
         if isNull sessionId then
             ()
         else
             lock gate (fun () ->
                 live.Remove(sessionId) |> ignore
-                pendingPromptAuthorizations.Remove(sessionId) |> ignore)
+                pendingPromptAuthorizations.Remove(sessionId) |> ignore
+                match pendingCompletions.TryGetValue(sessionId) with
+                | true, pending ->
+                    pendingCompletions.Remove(sessionId) |> ignore
+                    cancelCompletionIfPending pending.Completion "bookkeeper session retired before completion"
+                | false, _ -> ())
+
+    /// 登记会话与当前事务绑定的在途完成等待句柄。
+    member _.registerCompletion(sessionId: string, txId: string, completion: obj) : unit =
+        if isNull sessionId || isNull txId || isNull completion then
+            ()
+        else
+            lock gate (fun () ->
+                pendingCompletions.[sessionId] <-
+                    { TxId = txId
+                      Completion = completion })
+
+    /// 物理完成通知：
+    /// 1. 首验 isAttached：若未附着，直接安全忽略并返回 false；
+    /// 2. 校验 live.txId == pending.txId：匹配则完成结算并原子移除句柄，返回 true；
+    /// 3. 若 txId 不匹配判定为陈旧代际，直接忽略不结算，返回 false。
+    member _.completePhysical(sessionId: string, outcome: obj) : bool =
+        if isNull sessionId then
+            false
+        else
+            lock gate (fun () ->
+                match live.TryGetValue(sessionId) with
+                | true, att ->
+                    match pendingCompletions.TryGetValue(sessionId) with
+                    | true, pending when pending.TxId = att.txId ->
+                        pendingCompletions.Remove(sessionId) |> ignore
+                        completePhysicalWith pending.Completion outcome
+                        true
+                    | _ ->
+                        // txId 不匹配（陈旧代际）或无句柄：直接忽略
+                        false
+                | false, _ ->
+                    // 未附着：直接忽略
+                    false)
+
+    /// 移除在途句柄（若存在）。
+    member _.removeCompletion(sessionId: string) : unit =
+        if isNull sessionId then
+            ()
+        else
+            lock gate (fun () -> pendingCompletions.Remove(sessionId) |> ignore)
 
     /// 查询会话关联的事务 ID。
     member _.tryTxId(sessionId: string) : string option =
@@ -114,9 +203,13 @@ type BookkeeperLedger() =
                         false
                 | _ -> false)
 
-    /// 清空所有附着与提示词授权状态。
+    /// 清空所有附着、提示词授权与在途等待句柄。
+    /// 所有未完成的 pending completions 原子触发 Error 结算 ("bookkeeper runtime reset")。
     member _.clear() : unit =
         lock gate (fun () ->
+            for KeyValue(_, pending) in pendingCompletions do
+                cancelCompletionIfPending pending.Completion "bookkeeper runtime reset"
+            pendingCompletions.Clear()
             live.Clear()
             pendingPromptAuthorizations.Clear())
 

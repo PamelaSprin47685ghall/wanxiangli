@@ -172,13 +172,22 @@ export interface BookkeeperAttachment {
   readonly attachment: string
 }
 
-/** 进程内 Bookkeeper 会话附着与提示词单次授权自治对象。 */
+/** 进程内 Bookkeeper 会话附着、在途完成句柄与提示词单次授权自治对象。 */
 export declare class BookkeeperLedger {
   constructor()
-  /** 绑定 Bookkeeper 子会话到特定事务与所有者会话。若已存在绑定则原子覆盖并清空旧待办授权。 */
+  /** 绑定 Bookkeeper 子会话到特定事务与所有者会话。若已存在绑定则原子覆盖并清空旧待办授权；若存在未完成句柄则 Error 结算。 */
   bind(sessionId: string, txId: string, ownerSessionId: string): void
-  /** 解除会话附着，并原子撤销关联的待办提示词授权。 */
+  /** 解除会话附着，原子撤销关联的待办提示词授权；若存在未完成句柄则 Error 结算。 */
   unbind(sessionId: string): void
+  /** 登记会话与当前事务绑定的在途完成等待句柄。 */
+  registerCompletion(sessionId: string, txId: string, completion: unknown): void
+  /**
+   * 物理完成通知：
+   * 首验 isAttached，再校验 live.txId == pending.txId，匹配则结算并原子移除，否则忽略返回 false。
+   */
+  completePhysical(sessionId: string, outcome: unknown): boolean
+  /** 移除在途等待句柄（若存在）。 */
+  removeCompletion(sessionId: string): void
   /** 查询会话关联的事务 ID。 */
   tryTxId(sessionId: string): string | undefined
   /** 获取会话关联的事务 ID，未附着返回空字符串。 */
@@ -195,7 +204,7 @@ export declare class BookkeeperLedger {
    * 任何参数不匹配、txId 不一致或未授权均返回 false 且保留已有授权。
    */
   tryConsume(sessionId: string, agent: string, text: string): boolean
-  /** 清空所有附着与提示词授权状态。 */
+  /** 清空所有附着、提示词授权与在途等待句柄，原子结算所有未完成句柄。 */
   clear(): void
 }
 

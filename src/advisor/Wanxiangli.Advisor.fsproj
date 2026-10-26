@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Wanxiangli.Advisor</RootNamespace>
+    <!-- Fable-only compilation unit. No dotnet build; see AGENTS.md. -->
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="SettledRunLedger.fs" />
+    <Compile Include="AdvisorSeatRegistry.fs" />
+    <Compile Include="AdvisorRegistryLaw.fs" />
+    <PackageExport Include="SettledRunLedger.fs" Member="SettledRunLedger" />
+    <PackageExport Include="SettledRunLedger.fs" Member="settledRunLedger" />
+    <PackageExport Include="AdvisorSeatRegistry.fs" Member="AdvisorSeatRegistry" />
+    <PackageExport Include="AdvisorSeatRegistry.fs" Member="advisorSeatRegistry" />
+    <PackageExport Include="AdvisorRegistryLaw.fs" Member="AdvisorRegistryLaw" />
+  </ItemGroup>
+</Project>

@@ -130,3 +130,131 @@ test('WHAT[knowledge-reuse-006] SPEC[bookkeeper-ledger-7]: 实例隔离与全局
   bookkeeperLedger.clear()
   assert.equal(bookkeeperLedger.isAttached('s-singleton'), false)
 })
+
+test('WHAT[knowledge-reuse-006] SPEC[bookkeeper-ledger-8]: A 等待中解绑触发 Error 结算且不悬挂', () => {
+  const ledger = new BookkeeperLedger()
+  ledger.bind('s-wait', 'tx-A', 'owner-wait')
+
+  let settledResult = null
+  const fakeTcs = {
+    setResult: (res) => {
+      settledResult = res
+    },
+  }
+  ledger.registerCompletion('s-wait', 'tx-A', fakeTcs)
+
+  // 等待中解绑
+  ledger.unbind('s-wait')
+
+  assert.equal(ledger.isAttached('s-wait'), false, '解绑后会话不再附着')
+  assert.ok(settledResult, '解绑必须内部原子触发 completion 结算')
+  assert.equal(settledResult.tag, 1, '结算结果必须为 Error')
+  assert.match(String(settledResult.fields[0]), /retired before completion/, '错误原因必须准确说明会话在完成前退役')
+})
+
+test('WHAT[knowledge-reuse-006] SPEC[bookkeeper-ledger-9]: 同一会话重绑 B 后 A 迟到完成被 txId 校验忽略，不结算 B、不改 B 附着', () => {
+  const ledger = new BookkeeperLedger()
+
+  // 1. 绑定事务 A 并登记 A 的等待句柄
+  ledger.bind('s-rebind', 'tx-A', 'owner-rebind')
+  let settledA = null
+  ledger.registerCompletion('s-rebind', 'tx-A', {
+    setResult: (res) => {
+      settledA = res
+    },
+  })
+
+  // 2. 重绑为事务 B：原子触发 A 句柄 Error 结算
+  ledger.bind('s-rebind', 'tx-B', 'owner-rebind')
+  assert.ok(settledA, '重绑瞬间 A 的句柄必须被结算')
+  assert.equal(settledA.tag, 1, 'A 结算必须为 Error')
+  assert.match(String(settledA.fields[0]), /re-bound to new transaction/)
+  assert.equal(ledger.txIdFor('s-rebind'), 'tx-B', '当前附着已不可逆切换为 tx-B')
+
+  // 3. 登记 B 的在途等待句柄
+  let settledB = null
+  ledger.registerCompletion('s-rebind', 'tx-B', {
+    setResult: (res) => {
+      settledB = res
+    },
+  })
+
+  // 4. 代际隔离核验：若存在陈旧代际 txId (tx-A)，completePhysical 必须严格校验 live.txId == pending.txId
+  const ledgerStale = new BookkeeperLedger()
+  ledgerStale.bind('s-stale', 'tx-B', 'owner-stale')
+  let settledStale = null
+  ledgerStale.registerCompletion('s-stale', 'tx-A', {
+    setResult: (res) => {
+      settledStale = res
+    },
+  })
+
+  // A 迟到的物理完成到达：当前 live 为 tx-B，句柄为 tx-A -> txId 不匹配判定为陈旧代际被安全忽略
+  const resStale = ledgerStale.completePhysical('s-stale', { tag: 0, fields: [undefined] })
+  assert.equal(resStale, false, 'txId 不匹配时 completePhysical 必须直接返回 false 忽略')
+  assert.equal(settledStale, null, '陈旧代际句柄绝不能被结算')
+  assert.equal(ledgerStale.txIdFor('s-stale'), 'tx-B', '当前 B 附着绝不被篡改')
+})
+
+test('WHAT[knowledge-reuse-006] SPEC[bookkeeper-ledger-10]: B 合法完成只结算一次，重复完成直接忽略', () => {
+  const ledger = new BookkeeperLedger()
+  ledger.bind('s-once', 'tx-B', 'owner-once')
+
+  let settleCount = 0
+  let settledValue = null
+  ledger.registerCompletion('s-once', 'tx-B', {
+    setResult: (res) => {
+      settleCount += 1
+      settledValue = res
+    },
+  })
+
+  // 首次合法物理完成到达
+  const firstRes = ledger.completePhysical('s-once', { tag: 0, fields: [undefined] })
+  assert.equal(firstRes, true, '首次完成成功消费并返回 true')
+  assert.equal(settleCount, 1, '结算次数恰好为 1')
+  assert.equal(settledValue.tag, 0, '结算结果为 Ok')
+
+  // 重复物理完成到达：句柄已在首次消费后原子移除
+  const secondRes = ledger.completePhysical('s-once', { tag: 0, fields: [undefined] })
+  assert.equal(secondRes, false, '重复完成必须直接忽略返回 false')
+  assert.equal(settleCount, 1, '结算次数依然为 1，绝不发生重复结算')
+})
+
+test('WHAT[knowledge-reuse-006] SPEC[bookkeeper-ledger-11]: 重复完成/解绑/清理幂等不误伤新绑定', () => {
+  const ledger = new BookkeeperLedger()
+
+  // 1. 未附着会话 completePhysical 首验 isAttached 直接忽略
+  assert.equal(ledger.completePhysical('s-unattached', { tag: 0, fields: [undefined] }), false)
+
+  // 2. 重复 unbind 幂等且不抛错
+  ledger.unbind('s-ghost')
+  ledger.unbind('s-ghost')
+
+  // 3. 在途等待中 clear 触发 Error 结算
+  ledger.bind('s-clear', 'tx-C', 'owner-clear')
+  let clearResult = null
+  ledger.registerCompletion('s-clear', 'tx-C', {
+    setResult: (res) => {
+      clearResult = res
+    },
+  })
+  ledger.clear()
+  assert.ok(clearResult, 'clear 必须原子结算所有在途未完成句柄')
+  assert.equal(clearResult.tag, 1)
+  assert.match(String(clearResult.fields[0]), /runtime reset/)
+  assert.equal(ledger.isAttached('s-clear'), false)
+
+  // 4. clear 之后重新绑定新事务，旧操作不误伤新绑定
+  ledger.bind('s-new', 'tx-new', 'owner-new')
+  assert.equal(ledger.isAttached('s-new'), true)
+  let newSettled = null
+  ledger.registerCompletion('s-new', 'tx-new', {
+    setResult: (res) => {
+      newSettled = res
+    },
+  })
+  assert.equal(ledger.completePhysical('s-new', { tag: 0, fields: [undefined] }), true)
+  assert.equal(newSettled.tag, 0)
+})
+

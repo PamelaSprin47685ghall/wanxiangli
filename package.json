@@ -199,6 +199,10 @@
     "./terminal": {
       "types": "./src/terminal/index.d.ts",
       "import": "./dist/terminal/Terminal.js"
+    },
+    "./advisor": {
+      "types": "./src/advisor/index.d.ts",
+      "import": "./dist/advisor/AdvisorRegistryLaw.js"
     }
   },
   "files": [
@@ -259,7 +263,8 @@
     "src/runtime/pty/types.d.ts",
     "src/runtime/spool/types.d.ts",
     "src/runtime/time/types.d.ts",
-    "src/terminal/index.d.ts"
+    "src/terminal/index.d.ts",
+    "src/advisor/index.d.ts"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
