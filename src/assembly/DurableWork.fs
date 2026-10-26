@@ -47,7 +47,18 @@ module private Protocol =
     [<Emit("$0.id")>]
     let effectId (_value: obj): string = jsNative
 
+    [<Emit("$0 != null && (typeof $0 === 'object' || typeof $0 === 'function') && typeof $0.then === 'function'")>]
+    let isThenable (_value: obj): bool = jsNative
+
+    [<Emit("$0.then($1)")>]
+    let continueWith (_promise: obj) (_step: obj -> obj): obj = jsNative
+
     let require condition message = if not condition then invalidOp message
+
+    /// A synchronous port result continues immediately. A thenable is awaited,
+    /// and a thenable returned by the continuation is flattened by Promise.
+    let flatten (produced: obj) (step: obj -> obj): obj =
+        if isThenable produced then continueWith produced step else step produced
 
     let create (workId: string) (records: string array): WorkMessages =
         createNew work (workId, records) |> unbox
@@ -142,49 +153,68 @@ let DurableWork (workId: string) (journal: Journal) (effects: obj): WorkMessages
         Protocol.require (Protocol.isText value) name
         unbox<string> value
 
+    let useText (produced: obj) (name: string) (allowed: string -> bool) (refusal: string) (apply: string -> obj): obj =
+        Protocol.flatten produced (fun value ->
+            let outcome = textOf value name
+            Protocol.require (allowed outcome) refusal
+            apply outcome)
+
     let perform effect =
         let id = Protocol.effectId effect
+
+        let finish outcome session reason =
+            box (confirm id outcome session reason)
+
         match Protocol.kind effect with
         | "Ask" ->
-            let outcome = textOf (effects?ask effect) "Ask outcome must be text"
-            Protocol.require (outcome = "Parked" || outcome = "Unknown") "Ask outcome is not Parked or Unknown"
-            confirm id outcome None None
+            useText (effects?ask effect) "Ask outcome must be text" (fun outcome -> outcome = "Parked" || outcome = "Unknown") "Ask outcome is not Parked or Unknown" (fun outcome ->
+                finish outcome None None)
         | "Dispatch" ->
-            let outcome = textOf (effects?dispatch effect) "Dispatch outcome must be text"
-            Protocol.require (outcome = "Sent" || outcome = "Unknown") "Dispatch outcome is not Sent or Unknown"
-            confirm id outcome None None
+            useText (effects?dispatch effect) "Dispatch outcome must be text" (fun outcome -> outcome = "Sent" || outcome = "Unknown") "Dispatch outcome is not Sent or Unknown" (fun outcome ->
+                finish outcome None None)
         | "Stop" ->
-            let outcome = textOf (effects?stop effect) "Stop outcome must be text"
-            Protocol.require (outcome = "Requested" || outcome = "Unknown") "Stop outcome is not Requested or Unknown"
-            confirm id outcome None None
+            useText (effects?stop effect) "Stop outcome must be text" (fun outcome -> outcome = "Requested" || outcome = "Unknown") "Stop outcome is not Requested or Unknown" (fun outcome ->
+                finish outcome None None)
         | "Launch" ->
             match Protocol.phase effect with
             | "Create" ->
-                let receipt: obj = effects?createSession effect
-                Protocol.require (not (isNull receipt)) "createSession receipt is missing"
-                match unbox<string> receipt?status with
-                | "SessionCreated" ->
-                    let session = textOf receipt?execSessionId "Session id must be text"
-                    if not (confirm id "SessionCreated" (Some session) None) then false
-                    else
-                        let pending: obj = ((load ()).recover())?effect
-                        Protocol.require (not (isNull pending) && Protocol.effectId pending = id && Protocol.phase pending = "Send") "Bound launch did not become sendable"
-                        let sent = textOf (effects?sendDraft pending) "Admission outcome must be text"
-                        Protocol.require (sent = "Admitted" || sent = "Unknown") "Admission outcome is not Admitted or Unknown"
-                        if sent = "Admitted" then confirm id "Admitted" (Some session) None else confirm id "Unknown" None None
-                | "Unknown" -> confirm id "Unknown" None None
-                | "NotStarted" ->
-                    let reason = textOf receipt?reason "Refusal reason must be text"
-                    confirm id "NotStarted" None (Some reason)
-                | _ -> Protocol.require false "Unknown session receipt"; false
+                Protocol.flatten (effects?createSession effect) (fun receipt ->
+                    Protocol.require (not (isNull receipt)) "createSession receipt is missing"
+
+                    match unbox<string> receipt?status with
+                    | "SessionCreated" ->
+                        let session = textOf receipt?execSessionId "Session id must be text"
+
+                        if not (confirm id "SessionCreated" (Some session) None) then
+                            box false
+                        else
+                            let pending: obj = ((load ()).recover())?effect
+                            Protocol.require (not (isNull pending) && Protocol.effectId pending = id && Protocol.phase pending = "Send") "Bound launch did not become sendable"
+
+                            useText (effects?sendDraft pending) "Admission outcome must be text" (fun sent -> sent = "Admitted" || sent = "Unknown") "Admission outcome is not Admitted or Unknown" (fun sent ->
+                                if sent = "Admitted" then
+                                    finish "Admitted" (Some session) None
+                                else
+                                    finish "Unknown" None None)
+                    | "Unknown" -> finish "Unknown" None None
+                    | "NotStarted" ->
+                        let reason = textOf receipt?reason "Refusal reason must be text"
+                        finish "NotStarted" None (Some reason)
+                    | _ ->
+                        Protocol.require false "Unknown session receipt"
+                        box false)
             | "Send" ->
-                let sent = textOf (effects?sendDraft effect) "Admission outcome must be text"
-                Protocol.require (sent = "Admitted" || sent = "Unknown") "Admission outcome is not Admitted or Unknown"
-                if sent = "Admitted" then
-                    confirm id "Admitted" (Some(textOf effect?execSessionId "Bound session id must be text")) None
-                else confirm id "Unknown" None None
-            | _ -> Protocol.require false "Launch phase is not executable"; false
-        | _ -> Protocol.require false "Unknown effect"; false
+                useText (effects?sendDraft effect) "Admission outcome must be text" (fun sent -> sent = "Admitted" || sent = "Unknown") "Admission outcome is not Admitted or Unknown" (fun sent ->
+                    if sent = "Admitted" then
+                        finish "Admitted" (Some(textOf effect?execSessionId "Bound session id must be text")) None
+                    else
+                        finish "Unknown" None None)
+            | _ ->
+                Protocol.require false "Launch phase is not executable"
+                box false
+        | _ ->
+            Protocol.require false "Unknown effect"
+            box false
 
     let unchanged previous current =
         not (isNull previous) && not (isNull current)
@@ -193,11 +223,12 @@ let DurableWork (workId: string) (journal: Journal) (effects: obj): WorkMessages
         && Protocol.phase previous = Protocol.phase current
 
     let rec fill effect =
-        if perform effect then
-            let next: obj = (guard (fun () -> (load ()).recover()))?effect
-            if isNull next || unchanged effect next then true
-            else fill next
-        else false
+        Protocol.flatten (perform effect) (fun ok ->
+            if unbox<bool> ok then
+                let next: obj = (guard (fun () -> (load ()).recover()))?effect
+                if isNull next || unchanged effect next then box true else fill next
+            else
+                box false)
 
     let committedEffect reply input =
         if Protocol.missing effects then None
@@ -207,13 +238,18 @@ let DurableWork (workId: string) (journal: Journal) (effects: obj): WorkMessages
             let effect: obj = reply?result?effect
             if isNull effect then None else Some effect
 
+    let afterFill reply ok =
+        if unbox<bool> ok then
+            reply
+        else
+            Protocol.response "Unknown" (unbox<float> reply?revision - 1.) (null: obj) (box "Effect confirmation is unknown")
+
     let execute (requestId: string, input: obj): obj =
         let reply = commit (requestId, input)
+
         match committedEffect reply input with
         | None -> reply
-        | Some effect ->
-            if fill effect then reply
-            else Protocol.response "Unknown" (unbox<float> reply?revision - 1.) (null: obj) (box "Effect confirmation is unknown")
+        | Some effect -> Protocol.flatten (fill effect) (afterFill reply)
 
     let recover (): obj =
         let current =
@@ -221,12 +257,20 @@ let DurableWork (workId: string) (journal: Journal) (effects: obj): WorkMessages
                 match unknownRequest with
                 | Some requestId -> createObj [ "next" ==> "ObserveCommit"; "requestId" ==> requestId; "state" ==> (null: obj) ]
                 | None -> (load ()).recover())
-        if unknownRequest.IsSome || Protocol.missing effects then current
+
+        if unknownRequest.IsSome || Protocol.missing effects then
+            current
         else
             let effect: obj = current?effect
-            if isNull effect then current
-            elif fill effect then guard (fun () -> (load ()).recover())
-            else createObj [ "next" ==> "ObserveCommit"; "requestId" ==> defaultArg unknownRequest ""; "state" ==> (null: obj) ]
+
+            if isNull effect then
+                current
+            else
+                Protocol.flatten (fill effect) (fun ok ->
+                    if unbox<bool> ok then
+                        guard (fun () -> (load ()).recover())
+                    else
+                        createObj [ "next" ==> "ObserveCommit"; "requestId" ==> defaultArg unknownRequest ""; "state" ==> (null: obj) ])
 
     { new WorkMessages with
         member _.inspect() = inspect ()

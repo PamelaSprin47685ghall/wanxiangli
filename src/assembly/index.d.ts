@@ -1,15 +1,26 @@
 import type { Command, Decision, Effect, EffectAsk, EffectDispatch, EffectLaunch, EffectStop, Frame, Recovery, Snapshot } from 'wanxiangli/work';
 import type { AppendResult } from 'wanxiangli/eventstore';
 
+export type Awaitable<T> = T | Promise<T>;
+
+export interface SessionReceipt {
+  status: 'SessionCreated';
+  execSessionId: string;
+}
+export interface UnknownReceipt {
+  status: 'Unknown';
+}
+export interface NotStartedReceipt {
+  status: 'NotStarted';
+  reason: string;
+}
+
 export interface EffectPorts {
-  ask(effect: EffectAsk): 'Parked' | 'Unknown';
-  dispatch(effect: EffectDispatch): 'Sent' | 'Unknown';
-  createSession(effect: EffectLaunch):
-    | { status: 'SessionCreated'; execSessionId: string }
-    | { status: 'Unknown' }
-    | { status: 'NotStarted'; reason: string };
-  sendDraft(effect: EffectLaunch): 'Admitted' | 'Unknown';
-  stop(effect: EffectStop): 'Requested' | 'Unknown';
+  ask(effect: EffectAsk): Awaitable<'Parked' | 'Unknown'>;
+  dispatch(effect: EffectDispatch): Awaitable<'Sent' | 'Unknown'>;
+  createSession(effect: EffectLaunch): Awaitable<SessionReceipt | UnknownReceipt | NotStartedReceipt>;
+  sendDraft(effect: EffectLaunch): Awaitable<'Admitted' | 'Unknown'>;
+  stop(effect: EffectStop): Awaitable<'Requested' | 'Unknown'>;
 }
 
 export interface Journal {
