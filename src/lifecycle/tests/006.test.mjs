@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, writeFileSync, existsSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { abandonLocalState } from 'wanxiangli/work'
@@ -59,4 +59,20 @@ test('SPEC[lifecycle-006] shock delete removes an isolated directory and refuses
   const existed = existsSync(forbidden)
   assert.throws(() => abandonLocalState(forbidden), /Herdchestra/)
   assert.equal(existsSync(forbidden), existed)
+})
+
+test('SPEC[lifecycle-006] shock delete refuses a directory that contains the workspace .Herdchestra', () => {
+  const workspace = mkdtempSync(path.join(tmpdir(), 'wxs-abandon-parent-'))
+  const state = path.join(workspace, 'tree', '.Herdchestra')
+  mkdirSync(state, { recursive: true })
+  const previous = process.cwd()
+  process.chdir(path.join(workspace, 'tree'))
+  try {
+    assert.throws(() => abandonLocalState('.'), /Herdchestra/)
+    assert.throws(() => abandonLocalState(workspace), /Herdchestra/)
+  } finally {
+    process.chdir(previous)
+  }
+  assert.equal(existsSync(state), true)
+  rmSync(workspace, { recursive: true, force: true })
 })

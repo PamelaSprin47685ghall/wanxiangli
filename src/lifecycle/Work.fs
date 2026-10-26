@@ -18,7 +18,9 @@ let abandonLocalState (directory: string) =
         if nodeFs?existsSync(value) then nodeFs?realpathSync(value) else resolve value
     let target = real directory
     let forbidden = real (resolve (nodePath?join(".", ".Herdchestra")))
-    require (target <> forbidden) "Refusing to delete the workspace .Herdchestra"
+    let relative: string = nodePath?relative(target, forbidden)
+    let containsForbidden = relative = "" || (not (relative.StartsWith "..") && not (nodePath?isAbsolute(relative)))
+    require (not containsForbidden) "Refusing to delete the workspace .Herdchestra"
     nodeFs?rmSync(target, objectOf [ "recursive", box true; "force", box true ])
 
 type IWork =
