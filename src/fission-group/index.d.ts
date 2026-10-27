@@ -79,3 +79,31 @@ export declare class FissionLaneQuiescenceGate {
 }
 
 export declare const fissionLaneQuiescenceGate: FissionLaneQuiescenceGate
+
+export interface FissionLaneRecord {
+  readonly GroupId: string
+  readonly OwnerSessionId: string
+  readonly LaneIndex: number
+  readonly LaneCount: number
+}
+
+export interface FissionOwnerCleanupResult {
+  readonly RemovedLanes: readonly string[]
+  readonly RemovedGroupIds: readonly string[]
+}
+
+export declare class FissionLaneRegistry {
+  constructor()
+  bindLane(groupId: string, ownerSessionId: string, laneIndex: number, laneCount: number, laneSessionId: string): void
+  unbindLane(laneSessionId: string): boolean
+  tryLane(laneSessionId: string): FissionLaneRecord | undefined
+  tryOwner(laneSessionId: string): string | undefined
+  logicalOwner(sessionId: string): string
+  clearOwner(ownerSessionId: string): FissionOwnerCleanupResult
+  clearOwnerLanes(ownerSessionId: string): readonly string[]
+  hydrateFromDurable(resolve: (laneSessionId: string) => FissionLaneRecord | undefined): void
+  clearAll(): void
+  getLaneCount(): number
+}
+
+export declare const fissionLaneRegistry: FissionLaneRegistry

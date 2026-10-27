@@ -350,6 +350,11 @@ type PendingRunStore() as this =
         |> Seq.map (fun r -> r.Payload)
         |> Seq.toArray
 
+    member _.allPayloads() : obj array =
+        records.Values
+        |> Seq.map (fun r -> r.Payload)
+        |> Seq.toArray
+
     member _.snapshotOutstanding() : obj array =
         records.Values
         |> Seq.filter (fun r -> not r.Finished)

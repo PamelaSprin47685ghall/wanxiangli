@@ -25,3 +25,10 @@
 # SPEC
 
 1. [LEMMA 1–5] 证明：`tests/001.test.mjs`；与 vibe-fs 旧 `FissionProjection.fold` 逐项对照见 vibe-fs `evidence/CUT-28/`。
+
+# FissionLaneRegistry
+
+Fission 分道执行绑定注册表（单向映射 + 按 owner 线性扫描，不造假想结构）。
+承担弥合宿主物理会话分配与全组原子落盘的时序承重职责。
+公开接口：`bindLane`、`unbindLane`、`tryLane`、`tryOwner`、`logicalOwner`、`clearOwner`、`clearOwnerLanes`、`hydrateFromDurable`、`clearAll`。
+单向维护 `lanes: Dictionary<laneSessionId, FissionLaneRecord>`，清空时对所有分道按 `OwnerSessionId` 线性扫描并返回移除结果。

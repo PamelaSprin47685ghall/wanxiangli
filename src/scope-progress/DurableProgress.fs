@@ -20,20 +20,39 @@ let private valid (value: string) = not (String.IsNullOrWhiteSpace value) && not
 let private field (value: string) = string value.Length + ":" + value
 let private streamFor session epoch = "scope-progress:" + field session + ":" + field epoch
 
+/// The model is told a tenth of a turn. Judgment uses a smaller bar so a report
+/// that honours the promise is never punished by decimal rounding.
+[<Literal>]
+let DocumentedDrop = 0.1
+
+[<Literal>]
+let JudgedDrop = 0.08
+
+let validEstimate (estimate: float) = not (Double.IsNaN estimate) && not (Double.IsInfinity estimate) && estimate >= 0.0
+
+let private shrunk (prior: float) (estimate: float) = prior - estimate >= JudgedDrop
+
+let advisorTrigger (resetDueBefore: bool) (prior: float option) (estimate: float) : string option =
+    if resetDueBefore then Some "ResetDue"
+    else
+        match prior with
+        | Some old when not (shrunk old estimate) -> Some "Stall"
+        | _ -> None
+
 type private Reading =
     { Revision: int
-      Calls: Dictionary<string, Dictionary<string, int>>
+      Calls: Dictionary<string, Dictionary<string, float>>
       Order: ResizeArray<string>
       Settled: Dictionary<string, obj>
-      Previous: int option
+      Previous: float option
       ResetDue: bool }
 
 let private reading (journal: ProgressJournal) session epoch =
     let frames = journal.read(streamFor session epoch)
-    let calls = Dictionary<string, Dictionary<string, int>>()
+    let calls = Dictionary<string, Dictionary<string, float>>()
     let order = ResizeArray<string>()
     let settled = Dictionary<string, obj>()
-    let mutable previous: int option = None
+    let mutable previous: float option = None
     let mutable resetDue = false
     for encoded in frames do
         let item = parse encoded
@@ -41,14 +60,14 @@ let private reading (journal: ProgressJournal) session epoch =
         | "Recorded" ->
             let runId = string item?run
             let callId = string item?call
-            let estimate = unbox<int> item?estimate
-            if not (valid runId && valid callId) || estimate < 0 || settled.ContainsKey runId then
+            let estimate = unbox<float> item?estimate
+            if not (valid runId && valid callId) || not (validEstimate estimate) || settled.ContainsKey runId then
                 failwith "Scope progress journal contains an invalid recorded call"
             let round =
                 match calls.TryGetValue runId with
                 | true, current -> current
                 | _ ->
-                    let fresh = Dictionary<string, int>()
+                    let fresh = Dictionary<string, float>()
                     calls[runId] <- fresh
                     order.Add runId
                     fresh
@@ -59,7 +78,7 @@ let private reading (journal: ProgressJournal) session epoch =
             | _ -> round[callId] <- estimate
         | "Settled" ->
             let runId = string item?run
-            let estimate = unbox<int> item?estimate
+            let estimate = unbox<float> item?estimate
             let round =
                 match calls.TryGetValue runId with
                 | true, existing when existing.Count > 0 -> existing
@@ -67,28 +86,36 @@ let private reading (journal: ProgressJournal) session epoch =
             if settled.ContainsKey runId || (round.Values |> Seq.min) <> estimate then
                 failwith "Scope progress journal contains conflicting provider settlements"
             let prior = previous
-            let expectedAdvisor = resetDue || (prior |> Option.exists (fun p -> estimate >= p))
-            if unbox<bool> item?advisor <> expectedAdvisor
-               || unbox<bool> item?resetDue <> (resetDue || estimate = 0)
-               || (if isNull item?previous then None else Some(unbox<int> item?previous)) <> prior then
+            let trigger = advisorTrigger resetDue prior estimate
+            let settledResetDue = resetDue || estimate = 0
+            // Older rules escalated on an unchanged ("Equal") or higher
+            // ("Increase") estimate. Those frames stay readable as committed
+            // history, but replay reports the current rule so they cannot fire again.
+            let retired =
+                unbox<bool> item?advisor
+                && (not (isNull item?trigger))
+                && (match string item?trigger with
+                    | "Equal" -> (match prior with Some earlier -> earlier = estimate | None -> false)
+                    | "Increase" -> (match prior with Some earlier -> estimate >= earlier | None -> false)
+                    | _ -> false)
+            if (not retired && unbox<bool> item?advisor <> trigger.IsSome)
+               || unbox<bool> item?resetDue <> settledResetDue
+               || (if isNull item?previous then None else Some(unbox<float> item?previous)) <> prior then
                 failwith "Scope progress settlement history is internally inconsistent"
-            settled[runId] <- item
+            settled[runId] <-
+                createObj [ "estimate" ==> estimate
+                            "previous" ==> (prior |> Option.map box |> Option.defaultValue null)
+                            "advisor" ==> trigger.IsSome
+                            "trigger" ==> (trigger |> Option.map box |> Option.defaultValue null)
+                            "resetDue" ==> settledResetDue ]
             previous <- Some estimate
-            resetDue <- resetDue || estimate = 0
+            resetDue <- settledResetDue
         | _ -> failwith "Unknown Scope progress journal fact kind"
     { Revision = frames.Length; Calls = calls; Order = order; Settled = settled
       Previous = previous; ResetDue = resetDue }
 
 let private error code reason =
     createObj [ "ok" ==> false; "status" ==> code; "reason" ==> reason ]
-
-let advisorTrigger (resetDueBefore: bool) (prior: int option) (estimate: int) : string option =
-    if resetDueBefore then Some "ResetDue"
-    else
-        match prior with
-        | Some old when estimate = old -> Some "Equal"
-        | Some old when estimate > old -> Some "Increase"
-        | _ -> None
 
 let private resultOf (item: obj) replayed =
     createObj [ "ok" ==> true; "charged" ==> true
@@ -108,8 +135,8 @@ let durableProgressRecord
     (epoch: string)
     (runId: string)
     (callId: string)
-    (estimate: int) : obj =
-    if not (valid session && valid epoch && valid runId && valid callId) || estimate < 0 then
+    (estimate: float) : obj =
+    if not (valid session && valid epoch && valid runId && valid callId) || not (validEstimate estimate) then
         error "Invalid" "valid session, Scope, Provider round, call and nonnegative estimate required"
     else
         try

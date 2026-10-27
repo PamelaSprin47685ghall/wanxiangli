@@ -35,8 +35,14 @@ test('SPEC[scope-progress-007] SQLite cold-open retains minimum, paid rounds, ad
   assert.equal(settle('round-a').replayed, true)
   assert.equal(r('round-a', 'after', 1).status, 'Conflict')
   assert.deepEqual([status().known, status().estimate, status().resetDue], [true, 4, false])
-  assert.equal(r('round-b', 'only', 4).ok, true)
+  assert.equal(r('round-b', 'only', 5).ok, true)
   assert.equal(settle('round-b').advisor, true)
+  assert.equal(r('round-b2', 'tenth', 4.9).ok, true)
+  assert.deepEqual([settle('round-b2').advisor, settle('round-b2').charged], [false, true],
+    'the promised 0.1 of shrinkage is charged without escalating')
+  assert.equal(r('round-b3', 'short', 4.85).ok, true)
+  assert.deepEqual([settle('round-b3').advisor, settle('round-b3').trigger], [true, 'Stall'],
+    'a drop below the judged bar escalates even though the number fell')
   assert.equal(r('round-c', 'low', 2).ok, true)
   assert.equal(settle('round-c').advisor, false)
   assert.equal(r('round-d', 'zero', 0).ok, true)

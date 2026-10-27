@@ -210,6 +210,7 @@ export declare class PendingRunStore {
   tryGetPayload(agentId: string): unknown
   readonly count: number
   activePayloads(): readonly unknown[]
+  allPayloads(): readonly unknown[]
   snapshotOutstanding(): readonly PendingRunSnapshot[]
   clear(): void
 }

@@ -12,7 +12,7 @@
 1. [AXIOM 1] 最新 reset 是唯一清理边界。之前的用户消息与 reset 对保留，之后完整保留；同批工具调用在 reset 的块位置切分。
 2. [AXIOM 2] 用户消息和工具结果有两种独立的后缀写入位置，但只在模型即将收到的请求副本中呈现。真实工具返回值、用户原文与持久化历史保持原样；同一提示不重复添加。
 3. [AXIOM 1, 2] 预算与倒数提示已独立迁往 `wanxiangli/scope-progress`：有效 `todowrite` 的必填估计按真实 ProviderRun 聚合 `min`，没有报告的请求免费；估计 0 导致下一主回合由宿主发送单独强 `resetScope` steer。PairHint 只负责 `negotiate` 和第二次起 `askPreviousScope` 尚待首问时的独立强 steer；普通用户/代理消息不修改进度状态。工具结果不追加倒数。
-4. [AXIOM 1, 2] 保留已观测 Provider 原文、工具调用和配对结果的真实字节，普通旧工具过程才按 reset barrier 移除；可获得的 assistant thinking/text 不能因为与旧普通工具同消息而丢失。Side-request 不修改真实工作 Session，也不污染最新主会话视图。
+4. [AXIOM 1, 2] 保留已观测 Provider 原文、工具调用和配对结果的真实字节，普通旧工具过程才按 reset barrier 移除；可获得的 assistant 正文不能因为与旧普通工具同消息而丢失。旧 Scope 的 thinking/reasoning 与旧工具过程一起退役，最新 reset 之后的 thinking 完整保留。Side-request 不修改真实工作 Session，也不污染最新主会话视图。
 
 ## SPEC
 
@@ -36,7 +36,7 @@
 
 15. tests/015.test.mjs：冷重启后的历史 `resetScope` 只证明旧事件存在，未确证当前预算时必须持续通过强 agent steer 催重新 `resetScope`；不得把内存默认 0 当作已耗尽预算、发弱提示或改写工具尾巴。真正重置获得预算后仍按实际回合递减，只有真实 0 触发弱提醒。
 
-16. tests/016.test.mjs：可获得的 assistant thinking/text 穿越 reset；旧普通工具调用与返回配对裁剪，`assume/negotiate/askPreviousScope/askPrevious/advisor/resetScope` 关键工具调用与配对结果始终保留。独立 `OutboundViewStore` 负责真实 Provider archive/serialize/discardSealed 事实，**不**用已删除的 `startTemporaryFromFrozen` 在咨询期再次复制整段历史。
+16. tests/016.test.mjs：可获得的 assistant 正文穿越 reset、旧 Scope thinking 退役、最新 reset 之后 thinking 保留；旧普通工具调用与返回配对裁剪，`assume/negotiate/askPreviousScope/askPrevious/advisor/resetScope` 关键工具调用与配对结果始终保留。独立 `OutboundViewStore` 负责真实 Provider archive/serialize/discardSealed 事实，**不**用已删除的 `startTemporaryFromFrozen` 在咨询期再次复制整段历史。
 
 ## 协商补充公理（2026-10-24）
 

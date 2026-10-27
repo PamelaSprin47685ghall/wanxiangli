@@ -439,6 +439,7 @@ type private NeutralMessage =
       Key: string
       Stamp: float option
       Calls: NeutralCall array
+      Kinds: string array
       PartCount: int
       ResultFor: string
       ResultField: string }
@@ -465,6 +466,7 @@ let private neutralMessage (index: int) (value: obj) : NeutralMessage =
       Key = fieldText value "key"
       Stamp = if isFiniteNumber stamp then Some(unbox<float> stamp) else None
       Calls = parts |> Array.mapi neutralCall |> Array.filter (fun part -> (part.Id <> "" && part.Tool <> "") || part.ResultFor <> "")
+      Kinds = parts |> Array.map (fun part -> fieldText part "type")
       PartCount = parts.Length
       ResultFor = fieldText value "resultFor"
       ResultField = fieldText value "resultField" }
@@ -475,6 +477,10 @@ let private isAlwaysRetained (part: NeutralCall) : bool =
     match part.Tool with
     | "resetScope" | "assume" | "negotiate" | "askPreviousScope" | "askPrevious" | "advisor" -> true
     | _ -> false
+
+/// Thinking is the model's scratch reasoning for a scope that is now finished;
+/// it is retired with that scope. Assistant prose and provider bytes stay.
+let private isThinking (kind: string) : bool = kind = "reasoning" || kind = "thinking"
 
 let private retainedPartIndices (parts: NeutralCall array) : int array =
     let retainedIds =
@@ -515,9 +521,12 @@ let private neutralSelection (message: NeutralMessage) (barrier: (int * int) opt
                 elif call.ResultFor <> "" && not (Set.contains call.ResultFor retainedIds) then Some call.Part
                 else None)
             |> Set.ofArray
+        let retiredThinking =
+            message.Kinds |> Array.indexed |> Array.filter (snd >> isThinking) |> Array.map fst |> Set.ofArray
         let preserved =
             [| for part in 0 .. message.PartCount - 1 do
-                   if not (Set.contains part ordinaryToolParts) then yield part |]
+                   if not (Set.contains part ordinaryToolParts) && not (Set.contains part retiredThinking) then
+                       yield part |]
         if preserved.Length = 0 then None else Some(Some preserved)
     | _ -> None
 

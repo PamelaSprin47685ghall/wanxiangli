@@ -34,15 +34,15 @@ test('SPEC[scope-progress-008] actual ScopeProgress actor reloads durable paid b
   afterCrash.ensureEpoch('session','scope-1')
   assert.deepEqual([afterCrash.status('session').estimate,afterCrash.status('session').resetDue], [3,false])
   assert.equal(afterCrash.record('session','scope-1','r1','fresh',4).ok,false)
-  assert.equal(afterCrash.record('session','scope-1','r2','tool',3).ok,true)
+  assert.equal(afterCrash.record('session','scope-1','r2','tool',4).ok,true)
   const second = afterCrash.settlePending('session','scope-1')
   assert.equal(second[0].result.advisor,true)
   assert.equal(second[0].providerRunId,'r2')
   const replayed = bind()
   replayed.ensureEpoch('session','scope-1')
-  assert.equal(replayed.status('session').estimate,3)
+  assert.equal(replayed.status('session').estimate,4)
   assert.equal(replayed.settlePending('session','scope-1').length,1,
-    'a durably settled nondecreasing round remains a recoverable Advisor outbox obligation')
+    'a durably settled stalled round remains a recoverable Advisor outbox obligation')
   assert.equal(replayed.settlePending('session','scope-1')[0].result.replayed,true)
   assert.equal(replayed.record('session','scope-1','r3','zero',0).ok,true)
   replayed.settlePending('session','scope-1')
@@ -91,7 +91,7 @@ test('SPEC[scope-progress-008] durable settlement outbox survives a crash before
   const first = bind()
   first.record('s','scope','before','a',3)
   first.settlePending('s','scope')
-  first.record('s','scope','due','b',3)
+  first.record('s','scope','due','b',4)
   const committed = first.settle('s','scope','due')
   assert.deepEqual([committed.charged,committed.advisor,committed.replayed],[true,true,false])
   // Simulate the process dying before it could invoke AdvisorFlow.trigger.
@@ -102,7 +102,7 @@ test('SPEC[scope-progress-008] durable settlement outbox survives a crash before
   assert.equal(once[0].providerRunId,'due')
   assert.equal(once[0].result.replayed,true)
   assert.equal(once[0].result.advisor,true)
-  assert.equal(reopened.status('s').estimate,3)
+  assert.equal(reopened.status('s').estimate,4)
   const twice = reopened.settlePending('s','scope')
   assert.equal(twice.length,1, 'one stable trigger identity is retried only through durable Claim dedupe')
   assert.equal(twice[0].providerRunId,'due')
@@ -126,7 +126,7 @@ test('SPEC[scope-progress-008] real SIGKILL after a durable tool report restores
   } finally { rmSync(directory, {recursive:true,force:true}) }
 }))
 
-test('SPEC[scope-progress-008] real SIGKILL after settlement does not lose a nondecreasing AdvisorDue', () => withDatabase(bind => {
+test('SPEC[scope-progress-008] real SIGKILL after settlement does not lose a stalled AdvisorDue', () => withDatabase(bind => {
   const directory = mkdtempSync(join(tmpdir(), 'wxs-progress-sigkill-outbox-'))
   try {
     const path = join(directory, 'killed.sqlite')
@@ -136,7 +136,7 @@ test('SPEC[scope-progress-008] real SIGKILL after settlement does not lose a non
     const resumed = ScopeProgress()
     resumed.configureJournal(() => new SqliteJournal(new DatabaseSync(path)))
     resumed.ensureEpoch('killed-session','scope-1')
-    assert.deepEqual([resumed.status('killed-session').estimate, resumed.status('killed-session').resetDue], [5,false])
+    assert.deepEqual([resumed.status('killed-session').estimate, resumed.status('killed-session').resetDue], [6,false])
     const due = resumed.settlePending('killed-session','scope-1')
     assert.deepEqual(due.map(x => x.providerRunId), ['provider-2'])
     assert.equal(due[0].result.advisor, true)

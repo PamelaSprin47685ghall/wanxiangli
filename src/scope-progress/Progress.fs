@@ -6,17 +6,17 @@ open Fable.Core.JsInterop
 open Wanxiangli.ScopeProgress.DurableProgress
 
 type private ScopeState(epoch: string) =
-    let rounds = Dictionary<string, Dictionary<string, int>>()
+    let rounds = Dictionary<string, Dictionary<string, float>>()
     let settled = Dictionary<string, obj>()
-    let reports = Dictionary<string, string * int>()
-    let mutable previous: int option = None
+    let reports = Dictionary<string, string * float>()
+    let mutable previous: float option = None
     let mutable resetDue = false
 
     member _.Epoch = epoch
     member _.Previous = previous
     member _.ResetDue = resetDue
 
-    member private _.RecordRound(runId: string, callId: string, estimate: int) : obj =
+    member private _.RecordRound(runId: string, callId: string, estimate: float) : obj =
         if settled.ContainsKey runId then
             createObj [ "ok" ==> false; "reason" ==> "provider round already settled" ]
         else
@@ -24,7 +24,7 @@ type private ScopeState(epoch: string) =
                 match rounds.TryGetValue runId with
                 | true, existing -> existing
                 | _ ->
-                    let created = Dictionary<string, int>()
+                    let created = Dictionary<string, float>()
                     rounds[runId] <- created
                     created
             match calls.TryGetValue callId with
@@ -37,8 +37,8 @@ type private ScopeState(epoch: string) =
                 reports[callId] <- runId, estimate
                 createObj [ "ok" ==> true; "replayed" ==> false; "minimum" ==> (calls.Values |> Seq.min) ]
 
-    member this.Record(runId: string, callId: string, estimate: int) : obj =
-        if String.IsNullOrWhiteSpace runId || String.IsNullOrWhiteSpace callId || estimate < 0 then
+    member this.Record(runId: string, callId: string, estimate: float) : obj =
+        if String.IsNullOrWhiteSpace runId || String.IsNullOrWhiteSpace callId || not (validEstimate estimate) then
             createObj [ "ok" ==> false; "reason" ==> "valid providerRunId, toolCallId and nonnegative estimate required" ]
         else
             match reports.TryGetValue callId with
@@ -48,7 +48,7 @@ type private ScopeState(epoch: string) =
                 else
                     let minimum =
                         match settled.TryGetValue owner with
-                        | true, result -> unbox<int> result?estimate
+                        | true, result -> unbox<float> result?estimate
                         | _ -> rounds[owner].Values |> Seq.min
                     createObj [ "ok" ==> true; "replayed" ==> true; "minimum" ==> minimum ]
             | _ -> this.RecordRound(runId, callId, estimate)
@@ -84,7 +84,7 @@ type private ScopeState(epoch: string) =
                 outcome
 
 type ScopeProgressPort =
-    abstract record: sessionId: string * epochId: string * providerRunId: string * toolCallId: string * estimate: int -> obj
+    abstract record: sessionId: string * epochId: string * providerRunId: string * toolCallId: string * estimate: float -> obj
     abstract settle: sessionId: string * epochId: string * providerRunId: string -> obj
     abstract settlePending: sessionId: string * epochId: string -> obj array
     abstract reset: sessionId: string * epochId: string -> unit

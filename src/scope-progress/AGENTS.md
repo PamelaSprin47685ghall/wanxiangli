@@ -4,8 +4,8 @@
 
 ## AXIOM
 
-1. 工作模型在有效 `todowrite` 中报告当前 Scope 的剩余计费回合数。一个 Provider 回合只计一次，同一回合多个报告取最小值，没有有效报告则不计费。
-2. 非递减报告与已报告零仍继续计费会请求顾问咨询；估计为零则保留 ResetDue 直到新的真实 Scope 开始。不分析模型动机，也不建立隐含缺报惩罚。
+1. 工作模型在有效 `todowrite` 中报告当前 Scope 的剩余计费回合数，值是非负实数（允许小数）。一个 Provider 回合只计一次，同一回合多个报告取最小值，没有有效报告则不计费。
+2. 每个计费回合的估计应比上一计费回合至少下降 0.1；判定用 0.08 的实数门槛（`JudgedDrop`），对外文案只写 0.1（`DocumentedDrop`），使按承诺报数不会被十进制表示误差误判。降幅不足（含持平与上升）或已报告零仍继续计费时请求顾问咨询。估计为零则保留 ResetDue 直到新的真实 Scope 开始。不分析模型动机，也不建立隐含缺报惩罚。
 3. Advisor Process 是同一 Session 一次只运行一份的四段协作。工作者临时问询与持续顾问席位是不同的物理会话；库只要求明确的问答与投递端口。
 
 ## LEMMA
@@ -18,7 +18,7 @@
 
 ## SPEC
 
-- `tests/001.test.mjs`：免费回合、多报告 `min`、重复身份、零估计、跨 Scope 结算。
+- `tests/001.test.mjs`：免费回合、多报告 `min`、重复身份、零估计、跨 Scope 结算，以及降幅不足判定门槛才升级的进度比较。
 - `tests/002.test.mjs`：顾问队列单飞、等待合并、完成后重复触发拒绝。
 - `tests/003.test.mjs`：四段顺序、双语自然问询、非法语言拒绝、失败释放、晚到废弃。
 - `tests/004.test.mjs`：真实 SQLite 原子受理与 Finished、跨进程 SIGKILL、同身份异载荷冲突、确定性 CAS 修订冲突重试、跨实例及独立 OS 进程全局单飞、终局 Unknown 阻止解锁、冷恢复 advisorPending 只读未决观察。
@@ -39,6 +39,8 @@
 
 **顺序恢复与失败归属**：仅在 Finished 已持久确认后，运行中 Flow 才会通过 Pending 的 durable replay 顺序认领下一条已受理报告；未确认的阶段不会跳过。外部端口返回 Ok=false 但未证明 ConfirmedFailure 时必须保持 Unknown；模型/供应商的异常不是后续付费咨询的解锁凭据。
 
-**计费持久事实**：新 `DurableProgress` 以现有 `wanxiangli/eventstore` 的原子日志逐个确认 ProviderRunId/ToolCallId 及当回合 min，结算只写一次 `Settled`；ScopeProgress Actor 的 `configureJournal` 注入后所有 record/settle/pending/status 从日志读写，`recordedEpoch` 仅在真实凭证下承认初始 Scope 0。已结算但来不及触发 Advisor 的记录经 `durableProgressDue` 作为可重放 outbox 重新派发，由 AdvisorClaim 单飞去重。OpenCode 工厂已在 PluginHooks 接线；官方宿主 Fable 编译、OpenCode 真实 `advisor-014` 计费恢复及 `advisor-015` 双工作区进度隔离均已通过。SessionId 对应专用 SQLite factory；session.deleted 解除绑定。没有持久 workspace 时拒绝，不沿用其它插件的默认 factory。
+SessionId 对应专用 SQLite factory；session.deleted 解除绑定。没有持久 workspace 时拒绝，不沿用其它插件的默认 factory。
 
-**剩余界限**：StageBegan 仍是逻辑出站请求预留，不含 SDK ProviderRunId/供应商物理回执；结果 Unknown 的外部问询不能自动核实。OMP 现由真实 `turn_start`／`turn_end` 生成内部每回合唯一 ID、绑定物理工具 callId，SQLite 持久聚合计费；中途 shutdown 后下一次 Provider 边界收取未结算回合。非递减自动触发同一四段 AdvisorFlow，B/D 为零工具 SDK side-turn，最后通过真实 agent-attributed message_start 接纳后提交第五阶段与 Finished。`requirements/host-boundary/tests/omp-scope-seam.test.mjs` 的 `scope-progress-016/017` 在 Node 与 Bun 全绿；`requirements/host-boundary/tests/omp-negotiate-physical.test.mjs` 的 opt-in `scope-progress-018` 经真实 Bun/OMP SDK + SSE 物理验证四次咨询和 agent steer，专席续接已确认原问题/答复对；提供的是 OMP 生命周期内的 best-effort 回合归属，不能冒称所有供应商都返回真实 responseId。未配置持久 Journal 的纯库实例仍按显式内存模式工作。
+**退役触发形态**：旧日志里已提交的 `Equal`、`Increase` 升级事实仍可读取，但按现行规则重放为不升级；历史字节不改写，现行规则只产生 `ResetDue` 与 `Stall`（降幅不足判定门槛）。
+
+**剩余界限**：StageBegan 仍是逻辑出站请求预留，不含 SDK ProviderRunId/供应商物理回执；结果 Unknown 的外部问询不能自动核实。OMP 现由真实 `turn_start`／`turn_end` 生成内部每回合唯一 ID、绑定物理工具 callId，SQLite 持久聚合计费；中途 shutdown 后下一次 Provider 边界收取未结算回合。降幅不足判定门槛自动触发同一四段 AdvisorFlow，B/D 为零工具 SDK side-turn，最后通过真实 agent-attributed message_start 接纳后提交第五阶段与 Finished。`requirements/host-boundary/tests/omp-scope-seam.test.mjs` 的 `scope-progress-016/017` 在 Node 与 Bun 全绿；`requirements/host-boundary/tests/omp-negotiate-physical.test.mjs` 的 opt-in `scope-progress-018` 经真实 Bun/OMP SDK + SSE 物理验证四次咨询和 agent steer，专席续接已确认原问题/答复对；提供的是 OMP 生命周期内的 best-effort 回合归属，不能冒称所有供应商都返回真实 responseId。未配置持久 Journal 的纯库实例仍按显式内存模式工作。
