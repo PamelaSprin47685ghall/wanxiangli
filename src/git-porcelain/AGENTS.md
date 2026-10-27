@@ -9,6 +9,7 @@
 2. [使用者] 只有 rebase-merge / rebase-apply 目录存在才算 rebase 进行中；残留的 REBASE_HEAD 不是证据。
     - 理由：ORCH-003 冲突续做。
 3. [使用者] 运行时状态根只取主工作树；裸仓没有工作树，必须失败关闭。
+4. [使用者] 运行时路径缓存（RuntimePathStore）是进程内物理只读主工作树路径字典的唯一自治 owner，不跨调用泄露失败 Task，以规范化工作区路径为唯一键。
 
 # LEMMA
 
@@ -19,8 +20,10 @@
 5. [AXIOM 3] `-z` 输出的第一条记录含 `bare` 即裸仓；首字段不是 `worktree ` 即无法识别。
 
 6. [AXIOM 1] 工作树回收：只有 manager 分支且短名不属于任何活跃 job 的工作树才算陈旧；主工作树与 detached 工作树永不陈旧。归属按短名整体比较，不从分支名里反解 job id。陈旧分支原样返回待删。
+7. [AXIOM 4] `normalizeKey` 裁除尾部 `'/'` 与 `'\\'` 并保护纯根目录（`"/"` 或 `"\\"`）及盘符根；`getOrCompute` 在键未命中时计算并缓存，Promise/Task 失败按引用安全驱逐；`invalidate` 支持 CAS 引用比对防止并发误删。
 
 # SPEC
 
 1. [LEMMA 1–5] 证明：`tests/001.test.mjs`。
 2. [LEMMA 6] 证明：`tests/001.test.mjs` `SPEC[git-porcelain-2]`。
+3. [LEMMA 7] 证明：`tests/runtime-path-store.test.mjs`。

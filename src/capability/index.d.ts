@@ -36,3 +36,32 @@ export declare class Capability {
   /** 实用工具准入：现行角色持有；历史/内部/未知角色与非实用工具名一律 false。 */
   admitsUtility(role: unknown, name: unknown): boolean
 }
+
+export interface LiveHostConfigReadResult {
+  ok: boolean
+  found?: boolean
+  kind?: 'bool' | 'text' | ''
+  value?: boolean | string | null
+  error?: string
+}
+
+export interface LiveHostConfigApplySetting {
+  path: string[]
+  kind?: 'bool' | 'text'
+  value: unknown
+}
+
+export interface LiveHostConfigApplyResult {
+  ok: boolean
+  hasGap?: boolean
+  gapPath?: string[]
+  gapReason?: string
+  error?: string
+}
+
+export declare class LiveHostConfigStore {
+  constructor(initialConfig: unknown)
+  accept(nextConfig: unknown): void
+  read(path: string[]): LiveHostConfigReadResult
+  apply(settings: LiveHostConfigApplySetting[]): LiveHostConfigApplyResult
+}

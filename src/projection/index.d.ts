@@ -129,3 +129,38 @@ export interface ProjectionMessages {
 }
 
 export function Projection(): ProjectionMessages
+
+export interface ToolResultBound {
+  readonly defaultHostMaxLines: number
+  readonly defaultHostMaxBytes: number
+  readonly marker: string
+  readonly markerBytes: number
+  readonly markerLineCost: number
+  hostMaxLines(): number
+  hostMaxBytes(): number
+  contentMaxLines(): number
+  contentMaxBytes(): number
+  setHostLimits(maxLines: unknown, maxBytes: unknown): void
+  clearHostLimitsForTests(): void
+  fitsInWindow(text: string): boolean
+  bound(text: string): string
+}
+
+export declare class ToolResultBoundStore implements ToolResultBound {
+  constructor()
+  readonly defaultHostMaxLines: number
+  readonly defaultHostMaxBytes: number
+  readonly marker: string
+  readonly markerBytes: number
+  readonly markerLineCost: number
+  hostMaxLines(): number
+  hostMaxBytes(): number
+  contentMaxLines(): number
+  contentMaxBytes(): number
+  setHostLimits(maxLines: unknown, maxBytes: unknown): void
+  clearHostLimitsForTests(): void
+  fitsInWindow(text: string): boolean
+  bound(text: string): string
+}
+
+export declare const toolResultBound: ToolResultBoundStore

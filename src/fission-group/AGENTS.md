@@ -43,3 +43,16 @@ Fission 进程内运行时状态与单飞认领自治对象。
 - `takeoverClaims`: 分组收束接管单飞认领栅栏（受 clearOwner 统一清空）。
 并组合 FissionLaneRegistry 协调原子清理（clearOwner 联动清空分道绑定、接管认领、分组资源与静默中断，保持交付认领自治）。
 公开接口：`bindLane`、`unbindLane`、`tryLane`、`tryOwner`、`logicalOwner`、`installDurableLaneEvidence`、`markSilentInterrupt`、`clearSilentInterrupt`、`isSilentInterrupt`、`tryConsumeSilentInterrupt`、`trackGroupResource`、`disposeGroupResources`、`tryBeginDelivery`、`endDelivery`、`hasDeliveryClaim`、`tryBeginTakeover`、`endTakeover`、`hasTakeoverClaim`、`clearOwner`、`clearAll`。
+
+# FissionAdmissionRegistry
+
+Fission 进程内 single-flight owner 准入自治注册表。
+独占维护进程内跨调用状态：
+- `activeOwners: HashSet<string>`：当前处于活跃 Fission 准入中的 ownerSessionId 集合。
+提供：
+- `reserve(ownerSessionId: string): bool`：尝试独占预留准入。首次返回 true，重复返回 false；空白（null/undefined/whitespace）ownerSessionId 防御性拒绝返回 false。
+- `isActive(ownerSessionId: string): bool`：检查是否活跃。空白返回 false。
+- `release(ownerSessionId: string): unit`：释放指定 owner 的准入状态。空白静默无操作。
+- `clear(): unit`：清空全部准入状态。
+- `snapshot(): string array`：返回当前活跃 ownerSessionId 的已排序快照数组，防外部篡改。
+导出单例 `fissionAdmissionRegistry`。

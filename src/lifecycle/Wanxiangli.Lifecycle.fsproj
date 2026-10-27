@@ -7,6 +7,7 @@
     <Compile Include="Program.fs" />
     <Compile Include="State.fs" />
     <Compile Include="WorkspaceLifecycle.fs" />
+    <Compile Include="PlanAskGate.fs" />
     <Compile Include="Work.fs" />
     <PackageExport Include="Work.fs" Member="Work" />
     <PackageExport Include="Work.fs" Member="abandonLocalState" />
@@ -16,5 +17,7 @@
     <PackageExport Include="WorkspaceLifecycle.fs" Member="sharedEventStorePool" />
     <PackageExport Include="WorkspaceLifecycle.fs" Member="SharedAsyncJournalPool" />
     <PackageExport Include="WorkspaceLifecycle.fs" Member="sharedAsyncJournalPool" />
+    <PackageExport Include="PlanAskGate.fs" Member="PlanAskGate" />
+    <PackageExport Include="PlanAskGate.fs" Member="planAskGate" />
   </ItemGroup>
 </Project>

@@ -31,6 +31,9 @@ module internal Wire =
     [<Emit("$0 === $1")>]
     let same (_left: obj) (_right: obj) : bool = jsNative
 
+    [<Emit("(typeof $0 === 'function' ? $0($1, $2) : $0.Invoke($1, $2))")>]
+    let call2 (_fn: obj) (_a: obj) (_b: obj) : obj = jsNative
+
 /// 一次物理执行的精确身份：会话、物理用户消息、角色、参与者与已解析 target。
 type internal Identity =
     { SessionId: string
@@ -338,3 +341,125 @@ type ExecutionPermits() =
                 ->
                 entry.Handle
             | _ -> null
+
+[<AttachMembers>]
+type CapacityTransitionCounters() =
+    // DSL-MUTABLE: resource
+    let mutable duplicate = 0.0
+    let mutable stale = 0.0
+    // DSL-MUTABLE: resource
+    let mutable conflict = 0.0
+
+    member _.record(outcome: obj) : obj =
+        if Wire.isString outcome then
+            match unbox<string> outcome with
+            | "AlreadyApplied" -> duplicate <- duplicate + 1.0
+            | "StaleFence" -> stale <- stale + 1.0
+            | "Conflict" -> conflict <- conflict + 1.0
+            | _ -> ()
+        outcome
+
+    member _.recordDuplicate() : float =
+        duplicate <- duplicate + 1.0
+        duplicate
+
+    member _.recordStale() : float =
+        stale <- stale + 1.0
+        stale
+
+    member _.recordConflict() : float =
+        conflict <- conflict + 1.0
+        conflict
+
+    member _.snapshot() : obj =
+        Wire.freeze (
+            createObj
+                [ "duplicate" ==> duplicate
+                  "stale" ==> stale
+                  "conflict" ==> conflict ]
+        )
+
+    member _.reset() : unit =
+        duplicate <- 0.0
+        stale <- 0.0
+        conflict <- 0.0
+
+let capacityTransitionCounters = CapacityTransitionCounters()
+
+type internal SessionLeaseEntry =
+    { Permit: obj
+      Handle: obj }
+
+[<AttachMembers>]
+type SessionLeaseHandles() =
+    let bySession = Dictionary<string, SessionLeaseEntry>()
+    // DSL-MUTABLE: resource — host handle identity, kept in step with the library permit
+    let mutable nextLeaseId = 0.0
+    let mutable nextFence = 0.0
+
+    let fail (message: string) : 'a =
+        raise (InvalidOperationException("execution-model-routing: " + message))
+
+    member _.handleFor(sessionId: obj, permit: obj, createHandle: obj) : obj =
+        if not (Wire.isString sessionId) then
+            fail "session lease handles requires string sessionId"
+        if Wire.isNullish permit then
+            fail "session lease handles requires non-null permit"
+        if Wire.isNullish createHandle then
+            fail "session lease handles requires createHandle function"
+
+        let sid = unbox<string> sessionId
+        match bySession.TryGetValue sid with
+        | true, entry when Wire.same entry.Permit permit -> entry.Handle
+        | _ ->
+            nextLeaseId <- nextLeaseId + 1.0
+            nextFence <- nextFence + 1.0
+
+            let permitFence: obj = permit?fence
+            if Wire.isNullish permitFence || not (Wire.same permitFence (box nextFence)) then
+                fail "host lease fence diverged from the exact permit owner"
+
+            let handle = Wire.call2 createHandle (box nextLeaseId) (box nextFence)
+            bySession.[sid] <- { Permit = permit; Handle = handle }
+            handle
+
+    member _.tryGetMatching(sessionId: obj, permit: obj) : obj =
+        if not (Wire.isString sessionId) || Wire.isNullish permit then
+            null
+        else
+            let sid = unbox<string> sessionId
+            match bySession.TryGetValue sid with
+            | true, entry when Wire.same entry.Permit permit -> entry.Handle
+            | _ -> null
+
+    member _.current(sessionId: obj) : obj =
+        if not (Wire.isString sessionId) then
+            null
+        else
+            match bySession.TryGetValue (unbox<string> sessionId) with
+            | true, entry -> entry.Handle
+            | false, _ -> null
+
+    member _.has(sessionId: obj) : bool =
+        if not (Wire.isString sessionId) then
+            false
+        else
+            bySession.ContainsKey (unbox<string> sessionId)
+
+    member _.snapshot() : obj =
+        Wire.freeze (
+            createObj
+                [ "activeCount" ==> float bySession.Count
+                  "nextLeaseId" ==> nextLeaseId
+                  "nextFence" ==> nextFence ]
+        )
+
+    member _.clear() : unit =
+        bySession.Clear()
+
+    member _.nextLeaseId: float = nextLeaseId
+    member _.nextFence: float = nextFence
+    member _.getNextLeaseId() : float = nextLeaseId
+    member _.getNextFence() : float = nextFence
+
+let sessionLeaseHandles = SessionLeaseHandles()

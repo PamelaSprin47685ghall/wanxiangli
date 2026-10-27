@@ -92,3 +92,50 @@ export declare class ProviderAttemptStopFence {
 }
 
 export declare const providerAttemptStopFence: ProviderAttemptStopFence
+
+export type PendingAdmissionResult<T = unknown> =
+  | { readonly kind: 'Admitted'; readonly plan: T }
+  | { readonly kind: 'ReplayedExisting'; readonly existing: T }
+  | { readonly kind: 'IdentityMismatch'; readonly expectedSession: string; readonly expectedPhysical: string; readonly attempted: T }
+  | { readonly kind: 'PlanConflict'; readonly existing: T; readonly attempted: T }
+
+export interface RecoveryAttemptPlanStoreSnapshot {
+  readonly pendingCount: number
+  readonly boundCount: number
+  readonly interventionCount: number
+}
+
+export declare class RecoveryAttemptPlanStore {
+  constructor()
+  FreezePending<T = unknown>(
+    sessionId: string,
+    physicalUserMessageId: string,
+    planSessionId: string,
+    planPhysicalUserMessageId: string,
+    plan: T,
+    isEqual?: (existing: T, attempted: T) => boolean
+  ): PendingAdmissionResult<T>
+  TryPending<T = unknown>(sessionId: string, physicalUserMessageId: string): T | null
+  BindProviderRun<T = unknown>(
+    sessionId: string,
+    providerRun: string,
+    physicalUserMessageId: string,
+    plan: T
+  ): T
+  TryAttemptPlan<T = unknown>(sessionId: string, providerRun: string): T | null
+  TryBindAttemptPlan<T = unknown, B = unknown>(
+    sessionId: string,
+    physicalUserMessageId: string,
+    providerRun: string,
+    bindFn: (pending: T) => B
+  ): B | null
+  ConsumeAttemptPlan<T = unknown>(sessionId: string, providerRun: string): T | null
+  PublishManualIntervention<T = unknown>(sessionId: string, physicalUserMessageId: string, request: T): void
+  ManualInterventions<T = unknown>(): T[]
+  RevokeManualIntervention(sessionId: string, physicalUserMessageId: string): void
+  ClearSession(sessionId: string): void
+  ClearAttemptPlansFor(keyPrefix: string): void
+  Snapshot(): RecoveryAttemptPlanStoreSnapshot
+}
+
+export declare const recoveryAttemptPlanStore: RecoveryAttemptPlanStore

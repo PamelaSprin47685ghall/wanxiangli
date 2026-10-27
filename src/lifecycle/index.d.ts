@@ -149,3 +149,17 @@ export class SharedAsyncJournalPool {
 }
 
 export const sharedAsyncJournalPool: SharedAsyncJournalPool;
+
+/**
+ * Autonomous process-local single-flight gate for in-flight ask delegations per work.
+ */
+export class PlanAskGate {
+  constructor();
+  tryBegin(workId: string): boolean;
+  clear(workId: string): void;
+  isPending(workId: string): boolean;
+  clearAll(): void;
+  snapshot(): string[];
+}
+
+export const planAskGate: PlanAskGate;

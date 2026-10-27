@@ -68,3 +68,16 @@ export class ProviderLanguageStore {
 }
 
 export const providerLanguageStore: ProviderLanguageStore;
+
+export class InstalledResourceSlot<T = unknown> {
+  constructor(missingErrorMessage: string);
+  install(value: T): void;
+  tryGet(): T | undefined;
+  require(): T;
+  isInstalled(): boolean;
+  clear(): void;
+}
+
+export const runtimeResourcesSlot: InstalledResourceSlot;
+export const providerResourcesSlot: InstalledResourceSlot;
+export const proseResourcesSlot: InstalledResourceSlot;

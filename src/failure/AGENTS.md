@@ -54,3 +54,26 @@
 - `Revoke(sessionId)`: 批量拒绝目标会话当前等待中的 attempt，不污染后续 attempt，幂等。
 - `Clear(sessionId)` / `ClearAll()`: 清空指定会话或全部状态，重复调用幂等不误伤新 attempt。
 - `Snapshot()`: 返回只读诊断快照（stopped / waiting / denied），不暴露内部集合。
+
+
+## RecoveryAttemptPlanStore
+
+层：内核。进程内 pre-inference attempt 计划、provider-run 绑定与恢复干预的自治存储（PROMPT-011 + C5 + RECOVERY-FAMILY）。
+独占持有：
+- private `pendingAttemptPlans: Dictionary<string, obj>`: keyed by `sessionId + "\u001F" + physicalUserMessageId`
+- private `attemptPlans: Dictionary<string, BoundPlanEntry>`: keyed by `sessionId + "\u001F" + providerRun`
+- private `manualChatInterventions: Dictionary<string, obj * string>`: keyed by `sessionId + "\u001F" + physicalUserMessageId`
+
+公开能力：
+- `FreezePending(sessionId, physicalUserMessageId, planSessionId, planPhysicalUserMessageId, plan, isEqual?)`: 准入判定。若身份不匹配返回 IdentityMismatch；若已存在相同 plan 返回 ReplayedExisting；若冲突返回 PlanConflict；若无则存入并返回 Admitted。
+- `TryPending(sessionId, physicalUserMessageId)`: 读取未绑定的 pre-inference 计划，无则返回 null。
+- `BindProviderRun(sessionId, providerRun, physicalUserMessageId, plan)`: 绑定 attemptPlan 到 providerRun。若已有同 physical 计划幂等返回；若已有不同 physical 计划则抛出 InvalidOperationException（包含 HOST-BOUNDARY-008 标记）；若无则存入。
+- `TryAttemptPlan(sessionId, providerRun)`: 读取已绑定的 attemptPlan（peek，不移除）。
+- `TryBindAttemptPlan(sessionId, physicalUserMessageId, providerRun, bindFn)`: 绑定或重放。已有同 physical 返回 bound plan；已有不同 physical 返回 null；若无 bound 则取 pending 并通过 bindFn 转换后绑定存入。
+- `ConsumeAttemptPlan(sessionId, providerRun)`: 终态对齐单次消费。原子移除 bound attemptPlans 及对应的 pendingAttemptPlans，返回被消费的 plan。
+- `PublishManualIntervention(sessionId, physicalUserMessageId, request)`: 登记恢复干预请求。
+- `ManualInterventions()`: 获取当前所有干预请求数组。
+- `RevokeManualIntervention(sessionId, physicalUserMessageId)`: 撤销对应干预请求。
+- `ClearSession(sessionId)`: 清除该 session 的所有 attemptPlans、pendingAttemptPlans 以及 manualChatInterventions。
+- `ClearAttemptPlansFor(keyPrefix)`: 清除以 `keyPrefix + "\u001F"` 为前缀的所有 attemptPlans 与 pendingAttemptPlans。
+- `Snapshot()`: 只读诊断快照（pendingCount / boundCount / interventionCount）。

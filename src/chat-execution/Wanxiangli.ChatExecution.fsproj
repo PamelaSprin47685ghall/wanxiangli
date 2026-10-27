@@ -7,9 +7,12 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="SessionQuiescenceGate.fs" />
+    <Compile Include="ManagedChatExecutionFlight.fs" />
     <Compile Include="ChatExecutionLaw.fs" />
     <PackageExport Include="ChatExecutionLaw.fs" Member="ChatExecutionLaw" />
     <PackageExport Include="SessionQuiescenceGate.fs" Member="SessionQuiescenceGate" />
     <PackageExport Include="SessionQuiescenceGate.fs" Member="sessionQuiescenceGate" />
+    <PackageExport Include="ManagedChatExecutionFlight.fs" Member="ManagedChatExecutionFlight" />
+    <PackageExport Include="ManagedChatExecutionFlight.fs" Member="managedChatExecutionFlight" />
   </ItemGroup>
 </Project>

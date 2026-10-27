@@ -5,9 +5,14 @@
   <ItemGroup>
     <Compile Include="Language.fs" />
     <Compile Include="Template.fs" />
+    <Compile Include="InstalledResourceSlot.fs" />
     <Compile Include="Resources.fs" />
     <PackageExport Include="Resources.fs" Member="Resources" />
     <PackageExport Include="Language.fs" Member="ProviderLanguageStore" />
     <PackageExport Include="Language.fs" Member="providerLanguageStore" />
+    <PackageExport Include="InstalledResourceSlot.fs" Member="InstalledResourceSlot" />
+    <PackageExport Include="InstalledResourceSlot.fs" Member="runtimeResourcesSlot" />
+    <PackageExport Include="InstalledResourceSlot.fs" Member="providerResourcesSlot" />
+    <PackageExport Include="InstalledResourceSlot.fs" Member="proseResourcesSlot" />
   </ItemGroup>
 </Project>

@@ -109,3 +109,13 @@ export interface SessionFamilyTree {
   };
 }
 export const SessionFamilyTree: { new(familyParent?: (sessionId: string) => string | null | undefined): SessionFamilyTree };
+
+export interface ParentAbortRegistry {
+  register(parentId: string, abort: () => void): number;
+  unregister(parentId: string, token: number): void;
+  abortParent(parentId: string): void;
+  hasParent(parentId: string): boolean;
+  clear(): void;
+}
+export const ParentAbortRegistry: { new(): ParentAbortRegistry };
+export const parentAbortRegistry: ParentAbortRegistry;

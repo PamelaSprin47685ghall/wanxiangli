@@ -66,3 +66,72 @@ export declare class ExecutionPermits {
   /** 只读：该会话当前许可已提交且物理消息一致时交还它，否则 null。 */
   committed(sessionId: string, physicalUserMessageId: string): ExecutionPermit | null
 }
+/**
+ * 迁移计数快照。
+ */
+export interface TransitionCountersSnapshot {
+  readonly duplicate: number
+  readonly stale: number
+  readonly conflict: number
+}
+
+/**
+ * 容量迁移结果计数器：以自治对象持有 duplicate、stale、conflict 可变状态。
+ */
+export declare class CapacityTransitionCounters {
+  /**
+   * 记录迁移结果。对 AlreadyApplied 递增 duplicate，StaleFence 递增 stale，Conflict 递增 conflict；Applied 不计数。原样返回 outcome。
+   */
+  record(outcome: PermitOutcome | string): string
+  /** 直接递增 duplicate 并返回新计数。 */
+  recordDuplicate(): number
+  /** 直接递增 stale 并返回新计数。 */
+  recordStale(): number
+  /** 直接递增 conflict 并返回新计数。 */
+  recordConflict(): number
+  /** 获取当前计数快照。 */
+  snapshot(): TransitionCountersSnapshot
+  /** 重置所有计数为 0。 */
+  reset(): void
+}
+
+/** 全局单例容量迁移计数器。 */
+export declare const capacityTransitionCounters: CapacityTransitionCounters
+
+/**
+ * 会话租约句柄快照。
+ */
+export interface SessionLeaseHandlesSnapshot {
+  readonly activeCount: number
+  readonly nextLeaseId: number
+  readonly nextFence: number
+}
+
+/**
+ * 会话租约句柄缓存与单调序号管理器：
+ * 独占管理 session 句柄映射并递增 nextLeaseId 与 nextFence，严格校验 fence 一致性。
+ */
+export declare class SessionLeaseHandles {
+  /**
+   * 获取或创建会话租约句柄。同会话同许可直接复用已有句柄；
+   * 否则递增 nextLeaseId 与 nextFence、校验 permit.fence === nextFence（不一致抛出异常），调用 createHandle 缓存并返回。
+   */
+  handleFor<T>(sessionId: string, permit: ExecutionPermit, createHandle: (leaseId: number, fence: number) => T): T
+  /** 仅当会话存在且许可与已缓存者相同时返回句柄，否则返回 null。 */
+  tryGetMatching<T>(sessionId: string, permit: ExecutionPermit): T | null
+  /** 只读查询会话当前句柄。 */
+  current<T>(sessionId: string): T | null
+  /** 查询会话是否存在句柄。 */
+  has(sessionId: string): boolean
+  /** 获取当前句柄池与序号快照。 */
+  snapshot(): SessionLeaseHandlesSnapshot
+  /** 清空会话句柄字典。 */
+  clear(): void
+  readonly nextLeaseId: number
+  readonly nextFence: number
+  getNextLeaseId(): number
+  getNextFence(): number
+}
+
+/** 全局单例会话租约句柄管理器。 */
+export declare const sessionLeaseHandles: SessionLeaseHandles

@@ -6,6 +6,10 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="RuntimePathStore.fs" />
     <Compile Include="GitPorcelain.fs" />
+    <PackageExport Include="RuntimePathStore.fs" Member="RuntimePathStore" />
+    <PackageExport Include="RuntimePathStore.fs" Member="runtimePathStore" />
+    <PackageExport Include="GitPorcelain.fs" Member="GitPorcelain" />
   </ItemGroup>
 </Project>

@@ -133,3 +133,25 @@ export declare class SessionQuiescenceGate {
 }
 
 export declare const sessionQuiescenceGate: SessionQuiescenceGate
+
+export declare class ManagedChatExecutionFlight {
+  BeginFlight(runtimeId: string, sessionId: string, physicalUserMessageId: string, work: unknown): void
+  beginFlight(runtimeId: string, sessionId: string, physicalUserMessageId: string, work: unknown): void
+
+  Finish(runtimeId: string, sessionId: string, physicalUserMessageId: string): boolean
+  finish(runtimeId: string, sessionId: string, physicalUserMessageId: string): boolean
+
+  TryGet(runtimeId: string, sessionId: string, physicalUserMessageId: string): unknown | undefined
+  tryGet(runtimeId: string, sessionId: string, physicalUserMessageId: string): unknown | undefined
+
+  Get(runtimeId: string, sessionId: string, physicalUserMessageId: string): unknown | null
+  get(runtimeId: string, sessionId: string, physicalUserMessageId: string): unknown | null
+
+  Clear(): void
+  clear(): void
+
+  readonly Count: number
+  count(): number
+}
+
+export declare const managedChatExecutionFlight: ManagedChatExecutionFlight

@@ -46,3 +46,14 @@
 - Reopen 与持久交付预留是明确的新规则；不是旧字段的伪兼容。
 - 构造 `Work(workId, records?)` 只接收事实数据；`execute` 返回 Applied/Replayed/Observed 与新记录或 null。它不承诺跨进程锁或数据持久，不能直接把 Applied 当真实外部效果许可。
 - trace、provider 投影、原文保存、LWR 取材、宿主 canary 与旧仓切换仍未实现，不计入本刀完成范围。
+
+## PlanAskGate — 进程内单飞询问门禁
+
+对象 `PlanAskGate`（与全局单例 `planAskGate`）是 work-028 / work-035 规定的进程内单飞询问互斥门闩。
+
+- `tryBegin(workId)`：非空白且未处于 pending 时记录并授予进入，已被占用或非法输入拒绝。
+- `clear(workId)`：幂等解除占用。
+- `isPending(workId)`：检查指定 workId 是否处于 pending 状态。
+- `clearAll()`：清空当前实例全部占用记录。
+- `snapshot()`：返回排序的原生快照数组，隔离内部集合。
+- 崩溃恢复无需悬挂询问状态，因此为纯进程内存状态，不落盘。

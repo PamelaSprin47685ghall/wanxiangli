@@ -47,3 +47,8 @@
 ## Advisor 例外：协议工具不等于办公实用工具（2026-10-24）
 
 Advisor 的 `OfficeMatrix.permissions` 仍是空集，`skill` 与 `assume` 虽是矩阵外的宿主工具，但也必须通过 `admitsUtility` 对 Advisor **明确拒绝**。`negotiate(questions: string)` 和 `resetScope` 是独立的非授权性协议工具，在物理 Host 接口准入，不是赋予 Advisor 通用 utility 权限。测试必须同时覆盖 capability 的 utility 拒绝和 Host 实际权限对象／请求投影；提示词里写“不得使用”不足以构成能力边界。
+
+## LiveHostConfigStore 活配置状态与深层树读写
+
+1. 职责唯一所有者：`LiveHostConfigStore` 是纯进程内自治对象，独占持有可变宿主活配置引用（`mutable current`），负责深层树状读取、自动建中间节点深层写入、写入后 round-trip 读回核验、冻结对象抛错捕获并返回结构化结果。
+2. 宿主与库分工：宿主适配器（`LiveHostConfig`）仅作为中立 `IHostConfigPort` 端口与宿主事件钩子之间的映射薄壳，主仓不再保留任何 `mutable current` 字段或树遍历代码。

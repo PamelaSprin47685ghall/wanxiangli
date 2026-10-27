@@ -44,3 +44,25 @@
     - 证明：`tests/004.test.mjs`；与宿主原 `RelayNarrativeTransform.staleRetirement` 的双算见宿主 CUT-17 证据。
 5. [LEMMA 8, 9, 4] `wire`/`wireMessage`/`semantic`：逐字节期望输出、五种转义与其余字符原样、缺省与 null 等价、wireMessage 与 wire 内元素相同、语义拒绝 callId、线格式要求 callId、非法输入与 accessor。
     - 证明：`tests/005.test.mjs`；与宿主原 `ProviderProjection.renderWire`/`renderSemantic` 的双算见宿主 CUT-17 证据。
+
+
+# ToolResultBoundStore — 宿主自定义工具输出上限与 UTF-8 尾部截断
+
+层：内核。npm 入口 `wanxiangli/projection`，导出类 `ToolResultBoundStore` 及全局单例 `toolResultBound`。独占持有宿主声明的输出上限可变状态（`hostMaxLines`、`hostMaxBytes`），并提供 UTF-8 标量安全、保持尾部的截断算法。
+
+来源：宿主仓 `src/Wanxiangshu/Host/Contract/ToolResultBound.fs(.fsi)`。
+
+## AXIOM
+
+1. [截断方向] 宿主预检与兜底截断默认保留头部丢弃尾部；为防止宿主二次截断丢失决定性尾部信息，本库在宿主观察到输出之前先行执行尾部保留截断。
+2. [预算精确性] 截断标记为固定常量 `"...head truncated (tail kept)...\n\n"`（34 字节，2 行）。内容预算精确等于宿主上限减去标记开销，截断后总行数与总字节数精确落在宿主上限之内，不留任何模糊冗余量。
+3. [标量安全] UTF-8 反向截断必须按 Unicode 标量（包含高低代理对 4 字节）边界步进，严禁产生半个字符或孤立代理损坏。
+4. [配置防御] 宿主动态声明的上限只有在为有限数值且严格大于标记自身开销（行数 > 2，字节数 > 34）时方可接纳，非法或过小值保持当前上限不变，防止破损配置放宽或破坏窗口。
+
+## LEMMA
+
+1. 默认上限：`DefaultHostMaxLines = 2000`，`DefaultHostMaxBytes = 51200`。
+2. `setHostLimits(maxLines, maxBytes)`：当且仅当参数为有限数值且满足 `maxLines > 2`、`maxBytes > 34` 时更新对应上限，其余保持不变。
+3. `fitsInWindow(text)`：文本总行数 <= hostMaxLines 且 UTF-8 字节数 <= hostMaxBytes 时为 true。
+4. `bound(text)`：未超出上限时原样返回；超出上限时拼接 Marker 与安全截断的 tail，行数 <= hostMaxLines 且字节数 <= hostMaxBytes。
+5. `clearHostLimitsForTests()`：将可变上限复位回默认值。

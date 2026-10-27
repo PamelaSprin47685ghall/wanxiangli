@@ -7,5 +7,10 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="ExecutionPermits.fs" />
+    <PackageExport Include="ExecutionPermits.fs" Member="ExecutionPermits" />
+    <PackageExport Include="ExecutionPermits.fs" Member="CapacityTransitionCounters" />
+    <PackageExport Include="ExecutionPermits.fs" Member="capacityTransitionCounters" />
+    <PackageExport Include="ExecutionPermits.fs" Member="SessionLeaseHandles" />
+    <PackageExport Include="ExecutionPermits.fs" Member="sessionLeaseHandles" />
   </ItemGroup>
 </Project>

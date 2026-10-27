@@ -7,9 +7,12 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="ProviderAttemptStopFence.fs" />
+    <Compile Include="RecoveryAttemptPlanStore.fs" />
     <Compile Include="ExecutionFailurePolicy.fs" />
     <PackageExport Include="ExecutionFailurePolicy.fs" Member="ExecutionFailurePolicy" />
     <PackageExport Include="ProviderAttemptStopFence.fs" Member="ProviderAttemptStopFence" />
     <PackageExport Include="ProviderAttemptStopFence.fs" Member="providerAttemptStopFence" />
+    <PackageExport Include="RecoveryAttemptPlanStore.fs" Member="RecoveryAttemptPlanStore" />
+    <PackageExport Include="RecoveryAttemptPlanStore.fs" Member="recoveryAttemptPlanStore" />
   </ItemGroup>
 </Project>

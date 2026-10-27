@@ -28,3 +28,14 @@
     - 证明：`tests/001.test.mjs`。
 4. [LEMMA 4] 会话、物理消息、角色、参与者、target 不符依次给出拒绝。
     - 证明：`tests/001.test.mjs`。
+5. [本模块 AXIOM 1] 迁移计数器（CapacityTransitionCounters）以自治对象维护 duplicate、stale、conflict 计数，接收 outcome 字符串分类记录或直接记录，提供快照与重置。
+    - 推理：调用方根据底层许可迁移结果分类维护状态统计，无需宿主维护可变变量。
+6. [本模块 AXIOM 1] 会话租约句柄缓存（SessionLeaseHandles）自治管理各会话句柄映射与单调递增序号（nextLeaseId / nextFence），并在栅栏分歧时坚决抛出异常。
+    - 推理：宿主句柄的身份与单调性由库自治闭环维护，避免宿主端序号与库端许可序号脱节。
+
+# SPEC
+
+5. [LEMMA 5] CapacityTransitionCounters 正确按分类递增 duplicate、stale、conflict 并提供快照与重置。
+    - 证明：`tests/002.test.mjs`。
+6. [LEMMA 6] SessionLeaseHandles 对同会话同许可复用句柄，新许可单调递增 leaseId 与 fence，fence 分歧报错，提供 tryGetMatching 与独立实例隔离。
+    - 证明：`tests/002.test.mjs`。

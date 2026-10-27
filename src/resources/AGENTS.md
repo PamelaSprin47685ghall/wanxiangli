@@ -1,6 +1,6 @@
 # resources
 
-层：内核。不得 import 任何宿主 SDK。npm 入口 `wanxiangli/resources`，公开对象 `Resources`。
+层：内核。不得 import 任何宿主 SDK。npm 入口 `wanxiangli/resources`，公开对象 `Resources`、`ProviderLanguageStore`、`InstalledResourceSlot` 及单例 `providerLanguageStore`、`runtimeResourcesSlot`、`providerResourcesSlot`、`proseResourcesSlot`。
 
 # AXIOM
 
@@ -58,3 +58,9 @@
 - 本模块只提供“全部声明语种齐备 + 占位符集合一致”的检查实现（`tests/006.test.mjs` 与 `tests/support/distribution.mjs`），它是模块自证，不是发行门禁的接线点。
 - 权威门禁应落在 wanxiangli 包的打包/发行检查，以及宿主侧的资源分发步骤（宿主 `resources/**` 的 provider 语义目录按各语义 owner 归属）。
 - 本模块不新增平台、不新增脚本、不新增层；门禁接线由发行流程所在层决定。
+
+# 资源槽自治状态所有权 (InstalledResourceSlot)
+
+1. [状态自治] `InstalledResourceSlot` 独占持有已安装资源对象引用（`current: obj option`），彻底迁出宿主各模块中的进程内可变变量（`mutable installed` / `mutable instance`）。
+2. [严格判空] 未安装状态下调用 `require()` 触发严格 fail-closed，以模块初始化时绑定的精确 `missingErrorMessage` 抛出 `InvalidOperationException`，保证与原宿主异常语义 100% 逐字一致。
+3. [多槽隔离] 槽位实例私有维护自身状态，预置命名单例槽（`runtimeResourcesSlot`、`providerResourcesSlot`、`proseResourcesSlot`）与外部通过构造函数新建的测试实例完全隔离互不干扰。

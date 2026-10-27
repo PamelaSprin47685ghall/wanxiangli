@@ -7,6 +7,9 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="OfficeMatrix.fs" />
+    <Compile Include="LiveHostConfigStore.fs" />
     <Compile Include="Capability.fs" />
+    <PackageExport Include="Capability.fs" Member="Capability" />
+    <PackageExport Include="LiveHostConfigStore.fs" Member="LiveHostConfigStore" />
   </ItemGroup>
 </Project>

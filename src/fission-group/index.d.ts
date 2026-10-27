@@ -140,3 +140,14 @@ export declare class FissionRuntime {
 }
 
 export declare const fissionRuntime: FissionRuntime
+
+export declare class FissionAdmissionRegistry {
+  constructor()
+  reserve(ownerSessionId: string): boolean
+  isActive(ownerSessionId: string): boolean
+  release(ownerSessionId: string): void
+  clear(): void
+  snapshot(): readonly string[]
+}
+
+export declare const fissionAdmissionRegistry: FissionAdmissionRegistry
