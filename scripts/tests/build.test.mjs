@@ -1,20 +1,22 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, cpSync, copyFileSync, symlinkSync, rmSync, readdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
+import { mkdirSync, cpSync, copyFileSync, symlinkSync, rmSync, readdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { testDirectory, installBuild, stopBuild } from './build-fixture.mjs'
 const root = fileURLToPath(new URL('../..', import.meta.url))
 
 function fixture(t, modules) {
-  const directory = mkdtempSync(path.join(tmpdir(), 'wanxiangli-isolated-build-'))
-  t.after(() => rmSync(directory, { recursive: true, force: true }))
-  mkdirSync(path.join(directory, 'scripts'))
+  const directory = testDirectory('isolated-')
+  t.after(() => {
+    stopBuild(directory)
+    rmSync(directory, { recursive: true, force: true })
+  })
+  installBuild(directory)
   mkdirSync(path.join(directory, 'src'))
-  copyFileSync(path.join(root, 'scripts/build.mjs'), path.join(directory, 'scripts/build.mjs'))
-  copyFileSync(path.join(root, 'scripts/compiler.mjs'), path.join(directory, 'scripts/compiler.mjs'))
   copyFileSync(path.join(root, 'package.json'), path.join(directory, 'package.json'))
   // 编译器是工具链；只借用工具链，不提供任何兄弟模块或旧仓源码。
   symlinkSync(path.join(root, 'node_modules'), path.join(directory, 'node_modules'), 'junction')

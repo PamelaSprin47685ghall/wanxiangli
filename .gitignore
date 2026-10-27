@@ -7,3 +7,5 @@ dist/
 *.sqlite-wal
 *.sqlite-shm
 .build-stamps/
+.build-service/
+.build-tests/
