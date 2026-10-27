@@ -57,3 +57,17 @@
 
 8. [LEMMA 8] 物理输入不匹配的陈旧见证被拒、最新匹配见证胜出、重复记录不重复完成、清空后 hasDurableEstablished 为假、不同 ToolCallId 互不影响、畸形输入严格 fail-closed 拒绝且不污染状态、同 run 多 callId 中断任务按 sequence 最新胜出。
     - 证明：`tests/004.test.mjs`。
+
+# LEMMA (PromptPhysicalAcceptance)
+
+9. [本模块 AXIOM 1] 物理确认（PromptPhysicalAcceptance）进程内自治持有每个 PromptKey 对应的单次确认回调与异步等待者字典；物理到达时原子提取并排空，且单次结算；取消与超时具备局部性，旧租约释放绝不误删覆盖后的新条目（ABA 防御）。
+    - Exactly-once 结算：accepted(key, pid) 与 cancel(key) 在 gate 锁内原子取走全部 callbacks 与 waiters 并物理移除键，排空后再执行外部回调通知与 waiters 结算。
+    - 引用同一性防误注销（ABA 防御）：register 返回的 IDisposable 在 Dispose 时，严格核对当前条目的引用同一性，只有匹配时才删除；已被新 register 覆盖的旧租约释放为安全 no-op。
+    - 局部取消与防泄漏：beginConfirmation 返回的租约释放时仅从 ResizeArray 中移除自身 waiter，当数组清空时自动从字典清理 key；绝不误伤同一 key 上的其他并发 waiter。
+    - 超时回退确定性：优先遵循调用方显式传入的 timeoutMs（大于 0 时生效）；未提供时安全回退至环境变量 WANXIANGSHU_ADMISSION_TIMEOUT_MS，解析失败稳定回退至 10000ms。
+    - 迟到安全与重入防御：对不存在的 key 调用 accepted/cancel/rejected 为安全 no-op；回调中重入调用同一单例的成员时，因原始状态已原子排空，不会发生死锁或状态污染。
+
+# SPEC (PromptPhysicalAcceptance)
+
+9. [LEMMA 9] 单次回调通知、waiters 全量结算、ABA 覆盖后旧租约释放不删新监听、多等待者局部取消与防泄漏、超时与环境变量解析确定性、迟到到达安全忽略、回调重入安全。
+    - 证明：`tests/005.test.mjs`。

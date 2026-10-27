@@ -107,3 +107,36 @@ export declare class FissionLaneRegistry {
 }
 
 export declare const fissionLaneRegistry: FissionLaneRegistry
+
+export interface IDisposableHandle {
+  dispose?(): void
+  Dispose?(): void
+}
+
+export declare class FissionRuntime {
+  constructor(laneRegistry?: FissionLaneRegistry)
+  readonly LaneRegistry: FissionLaneRegistry
+  bindLane(groupId: string, ownerSessionId: string, laneIndex: number, laneCount: number, laneSessionId: string): void
+  unbindLane(laneSessionId: string): boolean
+  tryLane(laneSessionId: string): FissionLaneRecord | undefined
+  tryOwner(laneSessionId: string): string | undefined
+  logicalOwner(sessionId: string): string
+  installDurableLaneEvidence(resolve: (laneSessionId: string) => FissionLaneRecord | undefined): void
+  markSilentInterrupt(ownerSessionId: string): void
+  clearSilentInterrupt(ownerSessionId: string): void
+  isSilentInterrupt(ownerSessionId: string): boolean
+  tryConsumeSilentInterrupt(ownerSessionId: string): boolean
+  trackGroupResource(groupId: string, resource: unknown): void
+  disposeGroupResources(groupId: string): void
+  isGroupClosed(groupId: string): boolean
+  tryBeginDelivery(groupId: string, completionId: string, laneIndex: number): boolean
+  endDelivery(groupId: string, completionId: string, laneIndex: number): void
+  hasDeliveryClaim(groupId: string, completionId: string, laneIndex: number): boolean
+  tryBeginTakeover(groupId: string): boolean
+  endTakeover(groupId: string): void
+  hasTakeoverClaim(groupId: string): boolean
+  clearOwner(ownerSessionId: string): FissionOwnerCleanupResult
+  clearAll(): void
+}
+
+export declare const fissionRuntime: FissionRuntime

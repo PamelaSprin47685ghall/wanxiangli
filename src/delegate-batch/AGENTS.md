@@ -38,3 +38,16 @@
 2. [规矩] formatKey 严格生成 "join-guard:" + sessionId + ":" + terminalProviderRun。
 3. [原子性] tryReserve 在全局锁内原子检查外部 hasOutstandingJoinClaim 谓词、全局 processKeys 以及传入的局部 scope：任一已占用或外部有未决 claim 则拒绝（返回 None/undefined）；通过时原子写入 processKeys 与 scope 并返回 Some(key)。
 4. [释放与清理] release 同步从 processKeys、传入 scope 与已追踪 scopes 移除 key；clearSession 按前缀同步清理指定会话；clearAll 清空全部状态。
+
+
+# DeferredInspectionStore
+
+1. [使用者] 会话级工程师延迟检查队列（pendingCalls）与已完成替换结果（replacedResults）由 DeferredInspectionStore 自治拥有。
+2. [规矩]
+   - stage(sessionId, callId, charge, keywords, estimate)：非空校验，防重复 callId；入队当前会话 FIFO 列表；
+   - takePending(sessionId)：原子取出并消费当前会话全部挂起项，清空会话挂起队列；无则返回空；
+   - recordReplacedResult(callId, replacement, ?sessionId)：记录 settled 替换文本，可按需关联会话；
+   - tryReplacedResult(callId)：供消息投影层快速检索替换结果；
+   - clearSession(sessionId)：干净清空指定会话的挂起队列与关联的替换结果，防止跨会话内存泄露；
+   - clearAll()：清空全部挂起队列与替换结果。
+3. [SPEC] 证明：`tests/004.test.mjs`。

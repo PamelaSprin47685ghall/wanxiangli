@@ -121,3 +121,27 @@ export declare class DeliveryAttemptLedger {
 }
 
 export declare const deliveryAttemptLedger: DeliveryAttemptLedger
+
+export type PromptPhysicalOutcome =
+  | { readonly kind: 'Accepted'; readonly physicalUserMessageId: string }
+  | { readonly kind: 'Rejected'; readonly reason: string }
+
+export interface IDisposableHandle {
+  dispose(): void
+}
+
+export declare class PromptPhysicalAcceptance {
+  constructor()
+  register(promptKey: string, callback: (physicalUserMessageId: string) => void): IDisposableHandle
+  cancel(promptKey: string): void
+  accepted(promptKey: string, physicalUserMessageId: string): void
+  rejected(promptKey: string, reason: string): void
+  beginConfirmation(
+    promptKey: string,
+    timeoutMs?: number | null
+  ): [Promise<PromptPhysicalOutcome | undefined>, IDisposableHandle]
+  awaitConfirmation(promptKey: string, timeoutMs?: number | null): Promise<PromptPhysicalOutcome | undefined>
+  clear(): void
+}
+
+export declare const promptPhysicalAcceptance: PromptPhysicalAcceptance

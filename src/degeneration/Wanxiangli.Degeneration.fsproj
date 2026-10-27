@@ -7,6 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="ReliabilityCounters.fs" />
+    <Compile Include="RequestLatencyDetector.fs" />
     <Compile Include="Degeneration.fs" />
     <PackageExport Include="ReliabilityCounters.fs" Member="ReliabilityDiagnosticsStore" />
     <PackageExport Include="ReliabilityCounters.fs" Member="reliabilityDiagnosticsStore" />
@@ -14,6 +15,8 @@
     <PackageExport Include="ReliabilityCounters.fs" Member="ReliabilityCounters" />
     <PackageExport Include="ReliabilityCounters.fs" Member="reliabilityCounters" />
     <PackageExport Include="ReliabilityCounters.fs" Member="createReliabilityCounters" />
-    <PackageExport Include="Degeneration.fs" Member="Degeneration" />
+    <PackageExport Include="RequestLatencyDetector.fs" Member="RequestLatencyDetector" />
+    <PackageExport Include="RequestLatencyDetector.fs" Member="requestLatencyDetector" />
+    <PackageExport Include="RequestLatencyDetector.fs" Member="createRequestLatencyDetector" />
   </ItemGroup>
 </Project>

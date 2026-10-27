@@ -1,40 +1,41 @@
-/** 包络由组合者从自己的语料派生后传入；本模块只校验并使用它。 */
-export interface DegenerationEnvelope {
-  readonly vocabularySize: number
-  /** 每 token 的衰减系数，严格介于 0 与 1。 */
-  readonly lambda: number
-  /** 加权相异计数的先验起点。 */
-  readonly normalWeightedDistinctCount: number
-  readonly minimumWeightedDistinctCount: number
-  readonly maximumWeightedDistinctCount: number
+/**
+ * wanxiangli/degeneration — per-session request-latency detection
+ * (Gamma–Exponential posterior with right-censored observations)
+ * plus the host reliability diagnostics counters.
+ *
+ * The detector never reads the clock: every duration is handed in by the caller.
+ */
+
+export interface LatencySnapshot {
+  readonly SessionId: string
+  readonly Observations: number
+  readonly CompletedCount: number
+  readonly CensoredCount: number
+  /** Sum of the durations (completed and censored) currently inside the window. */
+  readonly WindowMs: number
+  readonly Alpha: number
+  readonly Beta: number
+  readonly MeanMs: number
+  readonly ThresholdMs: number
+  readonly Percentile: number
 }
 
-export type DegenerationState = 'Normal' | 'TooRepetitive' | 'TooRandom'
-
-export interface DegenerationEvaluation {
-  readonly state: DegenerationState
-  readonly isAnomalous: boolean
-  readonly weightedDistinctTokens: number
-  readonly step: number
+export declare class RequestLatencyDetector {
+  constructor()
+  /** Posterior 99% quantile (β/α)·ln(1/(1−Percentile)); no floor. Reading does not mutate state. */
+  ThresholdMs(sessionId: string): number
+  /** Posterior CDF 1 − exp(−(α/β)·elapsed). Reading does not mutate state. */
+  Cdf(sessionId: string, elapsedMs: number): number
+  ObserveCompleted(sessionId: string, durationMs: number): LatencySnapshot
+  /** Right-censored observation: raises β only, never α. */
+  ObserveCensored(sessionId: string, censoredMs: number): LatencySnapshot
+  Snapshot(sessionId: string): LatencySnapshot
+  Forget(sessionId: string): void
+  Clear(): void
 }
 
-export interface DegenerationDetector {
-  /** 推入一段已分词 token；整段先校验，坏 token 不改变统计。 */
-  push(tokens: readonly number[]): DegenerationEvaluation
-  evaluate(): DegenerationEvaluation
-  /** 已见过的不同 token 数，上限为词表大小。 */
-  trackedTokenCount(): number
-  /** 回到先验：step 0、无已见 token。 */
-  reset(): void
-}
-
-export interface DegenerationMessages {
-  detector(): DegenerationDetector
-  classify(weightedDistinctTokens: number): DegenerationState
-  envelope(): DegenerationEnvelope
-}
-
-export function Degeneration(envelope: DegenerationEnvelope): DegenerationMessages
+export declare function createRequestLatencyDetector(): RequestLatencyDetector
+export declare const requestLatencyDetector: RequestLatencyDetector
 
 export type ReliabilityObservationKind =
   | 'identityConflict'

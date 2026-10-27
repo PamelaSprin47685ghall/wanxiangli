@@ -126,3 +126,64 @@ export declare class RetiredDelegateRegistry {
 }
 
 export declare const retiredDelegateRegistry: RetiredDelegateRegistry
+
+
+export interface DeferredCallRecord {
+  readonly callId: string
+  readonly charge: string
+  readonly keywords: string
+  readonly estimate: number | null
+  readonly stagedAt: number
+}
+
+export interface StageDeferredResult {
+  readonly ok: boolean
+  readonly stagedCount: number
+  readonly callId?: string
+  readonly reason?: string | null
+  readonly existingSession?: string
+}
+
+export interface DeferredClearSessionVerdict {
+  readonly droppedPending: number
+  readonly droppedReplaced: number
+}
+
+export interface DeferredClearAllVerdict {
+  readonly droppedSessions: number
+  readonly droppedPendingCalls: number
+  readonly droppedReplacedResults: number
+}
+
+export interface DeferredInspectionSnapshot {
+  readonly pendingSessionsCount: number
+  readonly totalPendingCallsCount: number
+  readonly replacedResultsCount: number
+}
+
+export declare class DeferredInspectionStore {
+  constructor()
+  stage(
+    sessionId: string,
+    callId: string,
+    charge: string,
+    keywords: string,
+    estimate: number | null | undefined
+  ): StageDeferredResult
+  takePending(sessionId: string): readonly DeferredCallRecord[]
+  hasPending(sessionId: string): boolean
+  pendingCount(sessionId: string): number
+  readonly totalPendingCallsCount: number
+  readonly pendingSessionsCount: number
+  recordReplacedResult(callId: string, replacement: string, sessionId?: string): boolean
+  recordReplacedResults(results: readonly (readonly [string, string])[] | readonly { callId: string; replacement: string }[], sessionId?: string): number
+  tryReplacedResult(callId: string): string | undefined
+  hasReplacedResults(): boolean
+  readonly replacedResultsCount: number
+  clearSession(sessionId: string): DeferredClearSessionVerdict
+  clearReplacedResults(): number
+  clearAll(): DeferredClearAllVerdict
+  snapshot(): DeferredInspectionSnapshot
+}
+
+export declare const deferredInspectionStore: DeferredInspectionStore

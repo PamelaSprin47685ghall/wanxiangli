@@ -32,3 +32,14 @@ Fission 分道执行绑定注册表（单向映射 + 按 owner 线性扫描，�
 承担弥合宿主物理会话分配与全组原子落盘的时序承重职责。
 公开接口：`bindLane`、`unbindLane`、`tryLane`、`tryOwner`、`logicalOwner`、`clearOwner`、`clearOwnerLanes`、`hydrateFromDurable`、`clearAll`。
 单向维护 `lanes: Dictionary<laneSessionId, FissionLaneRecord>`，清空时对所有分道按 `OwnerSessionId` 线性扫描并返回移除结果。
+
+# FissionRuntime
+
+Fission 进程内运行时状态与单飞认领自治对象。
+独占维护进程内跨调用状态：
+- `silentInterrupts`: 静默中断标记集合（纯标记，tryConsume 不擅自删除，由 clearOwner 统一清空）；
+- `groupResources`: 分组受控资源注册表（以安全捕获逐个 Dispose/dispose 释放，防范重入与异常中断）；
+- `deliveryClaims`: 分组+完成+分道的三元组单飞交付认领栅栏（按代际维护，clearOwner 严禁提前清除，严格由交付任务的 finally 释放）；
+- `takeoverClaims`: 分组收束接管单飞认领栅栏（受 clearOwner 统一清空）。
+并组合 FissionLaneRegistry 协调原子清理（clearOwner 联动清空分道绑定、接管认领、分组资源与静默中断，保持交付认领自治）。
+公开接口：`bindLane`、`unbindLane`、`tryLane`、`tryOwner`、`logicalOwner`、`installDurableLaneEvidence`、`markSilentInterrupt`、`clearSilentInterrupt`、`isSilentInterrupt`、`tryConsumeSilentInterrupt`、`trackGroupResource`、`disposeGroupResources`、`tryBeginDelivery`、`endDelivery`、`hasDeliveryClaim`、`tryBeginTakeover`、`endTakeover`、`hasTakeoverClaim`、`clearOwner`、`clearAll`。

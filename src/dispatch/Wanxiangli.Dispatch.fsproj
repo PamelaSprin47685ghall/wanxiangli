@@ -8,9 +8,12 @@
   <ItemGroup>
     <Compile Include="ClaimLaw.fs" />
     <Compile Include="DeliveryAttemptLedger.fs" />
+    <Compile Include="PromptPhysicalAcceptance.fs" />
     <Compile Include="Dispatch.fs" />
     <PackageExport Include="Dispatch.fs" Member="Dispatch" />
     <PackageExport Include="DeliveryAttemptLedger.fs" Member="DeliveryAttemptLedger" />
     <PackageExport Include="DeliveryAttemptLedger.fs" Member="deliveryAttemptLedger" />
+    <PackageExport Include="PromptPhysicalAcceptance.fs" Member="PromptPhysicalAcceptance" />
+    <PackageExport Include="PromptPhysicalAcceptance.fs" Member="promptPhysicalAcceptance" />
   </ItemGroup>
 </Project>

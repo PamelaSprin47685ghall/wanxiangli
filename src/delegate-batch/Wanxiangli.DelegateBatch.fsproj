@@ -6,11 +6,14 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="DelegateBatchLawCore.fs" />
+    <Compile Include="DeferredInspectionStore.fs" />
     <Compile Include="JoinGuardReservationStore.fs" />
     <Compile Include="RetiredDelegateRegistry.fs" />
     <Compile Include="SyncDelegateBatchStore.fs" />
     <Compile Include="DelegateBatchLaw.fs" />
     <PackageExport Include="DelegateBatchLaw.fs" Member="DelegateBatchLaw" />
+    <PackageExport Include="DeferredInspectionStore.fs" Member="DeferredInspectionStore" />
+    <PackageExport Include="DeferredInspectionStore.fs" Member="deferredInspectionStore" />
     <PackageExport Include="JoinGuardReservationStore.fs" Member="JoinGuardScope" />
     <PackageExport Include="JoinGuardReservationStore.fs" Member="JoinGuardReservationStore" />
     <PackageExport Include="JoinGuardReservationStore.fs" Member="joinGuardReservationStore" />

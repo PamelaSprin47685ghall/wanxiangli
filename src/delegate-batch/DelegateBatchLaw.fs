@@ -16,3 +16,7 @@ let retiredDelegateRegistry = RetiredDelegateRegistry.retiredDelegateRegistry
 
 type SyncDelegateBatchStore = SyncDelegateBatchStore.SyncDelegateBatchStore
 let syncDelegateBatchStore = SyncDelegateBatchStore.syncDelegateBatchStore
+
+type DeferredCallRecord = DeferredInspectionStore.DeferredCallRecord
+type DeferredInspectionStore = DeferredInspectionStore.DeferredInspectionStore
+let deferredInspectionStore = DeferredInspectionStore.deferredInspectionStore
