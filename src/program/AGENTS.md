@@ -1,6 +1,6 @@
 # program — 命名程序与请求期限
 
-生产源码使用 F#，经 Fable 交付 JavaScript。公开入口 `wanxiangli/program` 导出 `Program`、`ProgramSession`、`ProgramCatalog`、`Wait`。根规则和 `src/AGENTS.md` 共同适用。
+生产源码使用 F#，经 Fable 交付 JavaScript。公开入口 `wanxiangli/program` 导出 `Program`、`ProgramSession`、`ProgramCatalog`、`Wait`。根目录 `AGENTS.md` 适用。
 
 ## AXIOM
 

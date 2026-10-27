@@ -1,6 +1,6 @@
 # runtime — 独立执行与物理能力
 
-生产源码使用 F#，经 Fable 交付 JavaScript。公开入口 `wanxiangli/runtime` 导出 `Runtime`、`RuntimeTools`、`FileSession`、`Filesystem`、`ProcessSession`、`Terminal`、`OutputSpool`、`Time`。根规则和 `src/AGENTS.md` 共同适用。
+生产源码使用 F#，经 Fable 交付 JavaScript。公开入口 `wanxiangli/runtime` 导出 `Runtime`、`RuntimeTools`、`FileSession`、`Filesystem`、`ProcessSession`、`Terminal`、`OutputSpool`、`Time`。根目录 `AGENTS.md` 适用。
 
 ## AXIOM
 
