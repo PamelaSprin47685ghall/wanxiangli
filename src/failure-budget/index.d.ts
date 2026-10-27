@@ -31,7 +31,7 @@ export type FailureAdvance =
 
 export declare class ProviderFailureBudget {
   readonly contractVersion: 1
-  readonly defaultBudget: 12
+  readonly defaultBudget: 10
   readonly dedupeWindow: 32
   dedupeKey(identity: FailedAttemptIdentity): string
   forAuthority(logicalRun: string, authorityRoot: string): FailureBudgetState

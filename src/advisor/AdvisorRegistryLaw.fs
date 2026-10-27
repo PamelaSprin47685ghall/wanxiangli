@@ -1,11 +1,9 @@
-namespace Wanxiangli.Advisor
+module Wanxiangli.Advisor.AdvisorRegistryLaw
 
-open Fable.Core
+type AdvisorRegistryLawShape =
+    { ContractVersion: int
+      DefaultTimeoutMs: int }
 
-[<RequireQualifiedAccess>]
-module AdvisorRegistryLaw =
-    [<Literal>]
-    let ContractVersion = 1
-
-    [<Literal>]
-    let DefaultTimeoutMs = 120_000
+let AdvisorRegistryLaw : AdvisorRegistryLawShape =
+    { ContractVersion = 1
+      DefaultTimeoutMs = 120_000 }

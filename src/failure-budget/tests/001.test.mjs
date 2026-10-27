@@ -44,9 +44,9 @@ test('SPEC[failure-budget-2] single-step advance, other run, exhaustion is termi
   assert.equal(b.verdict(12, 11), 'MayRetry')
   assert.equal(b.verdict(12, 12), 'Exhausted')
   let s = b.forAuthority('lr', 'root')
-  for (let i = 1; i <= 11; i++) s = advance(s, `p${i}`)
+  for (let i = 1; i < 10; i++) s = advance(s, `p${i}`)
   assert.equal(b.mayRetry(b.defaultBudget, s), true)
-  s = advance(s, 'p12')
+  s = advance(s, 'p10')
   assert.equal(b.mayRetry(b.defaultBudget, s), false)
 })
 

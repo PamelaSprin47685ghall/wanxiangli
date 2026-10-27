@@ -45,7 +45,7 @@ let private flag (what: string) (value: obj) : bool =
 
 /// The consecutive failure limit of one Logical Run's automatic recovery.
 [<Literal>]
-let DefaultBudget = 12
+let DefaultBudget = 10
 
 /// How many exact attempt keys the projection remembers for deduplication.
 [<Literal>]

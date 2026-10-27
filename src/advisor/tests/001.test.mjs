@@ -5,7 +5,8 @@ import {
   SettledRunLedger,
   settledRunLedger,
   AdvisorSeatRegistry,
-  advisorSeatRegistry
+  advisorSeatRegistry,
+  AdvisorRegistryLaw
 } from 'wanxiangli/advisor'
 
 // Helper to construct F# Result
@@ -208,4 +209,10 @@ test('SPEC[advisor-singletons] exported global singletons are available and func
   assert.ok(settledRunLedger instanceof SettledRunLedger)
   assert.doesNotThrow(() => advisorSeatRegistry.clearAll())
   assert.doesNotThrow(() => settledRunLedger.clearAll())
+})
+
+test('SPEC[advisor-law] AdvisorRegistryLaw exports contract constants', () => {
+  assert.ok(AdvisorRegistryLaw !== undefined, 'AdvisorRegistryLaw must be exported')
+  assert.equal(AdvisorRegistryLaw.ContractVersion, 1)
+  assert.equal(AdvisorRegistryLaw.DefaultTimeoutMs, 120_000)
 })
