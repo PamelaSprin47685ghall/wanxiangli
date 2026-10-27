@@ -6,14 +6,14 @@ open Fable.Core.JsInterop
 
 [<AttachMembers>]
 type ToolResultBoundStore() =
-    let defaultHostMaxLines = 2000
-    let defaultHostMaxBytes = 51200
-    let marker = "...head truncated (tail kept)...\n\n"
-    let markerBytes = 34
-    let markerLineCost = 2
+    let defaultLines = 2000
+    let defaultBytes = 51200
+    let truncationMarker = "...head truncated (tail kept)...\n\n"
+    let truncationBytes = 34
+    let truncationLines = 2
 
-    let mutable hostMaxLines = defaultHostMaxLines
-    let mutable hostMaxBytes = defaultHostMaxBytes
+    let mutable lineLimit = defaultLines
+    let mutable byteLimit = defaultBytes
 
     let ceilingOf (value: obj) (floor: int) : int option =
         if emitJsExpr (value, floor) "typeof $0 === 'number' && Number.isFinite($0) && $0 > $1" then
@@ -143,48 +143,48 @@ type ToolResultBoundStore() =
             let totalLines = countLines text
             totalLines <= maxLines && totalBytes <= maxBytes
 
-    member _.DefaultHostMaxLines = defaultHostMaxLines
-    member _.DefaultHostMaxBytes = defaultHostMaxBytes
-    member _.Marker = marker
-    member _.MarkerBytes = markerBytes
-    member _.MarkerLineCost = markerLineCost
+    member _.DefaultHostMaxLines = defaultLines
+    member _.DefaultHostMaxBytes = defaultBytes
+    member _.Marker = truncationMarker
+    member _.MarkerBytes = truncationBytes
+    member _.MarkerLineCost = truncationLines
 
-    member _.defaultHostMaxLines = defaultHostMaxLines
-    member _.defaultHostMaxBytes = defaultHostMaxBytes
-    member _.marker = marker
-    member _.markerBytes = markerBytes
-    member _.markerLineCost = markerLineCost
+    member _.defaultHostMaxLines = defaultLines
+    member _.defaultHostMaxBytes = defaultBytes
+    member _.marker = truncationMarker
+    member _.markerBytes = truncationBytes
+    member _.markerLineCost = truncationLines
 
-    member _.HostMaxLines() : int = hostMaxLines
-    member _.HostMaxBytes() : int = hostMaxBytes
-    member _.ContentMaxLines() : int = hostMaxLines - markerLineCost
-    member _.ContentMaxBytes() : int = hostMaxBytes - markerBytes
+    member _.HostMaxLines() : int = lineLimit
+    member _.HostMaxBytes() : int = byteLimit
+    member _.ContentMaxLines() : int = lineLimit - truncationLines
+    member _.ContentMaxBytes() : int = byteLimit - truncationBytes
 
-    member _.hostMaxLines() : int = hostMaxLines
-    member _.hostMaxBytes() : int = hostMaxBytes
-    member _.contentMaxLines() : int = hostMaxLines - markerLineCost
-    member _.contentMaxBytes() : int = hostMaxBytes - markerBytes
+    member _.hostMaxLines() : int = lineLimit
+    member _.hostMaxBytes() : int = byteLimit
+    member _.contentMaxLines() : int = lineLimit - truncationLines
+    member _.contentMaxBytes() : int = byteLimit - truncationBytes
 
     member _.setHostLimits(maxLines: obj, maxBytes: obj) : unit =
-        match ceilingOf maxLines markerLineCost with
-        | Some n -> hostMaxLines <- n
+        match ceilingOf maxLines truncationLines with
+        | Some n -> lineLimit <- n
         | None -> ()
 
-        match ceilingOf maxBytes markerBytes with
-        | Some n -> hostMaxBytes <- n
+        match ceilingOf maxBytes truncationBytes with
+        | Some n -> byteLimit <- n
         | None -> ()
 
     member _.clearHostLimitsForTests() : unit =
-        hostMaxLines <- defaultHostMaxLines
-        hostMaxBytes <- defaultHostMaxBytes
+        lineLimit <- defaultLines
+        byteLimit <- defaultBytes
 
     member _.fitsInWindow(text: string) : bool =
-        fitsWith hostMaxLines hostMaxBytes text
+        fitsWith lineLimit byteLimit text
 
     member _.bound(text: string) : string =
-        if fitsWith hostMaxLines hostMaxBytes text then
+        if fitsWith lineLimit byteLimit text then
             text
         else
-            marker + takeTail (hostMaxLines - markerLineCost) (hostMaxBytes - markerBytes) text
+            truncationMarker + takeTail (lineLimit - truncationLines) (byteLimit - truncationBytes) text
 
 let toolResultBound = ToolResultBoundStore()

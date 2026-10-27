@@ -1,4 +1,4 @@
-namespace Wanxiangli.Permit
+module Wanxiangli.Permit
 
 open System
 open System.Collections.Generic
@@ -394,8 +394,8 @@ type internal SessionLeaseEntry =
 type SessionLeaseHandles() =
     let bySession = Dictionary<string, SessionLeaseEntry>()
     // DSL-MUTABLE: resource — host handle identity, kept in step with the library permit
-    let mutable nextLeaseId = 0.0
-    let mutable nextFence = 0.0
+    let mutable leaseSequence = 0.0
+    let mutable fenceSequence = 0.0
 
     let fail (message: string) : 'a =
         raise (InvalidOperationException("execution-model-routing: " + message))
@@ -412,14 +412,14 @@ type SessionLeaseHandles() =
         match bySession.TryGetValue sid with
         | true, entry when Wire.same entry.Permit permit -> entry.Handle
         | _ ->
-            nextLeaseId <- nextLeaseId + 1.0
-            nextFence <- nextFence + 1.0
+            leaseSequence <- leaseSequence + 1.0
+            fenceSequence <- fenceSequence + 1.0
 
             let permitFence: obj = permit?fence
-            if Wire.isNullish permitFence || not (Wire.same permitFence (box nextFence)) then
+            if Wire.isNullish permitFence || not (Wire.same permitFence (box fenceSequence)) then
                 fail "host lease fence diverged from the exact permit owner"
 
-            let handle = Wire.call2 createHandle (box nextLeaseId) (box nextFence)
+            let handle = Wire.call2 createHandle (box leaseSequence) (box fenceSequence)
             bySession.[sid] <- { Permit = permit; Handle = handle }
             handle
 
@@ -450,16 +450,16 @@ type SessionLeaseHandles() =
         Wire.freeze (
             createObj
                 [ "activeCount" ==> float bySession.Count
-                  "nextLeaseId" ==> nextLeaseId
-                  "nextFence" ==> nextFence ]
+                  "nextLeaseId" ==> leaseSequence
+                  "nextFence" ==> fenceSequence ]
         )
 
     member _.clear() : unit =
         bySession.Clear()
 
-    member _.nextLeaseId: float = nextLeaseId
-    member _.nextFence: float = nextFence
-    member _.getNextLeaseId() : float = nextLeaseId
-    member _.getNextFence() : float = nextFence
+    member _.nextLeaseId: float = leaseSequence
+    member _.nextFence: float = fenceSequence
+    member _.getNextLeaseId() : float = leaseSequence
+    member _.getNextFence() : float = fenceSequence
 
 let sessionLeaseHandles = SessionLeaseHandles()
