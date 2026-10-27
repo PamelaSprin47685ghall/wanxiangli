@@ -10,8 +10,8 @@ test('SPEC[latency-012] session 之间互相隔离', () => {
   const detector = new RequestLatencyDetector()
   detector.ObserveCompleted('a', 1000)
   detector.ObserveCompleted('b', 5000)
-  assert.equal(detector.Snapshot('a').Beta, 26000)
-  assert.equal(detector.Snapshot('b').Beta, 30000)
+  assert.equal(detector.Snapshot('a').Beta, 1000)
+  assert.equal(detector.Snapshot('b').Beta, 5000)
   assert.equal(detector.Snapshot('a').Observations, 1)
   assert.equal(detector.Snapshot('b').Observations, 1)
 })
@@ -23,12 +23,12 @@ test('SPEC[latency-013] Forget 只清目标会话，Clear 清空全部', () => {
   detector.Forget('a')
   const snapA = detector.Snapshot('a')
   assert.equal(snapA.Observations, 0)
-  assert.equal(snapA.Alpha, 5)
-  assert.equal(snapA.Beta, 25000)
+  assert.equal(snapA.Alpha, 0)
+  assert.equal(snapA.Beta, 0)
   assert.equal(detector.Snapshot('b').Observations, 1)
   detector.Clear()
   assert.equal(detector.Snapshot('b').Observations, 0)
-  assert.equal(detector.Snapshot('b').Alpha, 5)
+  assert.equal(detector.Snapshot('b').Alpha, 0)
 })
 
 test('SPEC[latency-014] 单例与工厂实例互不影响', () => {
@@ -61,9 +61,10 @@ test('SPEC[latency-015] 非法输入抛错且不污染状态', () => {
   assert.throws(() => detector.Cdf('s', Number.POSITIVE_INFINITY))
   assert.throws(() => detector.Snapshot(''))
   assert.throws(() => detector.Forget(''))
-  // 全部被拒绝之后，会话仍是先验零样本
+  // 全部被拒绝之后，会话仍是零样本
   assert.equal(detector.Snapshot('s').Observations, 0)
-  assert.equal(detector.Snapshot('s').Beta, 25000)
+  assert.equal(detector.Snapshot('s').Seen, 0)
+  assert.equal(detector.Snapshot('s').Beta, 0)
   // elapsedMs = 0 是合法边界
   assert.equal(detector.Cdf('s', 0), 0)
 })
@@ -74,11 +75,11 @@ test('SPEC[latency-016] 快照是新对象：外部修改不回流', () => {
   snap.Alpha = 999
   snap.Observations = 999
   const again = detector.Snapshot('s')
-  assert.equal(again.Alpha, 6)
+  assert.equal(again.Alpha, 1)
   assert.equal(again.Observations, 1)
   assert.notStrictEqual(snap, again)
   again.Beta = 0
-  assert.equal(detector.Snapshot('s').Beta, 26000)
+  assert.equal(detector.Snapshot('s').Beta, 1000)
 })
 
 test('SPEC[latency-017] 只读调用不改统计状态', () => {

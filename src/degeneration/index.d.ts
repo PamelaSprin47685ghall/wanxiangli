@@ -1,20 +1,23 @@
 /**
  * wanxiangli/degeneration — per-session request-latency detection
- * (Gamma–Exponential posterior with right-censored observations)
+ * (exponential model with right-censored observations, no prior, 100-observation novice protection)
  * plus the host reliability diagnostics counters.
  *
  * The detector never reads the clock: every duration is handed in by the caller.
  */
 
 /**
- * Per-session state is three sufficient statistics only (O(1) memory, no raw samples):
- * decayed completed count k, decayed censored count m, decayed total duration S.
- * Each observation multiplies them by γ = 0.98 before adding itself; α = 5 + k, β = 25000 + S.
+ * Per-session state is three sufficient statistics plus a raw count (O(1) memory, no raw samples):
+ * decayed completed count k, decayed censored count m, decayed total duration S, raw observations n.
+ * Each observation multiplies k/m/S by γ = 0.98 before adding itself. No prior: Alpha = k, Beta = S.
+ * Until n reaches 100 (novice protection) or while k = 0, ThresholdMs is +Infinity.
  * Observations / CompletedCount / CensoredCount / WindowMs are these decayed (possibly fractional) values.
  */
 export interface LatencySnapshot {
   readonly SessionId: string
   readonly Observations: number
+  /** Raw (undecayed) number of observations, completed and censored. */
+  readonly Seen: number
   readonly CompletedCount: number
   readonly CensoredCount: number
   /** Decayed sum S of all durations (completed and censored). */
@@ -28,12 +31,12 @@ export interface LatencySnapshot {
 
 export declare class RequestLatencyDetector {
   constructor()
-  /** Posterior 99% quantile (β/α)·ln(1/(1−Percentile)); no floor. Reading does not mutate state. */
+  /** 99% quantile (S/k)·ln(1/(1−Percentile)); +Infinity before 100 observations or without a completed sample; no floor. Reading does not mutate state. */
   ThresholdMs(sessionId: string): number
-  /** Posterior CDF 1 − exp(−(α/β)·elapsed). Reading does not mutate state. */
+  /** CDF 1 − exp(−(k/S)·elapsed); 0 while there is no estimate. Reading does not mutate state. */
   Cdf(sessionId: string, elapsedMs: number): number
   ObserveCompleted(sessionId: string, durationMs: number): LatencySnapshot
-  /** Right-censored observation: raises β only, never α. */
+  /** Right-censored observation: raises S only, never k. */
   ObserveCensored(sessionId: string, censoredMs: number): LatencySnapshot
   Snapshot(sessionId: string): LatencySnapshot
   Forget(sessionId: string): void
