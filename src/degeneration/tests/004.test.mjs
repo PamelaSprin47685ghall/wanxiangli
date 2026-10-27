@@ -50,13 +50,14 @@ test('SPEC[latency-004] 50 条 5000ms 样本让阈值回到冷启动同值', () 
   const cold = detector.ThresholdMs('s')
   for (let i = 0; i < 50; i += 1) detector.ObserveCompleted('s', 5000)
   const snap = detector.Snapshot('s')
-  assert.equal(snap.Observations, 50)
-  assert.equal(snap.Alpha, 55)
-  assert.equal(snap.Beta, 275000)
-  assert.equal(snap.MeanMs, 5000)
-  // β/α 回到 5000，阈值与冷启动完全一致：证明窗口与先验口径正确
-  assert.ok(Math.abs(snap.ThresholdMs - cold) < 1e-12)
-  assert.ok(Math.abs(snap.ThresholdMs - threshold(55, 275000)) < 1e-9)
+  // 有效样本数 k = Σ_{i<50} γ^i = 50·(1 − 0.98^50)
+  const k = 50 * (1 - 0.98 ** 50)
+  assert.ok(Math.abs(snap.Observations - k) < 1e-9)
+  assert.ok(Math.abs(snap.Alpha - (5 + k)) < 1e-9)
+  assert.ok(Math.abs(snap.Beta - (25000 + 5000 * k)) < 1e-6)
+  assert.ok(Math.abs(snap.MeanMs - 5000) < 1e-9)
+  // β/α 回到 5000，阈值与冷启动一致：证明遗忘与先验口径正确
+  assert.ok(Math.abs(snap.ThresholdMs - cold) < 1e-9)
 })
 
 test('SPEC[latency-005] 产物不 import 兄弟模块或 node 内建，不触碰定时器与文件系统', () => {

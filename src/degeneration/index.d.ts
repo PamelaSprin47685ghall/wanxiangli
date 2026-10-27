@@ -6,12 +6,18 @@
  * The detector never reads the clock: every duration is handed in by the caller.
  */
 
+/**
+ * Per-session state is three sufficient statistics only (O(1) memory, no raw samples):
+ * decayed completed count k, decayed censored count m, decayed total duration S.
+ * Each observation multiplies them by γ = 0.98 before adding itself; α = 5 + k, β = 25000 + S.
+ * Observations / CompletedCount / CensoredCount / WindowMs are these decayed (possibly fractional) values.
+ */
 export interface LatencySnapshot {
   readonly SessionId: string
   readonly Observations: number
   readonly CompletedCount: number
   readonly CensoredCount: number
-  /** Sum of the durations (completed and censored) currently inside the window. */
+  /** Decayed sum S of all durations (completed and censored). */
   readonly WindowMs: number
   readonly Alpha: number
   readonly Beta: number

@@ -4,16 +4,19 @@ import { RequestLatencyDetector } from '../../../dist/degeneration/Degeneration.
 
 const threshold = (alpha, beta) => (beta / alpha) * Math.log(1 / (1 - 0.99))
 
-// 极快 session：50 条 200ms → β/α = 35000/55 ≈ 636.36，阈值 ≈ 2930ms。无地板，阈值直接随观测收紧。
+// 极快 session：50 条 200ms → k = 50·(1−0.98^50) ≈ 31.8，β/α ≈ (25000+200k)/(5+k)，阈值 ≈ 3.5s。无地板，阈值直接随观测收紧。
 test('SPEC[latency-009] 极快 session 的阈值随观测收紧到分位公式值', () => {
   const detector = new RequestLatencyDetector()
+  const cold = detector.ThresholdMs('fast')
   for (let i = 0; i < 50; i += 1) detector.ObserveCompleted('fast', 200)
   const snap = detector.Snapshot('fast')
-  assert.equal(snap.Alpha, 55)
-  assert.equal(snap.Beta, 35000)
-  assert.ok(Math.abs(snap.ThresholdMs - threshold(55, 35000)) < 1e-9)
-  // 数量级参考：≈ 2930ms
-  assert.ok(snap.ThresholdMs > 2000 && snap.ThresholdMs < 3500)
+  const k = 50 * (1 - 0.98 ** 50)
+  assert.ok(Math.abs(snap.Alpha - (5 + k)) < 1e-9)
+  assert.ok(Math.abs(snap.Beta - (25000 + 200 * k)) < 1e-6)
+  assert.ok(Math.abs(snap.ThresholdMs - threshold(5 + k, 25000 + 200 * k)) < 1e-6)
+  // 数量级参考：≈ 3.5s，远低于冷启动 ≈ 23s
+  assert.ok(snap.ThresholdMs > 2000 && snap.ThresholdMs < 4500)
+  assert.ok(snap.ThresholdMs < cold / 4)
 })
 
 test('SPEC[latency-010] Cdf 与阈值自浃：阈值处精确 0.99', () => {
