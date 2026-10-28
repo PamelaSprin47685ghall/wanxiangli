@@ -249,7 +249,6 @@
     "src/delegate-batch/index.d.ts",
     "src/fission-group/index.d.ts",
     "src/scope-progress/index.d.ts",
-    "README.md",
     "THIRD_PARTY_NOTICES",
     "src/failure/index.d.ts",
     "src/failure-budget/index.d.ts",
