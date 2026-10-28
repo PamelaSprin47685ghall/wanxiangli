@@ -1,30 +1,23 @@
-# warm-start — 仓库热启检索与预算适配
+# warm-start
 
-层：纯规则。独立 npm 入口 `wanxiangli/warm-start`。在总流程中，本模块为工程角色提供基于关键词的精准代码片段检索排序、去重与上下文预算适配，加速上下文就绪。
+层：纯规则。仓库 warm-start 的关键词、命中选择、合并去重与整条预算的唯一 owner；不得 import 宿主 SDK，不调用搜索、不渲染提示、不读语言资源。npm 入口 `wanxiangli/warm-start`。
 
-## 状态所有权
-- 纯计算无状态函数库，独占持有关键词规范化、命中选择与预算截断算法。
-- 不直接发起底层搜索，不读取文件，不导入宿主 SDK。
+# AXIOM
 
-## AXIOM
-1. [使用者] 只有显式关键词行驱动搜索；没有关键词就零工作，提示与原文逐字节相同。
+1. [使用者] 只有显式关键词行驱动搜索；没有关键词就零工作，提示与原文逐字节相同（repository-investigation-007）。
     - 理由：自动抽词或空关键词搜索会把低信任片段塞给不需要的调用。
-2. [使用者] 结果有界、确定性排序、超限只删完整条目。
-    - 理由：截成半条的片段会误导调用方；顺序漂移会使同一调用两次得到不同提示。
-3. [使用者] 片段只交给能直接读仓库代码的角色（engineer、devops）。
+2. [使用者] 结果有界、确定性排序、超限只删完整条目（repository-investigation-009）。
+    - 理由：半条片段会冒充证据；顺序漂移使同一调用两次得到不同提示。
+3. [使用者] 片段只交给能直接接触仓库代码证据的角色（repository-investigation-008）。
 
-## LEMMA
-1. [AXIOM 1] `normalizeKeywords`：规范换行、逐行去除首尾空白、过滤空行、大小写敏感保序去重，上限为 `MaxKeywords`；空输入返回空列表。
-2. [AXIOM 2] `rankHits`：每个关键词至多提取 `TopKPerKeyword` 个命中项。
-3. [AXIOM 2] `select`：按关键词顺序拼接命中，按文件路径、起止行与内容做稳定去重，上限为 `MaxHintsTotal`。
-4. [AXIOM 2] `fit`：超出预算时从末尾逐条移除完整条目，直至字节数在预算内；若单条依然超限则返回 null。
-5. [AXIOM 3] `isDirectConsumer`：只对 `engineer` 与 `devops` 两个角色返回 true，其余返回 false。
+# LEMMA
 
-## SPEC（调用方流程）
+1. [AXIOM 1] `normalizeKeywords`：CRLF/CR → LF、逐行 trim、去空行、大小写敏感先到先得去重、至多 MaxKeywords；null/空白 → []。
+2. [AXIOM 2] `rankHits`：每词至多 TopKPerKeyword，按搜索顺序名次 1..k。
+3. [AXIOM 2] `select`：按关键词序（稳定）拼接，按 (filePath, startLine, endLine, content) 稳定去重，至多 MaxHintsTotal；omitted 计入所有未保留的原始命中。
+4. [AXIOM 2] `fit`：从全部保留开始逐条删尾，直到调用方量得的字节 ≤ 预算；每删一条 omitted+1；零条仍超限返回 null（调用方回退）。
+5. [AXIOM 3] `isDirectConsumer`：只有规范角色标签 `engineer`、`devops`（大小写敏感）。
 
-1. **关键词规范化**：
-   - 传入用户或模型指定的关键词文本。函数清洗空行与重复项，输出清洗后的关键词列表。
-2. **命中筛选与去重**：
-   - 检索组件将各关键词的命中结果传入 `select`。系统执行确定性稳定去重并限制总条目数。
-3. **预算裁剪**：
-   - 传入字节预算调用 `fit`。若结果超过预算，从尾部整条剔除，不把条目切成半截；一条都放不下时返回 null，由调用方回退。
+# SPEC
+
+1. [LEMMA 1–5] 证明：`tests/001.test.mjs`。

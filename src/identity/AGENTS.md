@@ -1,27 +1,45 @@
 # identity — 参与者身份与执行绑定
 
-层：内核。独立 npm 入口 `wanxiangli/identity`。在总流程中，本模块负责参与者身份（name, role, persona）的规范解析、消息来源鉴别以及与物理执行绑定的解耦管理。
-
-## 状态所有权
-- **Identity** 独占拥有参与者身份目录、活跃角色白名单（六个）与身份继承规则。
-- **ExecutionBinding** 拥有物理会话与模型目标的执行绑定状态。
-- 无可变全局状态，属于无状态纯计算。
+层：内核。npm 入口 `wanxiangli/identity`。对象 `Identity` 是身份目录、来源鉴别与绑定合同的无状态 owner。
 
 ## AXIOM
+
 1. [使用者] 稳定的参与者身份与动态的物理执行绑定是两件事；把换模型、换租约当成换人，或把身份变更伪装成重绑，都会把动作做到错误的当事人头上。
-2. [使用者] 缺失或未知来源的入站请求必须被拒绝，不得静默归为人类。
+   - 理由：身份决定"谁担责"，绑定决定"在哪跑"；二者混同后无法回答一次物理重试到底是谁的行为。
+   - 来源：提取卡 `proposals/extraction-kanban/cards/CUT-07.md`（宿主仓）。
+2. [使用者] 缺失或未知来源的入站请求必须被拒绝，不得静默归为人类（护栏 D-01）。
+   - 理由：未知来源回退 human 会把机器行为记到用户账上，且事后不可纠正。
 
 ## LEMMA
-1. [AXIOM 1] 身份记录在构造点一次性核验；消费点整体重验，不绕过校验逻辑。
-2. [AXIOM 1] 活跃角色词汇严格闭合为六个（orchestrator、manager、engineer、devops、plan、advisor）；规范名必须全小写无连字符。
-3. [AXIOM 2] 消息来源只认四类：human-root、agent-owner-root、host-internal、continuation，其余一律拒绝为 `UnknownPromptOrigin`。
-4. [AXIOM 1] 重绑物理目标（`rebindTarget`）仅修改 modelTarget 与 capacityFence，身份记录保持不可变。
 
-## SPEC（调用方流程）
+1. [AXIOM 1] 身份证据（name、role、persona、catalogVersion、origin）在构造点一次证明；`ParticipantIdentityEvidence` 只能经 `resolveAtRoot`/`inheritFromOwner`/`rehydrate` 产生，plain 视图在消费点必须整体重验。
+   - 推理：可绕过构造点的证据等于没有证据。
+2. [AXIOM 1] 活跃角色词汇闭合（六个）：orchestrator、manager、engineer、devops、plan、advisor（advisor 活跃但内部，不进公开 fork 词汇）。历史角色（coder 等）只供历史事件解码，活跃解析一律拒绝；内部槽位（bookkeeper）显式映射，不冒充角色。规范名必须全小写且不含连字符，否则按畸形名拒绝。
+   - 推理：词汇开放会把已废弃的参与者悄悄复活。
+3. [AXIOM 2] 来源鉴别只认四类已验证来源：human-root（必须携带 participant 证明）、agent-owner-root（必须携带 owner/child 的 logical run 与 child 参与者）、host-internal、continuation（闭合词汇）。其余一律 `UnknownPromptOrigin`。
+   - 推理：拒绝分支必须闭合，否则"未知"会退化成"默认"。
+4. [AXIOM 1] `ExecutionBinding` 持有 sessionId、physicalUserMessageId、role、evidence、modelTarget、capacityFence；`rebindTarget` 只改 modelTarget 与 capacityFence，evidence 逐字段保持原值，且重建时整体重验。
+   - 推理：重绑是物理事实，身份是规范事实；两者字段不相交，才可各自演进。
 
-1. **参与者身份解析**：
-   - 传入身份名称与角色。系统严格核对白名单并返回标准身份记录；非法格式或退役角色明确报错拒绝。
-2. **来源分类判定**：
-   - 传入请求上下文调用 `classifyOrigin`。kind 与所属字段对得上才归入四类之一；缺失、未知词汇或形状不对一律返回 `UnknownPromptOrigin`，绝不默认回退为人。
-3. **物理执行重绑**：
-   - 发生模型切换或重试时，调用 `rebindTarget` 更新底层目标，参与者的身份记录逐字段完整保留。
+## SPEC
+
+1. [LEMMA 1, 2] 活跃解析接受且仅接受六个活跃角色；历史、内部槽位名、已退役槽位名、非字符串输入一律 None；历史解码接受 11 个角色；内部角色判定、历史名单与 persona 标签解码各有一个出口。
+   - 证明：`tests/001.test.mjs` 的活跃/历史/畸形三组反例与正例、目录顺序与内部角色、历史名单与 persona 别名。
+2. [LEMMA 1] 根选定产出规范证据投影；legacy、malformed（大写或连字符）、unknown 名分别给出对应错误，无回退；错配类错误携带 expected/actual；bookkeeper 的 role 投影为 null；rehydrate 对每个字段错配（RoleMismatch、PersonaMismatch、UnsupportedPersonaCatalogVersion、OriginMismatch、OwnerRequired、LegacyParticipantName、BlankParticipantName）逐一拒绝；已退役的内部槽位名不再解析，根选定与继承都给出 unknown 名错误，不回退到任何活跃角色。
+   - 证明：`tests/002.test.mjs` 的正控、round-trip、逐字段反例与已退役槽位名的 fail-closed 反例。
+3. [LEMMA 3] classifyOrigin 对 human-root 缺 participant、agent-owner-root 缺任一字段、未知 kind、未知 continuationKind、非 plain-object 输入一律 `UnknownPromptOrigin`；不存在任何产出 human 的回退分支。
+   - 证明：`tests/003.test.mjs` 的四类正控与 D-01 无回退断言（失败结果不含 participant/origin 字段）。
+4. [LEMMA 4] bindExecution 要求全部字段、活跃角色、证据与绑定角色一致；rebindTarget 只改物理目标，evidence 深比较不变；篡改证据的视图在重建时被拒；已退役的内部槽位名不产生可绑定证据，以其作绑定角色一律 RoleNotActive。
+   - 证明：`tests/004.test.mjs` 的字段缺失、RoleNotActive、RoleMismatch、重绑不变量、篡改反例与已退役槽位名的 fail-closed 反例。
+5. [LEMMA 1] 继承身份沿用 owner 的 persona 与目录版本；无 owner 见证时 InheritedFromOwner 输入被拒（OwnerRequired）；owner 与输入的 persona 错配被拒（OwnerPersonaMismatch）；无效 owner 视图按其自身错误拒绝，不被静默当成"无 owner"。
+   - 证明：`tests/005.test.mjs` 的继承正控、round-trip、OwnerRequired、persona 错配与来源/身份组合。
+6. [LEMMA 1, 2] 历史解码只对继承身份开放：InheritedFromOwner 证据可携带已退役角色名（如 inspector）并保留原角色，绝不升级；新继承与根选定一律拒绝历史名。已记录证据经 restoreRecorded 恢复：根证据完整重验，继承证据重验名/角色/版本/非空 persona，不再要求 owner 见证（见证在记录时已校验）。
+   - 证明：`tests/006.test.mjs` 的历史继承正控、角色升级反例、restoreRecorded 逐字段反例与 bookkeeper 继承。
+
+## 边界
+
+- 本包不验证"owner 委派句柄是否存活"或"logical run 是否真实存在"：那是宿主组合层的事实。classifyOrigin 只做词汇与证明形状的 fail-closed 判定。
+- `OwnerCatalogVersionMismatch` 在单版本目录（V1）下不可达，是目录演进时的防御分支；出现第二版本目录时须补对应测试。
+- 宿主仓（wanxiangshu）的 `Foundation/Roles`、`Participant/Persona`（目录、身份校验）经 `[<Import("Identity", "wanxiangli/identity")>]` 消费本包（CUT-07 主仓切换）；宿主保留 F# 类型投影与旧 V1 日志适配，不再自持规则。
+- `classifyOrigin` 的 continuation 词汇与宿主 `Interaction/Authority/Origin.fs` 尚不一致，来源鉴别的宿主切换归 CUT-09（D-01）；`ExecutionBinding` 的宿主接线归 CUT-10/12。
+- Process、Trace、Ownership 边界不在本包内。

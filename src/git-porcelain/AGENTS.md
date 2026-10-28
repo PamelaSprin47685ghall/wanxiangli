@@ -1,27 +1,29 @@
-# git-porcelain — Git 输出规范解析与路径缓存
+# git-porcelain
 
-层：物理读取与路径缓存。独立 npm 入口 `wanxiangli/git-porcelain`。在总流程中，本模块负责纯文本解析 Git porcelain 格式命令输出（工作树列表、分支、进行中 rebase 状态），并通过 RuntimePathStore 缓存规范化的主工作区路径。
+层：物理读法。Git 打印的工作树、分支与进行中 rebase 文本怎样读的唯一 owner；不 spawn 进程、不碰文件、不决定发布或委任。npm 入口 `wanxiangli/git-porcelain`。
 
-## 状态所有权
-- 纯文本解析函数无内部状态。
-- **RuntimePathStore** 独占持有主工作区规范化路径与只读计算缓存。
-- 不直接启动进程，不执行 git 命令。
+# AXIOM
 
-## AXIOM
-1. [使用者] 清理与恢复只能按 Git 自己报告的工作树与分支身份行事；把主工作树、别人的分支当成 manager 工作树会误删关键数据。
-2. [使用者] 只有 rebase-merge / rebase-apply 目录真实存在才算 rebase 进行中。
+1. [使用者] 清理与恢复只能按 Git 自己报告的工作树与分支身份行事；把主工作树、别人的分支或被标记前缀污染的名字当成 manager 工作树，会误删目录或分支。
+    - 理由：change-integration 与 ORCH-006 以分支为工作树的稳定身份。
+2. [使用者] 只有 rebase-merge / rebase-apply 目录存在才算 rebase 进行中；残留的 REBASE_HEAD 不是证据。
+    - 理由：ORCH-003 冲突续做。
 3. [使用者] 运行时状态根只取主工作树；裸仓没有工作树，必须失败关闭。
+4. [使用者] 运行时路径缓存（RuntimePathStore）是进程内物理只读主工作树路径字典的唯一自治 owner，不跨调用泄露失败 Task，以规范化工作区路径为唯一键。
 
-## LEMMA
-1. [AXIOM 1] 解析 `worktree list --porcelain`，空行分隔记录，识别完整分支 ref 与工作树路径。
-2. [AXIOM 1] 分支列表解析自动剥离 `*` / `+` 检出标记；仅非主工作树且短名不匹配活跃任务的 manager 分支判定为陈旧工作树。
-3. [AXIOM 3] `RuntimePathStore` 规范化路径结尾，异步计算失败安全驱逐，支持 CAS 缓存失效。
+# LEMMA
 
-## SPEC（调用方流程）
+1. [AXIOM 1] `worktree list --porcelain` 以空行分隔记录；`worktree ` 开记录、`branch ` 给完整 ref；CR 只是行终止符的一部分，不是记录分隔符。
+2. [AXIOM 1] `branch --list` 的 `*`/`+` 检出标记不属于分支名。
+3. [AXIOM 1] manager 分支是 `manager/<job>`，带或不带 `refs/heads/` 前缀都认；比较前去掉 `refs/heads/`。
+4. [AXIOM 2] rev-parse 成功且路径非空的探针才进入待检目录。
+5. [AXIOM 3] `-z` 输出的第一条记录含 `bare` 即裸仓；首字段不是 `worktree ` 即无法识别。
 
-1. **工作树与分支解析**：
-   - 宿主执行 git 命令后将输出文本传入解析。系统准确还原工作树结构、活动分支及 rebase 中断状态。
-2. **陈旧工作树判定**：
-   - 传入活跃任务列表，系统筛选出已失效的 manager 工作树及其临时分支，供上层执行安全回收。
-3. **主工作区路径计算与缓存**：
-   - 通过 `RuntimePathStore.getOrCompute` 统一获取工作区绝对物理路径，并发请求共享计算结果。
+6. [AXIOM 1] 工作树回收：只有 manager 分支且短名不属于任何活跃 job 的工作树才算陈旧；主工作树与 detached 工作树永不陈旧。归属按短名整体比较，不从分支名里反解 job id。陈旧分支原样返回待删。
+7. [AXIOM 4] `normalizeKey` 裁除尾部 `'/'` 与 `'\\'` 并保护纯根目录（`"/"` 或 `"\\"`）及盘符根；`getOrCompute` 在键未命中时计算并缓存，Promise/Task 失败按引用安全驱逐；`invalidate` 支持 CAS 引用比对防止并发误删。
+
+# SPEC
+
+1. [LEMMA 1–5] 证明：`tests/001.test.mjs`。
+2. [LEMMA 6] 证明：`tests/001.test.mjs` `SPEC[git-porcelain-2]`。
+3. [LEMMA 7] 证明：`tests/runtime-path-store.test.mjs`。
