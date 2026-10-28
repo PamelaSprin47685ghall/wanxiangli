@@ -3,11 +3,13 @@ import path from 'node:path'
 import { fork } from 'node:child_process'
 import { cached, discover, files, moduleInput, toolchainKey } from './build-inputs.mjs'
 import { alive, locations, owner } from './build-state.mjs'
+import { createUsage } from './build-usage.mjs'
 
 export function createSession(root, identity, projectLimit, output) {
   const places = locations(root)
   const stamps = path.join(root, '.build-stamps')
   const scratch = path.join(root, '.build')
+  const usage = createUsage(path.join(places.state, 'usage.json'))
   let worker
   let workerKey
   let retiring
@@ -149,6 +151,8 @@ export function createSession(root, identity, projectLimit, output) {
     const dirty = []
     const skipped = []
     let result = { rows: [], fcsMs: 0 }
+    let finishUsage
+    let outcome = 'failure'
     try {
       for (const input of inputs) {
         if (!command.force && cached(root, input)) {
@@ -158,6 +162,7 @@ export function createSession(root, identity, projectLimit, output) {
       }
       if (dirty.length) {
         await launch(key)
+        finishUsage = usage.begin({ workerPid: worker.pid, projects: dirty.length, toolchain: key })
         result = await call({ op: 'build', inputs: dirty })
         if (!result.ok) throw Object.assign(new Error(result.error), { diagnostics: result.diagnostics })
         completed = result.completed
@@ -202,6 +207,7 @@ export function createSession(root, identity, projectLimit, output) {
       const compiledBy = dirty.length ? result.pid : null
       const retired = completed >= projectLimit
       if (retired) await retire()
+      outcome = 'success'
       return { ok: true, built: dirty.map(input => input.name), cached: skipped, removed,
         ms: performance.now() - started, fcsMs: result.fcsMs, rows: result.rows,
         compiledBy, workerPid: worker?.pid ?? null, generation, retired,
@@ -213,6 +219,8 @@ export function createSession(root, identity, projectLimit, output) {
     } finally {
       for (const input of dirty) fs.rmSync(input.temporary, { recursive: true, force: true })
       cleanAbandoned()
+      finishUsage?.({ outcome, reuse: result.reuse ?? null, workerMemory: result.memory ?? null,
+        serviceMemory: process.memoryUsage(), retired: !worker })
     }
   }
   return { build, close: retire,
