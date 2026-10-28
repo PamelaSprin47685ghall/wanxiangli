@@ -40,7 +40,7 @@ test('SPEC[recovery-store-001] Pending 准入、幂等重放、冲突与身份�
   assert.equal(store.TryPending('ses-1', 'phys-nonexistent'), null)
 })
 
-test('SPEC[recovery-store-002] TryBind 绑定与跨 physical 改绑抛错', () => {
+test('SPEC[recovery-store-002] TryBind 只绑已有 pending，跨 physical 不绑', () => {
   const store = new RecoveryAttemptPlanStore()
   const pendingPlan = { id: 'pending-1', physicalId: 'phys-1' }
 
@@ -68,15 +68,34 @@ test('SPEC[recovery-store-002] TryBind 绑定与跨 physical 改绑抛错', () =
   const differentPhys = store.TryBindAttemptPlan('ses-1', 'phys-different', 'run-1', () => ({ boundPlanId: 'wrong' }))
   assert.equal(differentPhys, null)
 
-  // 直接调用 BindProviderRun 跨 physical 改绑必须抛错且包含 HOST-BOUNDARY-008
-  assert.throws(
-    () => store.BindProviderRun('ses-1', 'run-1', 'phys-different', { illegal: true }),
-    /HOST-BOUNDARY-008: cannot re-bind provider run run-1 to different physical user message phys-different/
-  )
-
   // TryAttemptPlan 读取
   assert.equal(store.TryAttemptPlan('ses-1', 'run-1'), bound)
   assert.equal(store.TryAttemptPlan('ses-1', 'run-nonexistent'), null)
+})
+
+test('SPEC[recovery-store-007] 启动边界 BindAttemptPlan 总给出 plan：缓存缺了用 durable 重建的 ordinary，Host 观察改绑旧绑定', () => {
+  const store = new RecoveryAttemptPlanStore()
+  const ordinary = { id: 'ordinary-from-durable' }
+  const bindFn = (p) => ({ boundFrom: p })
+
+  // 进程内没有 pending（被并发消费、清理或从未冻结）：照样绑上 ordinary，不返回 null
+  const rebuilt = store.BindAttemptPlan('ses-1', 'phys-new', 'run-new', bindFn, ordinary)
+  assert.deepEqual(rebuilt, { boundFrom: ordinary })
+  assert.equal(store.TryAttemptPlan('ses-1', 'run-new'), rebuilt)
+
+  // 重复观察同一 run：重放已有绑定
+  assert.equal(store.BindAttemptPlan('ses-1', 'phys-new', 'run-new', () => assert.fail('no rebind'), ordinary), rebuilt)
+
+  // 有 pending（例如已冻结的重试计划）时优先用它
+  const retry = { id: 'retry-plan' }
+  store.FreezePending('ses-1', 'phys-retry', 'ses-1', 'phys-retry', retry)
+  assert.deepEqual(store.BindAttemptPlan('ses-1', 'phys-retry', 'run-retry', bindFn, ordinary), { boundFrom: retry })
+
+  // run 已绑到别的 physical：以本次 Host 观察为准改绑，不抛错
+  const moved = store.BindAttemptPlan('ses-1', 'phys-other', 'run-new', bindFn, ordinary)
+  assert.deepEqual(moved, { boundFrom: ordinary })
+  assert.equal(store.TryAttemptPlan('ses-1', 'run-new'), moved)
+  assert.equal(store.TryBindAttemptPlan('ses-1', 'phys-other', 'run-new', () => assert.fail('replay')), moved)
 })
 
 test('SPEC[recovery-store-003] ConsumeAttemptPlan 单次消费同时原子移除 pending 与 bound', () => {
@@ -144,9 +163,9 @@ test('SPEC[recovery-store-005] ClearAttemptPlansFor 与 ClearSession 前缀隔�
   store.FreezePending('ses-10', 'phys-1', 'ses-10', 'phys-1', { id: 'p10' })
   store.FreezePending('ses-2', 'phys-1', 'ses-2', 'phys-1', { id: 'p2' })
 
-  store.BindProviderRun('ses-1', 'run-1', 'phys-1', { id: 'b1' })
-  store.BindProviderRun('ses-10', 'run-10', 'phys-1', { id: 'b10' })
-  store.BindProviderRun('ses-2', 'run-2', 'phys-1', { id: 'b2' })
+  store.TryBindAttemptPlan('ses-1', 'phys-1', 'run-1', () => ({ id: 'b1' }))
+  store.TryBindAttemptPlan('ses-10', 'phys-1', 'run-10', () => ({ id: 'b10' }))
+  store.TryBindAttemptPlan('ses-2', 'phys-1', 'run-2', () => ({ id: 'b2' }))
 
   // 清除 ses-1：必须使用 "\u001f" 分隔符，严禁误伤 ses-10
   store.ClearAttemptPlansFor('ses-1')

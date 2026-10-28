@@ -25,7 +25,7 @@ type BoundPlanEntry =
 /// 封装:
 /// - key 拼接 sessionId + "\u001F" + id
 /// - 准入幂等重放与冲突检测（FreezePending）
-/// - providerRun 绑定与跨 physical 改绑抛错（BindProviderRun / TryBindAttemptPlan）
+/// - providerRun 绑定（TryBindAttemptPlan 只读已有 pending；BindAttemptPlan 在启动边界总能给出 plan）
 /// - ConsumeAttemptPlan 原子移除 attemptPlans 与对应 pendingAttemptPlans
 /// - ManualIntervention 增删查
 /// - ClearSession 与 ClearAttemptPlansFor 前缀清理
@@ -46,6 +46,13 @@ type RecoveryAttemptPlanStore() =
 
     let interventionKey (sessionId: string) (physicalUserMessageId: string) =
         sessionId + separator + physicalUserMessageId
+
+    let bind (provKey: string) (physicalUserMessageId: string) (bound: obj) : obj =
+        attemptPlans.[provKey] <-
+            { Plan = bound
+              PhysicalUserMessageId = physicalUserMessageId }
+
+        bound
 
     /// 冻结 pre-inference attempt 计划。
     /// 校验 plan 归属 sessionId 与 physicalUserMessageId，若不匹配返回 IdentityMismatch；
@@ -95,37 +102,6 @@ type RecoveryAttemptPlanStore() =
         | true, plan -> plan
         | false, _ -> null
 
-    /// 直接绑定或重放 providerRun 下的 attemptPlan。
-    /// 若已有相同 physicalUserMessageId 则幂等返回已存在的 plan；
-    /// 若已有但绑定了不同的 physicalUserMessageId 则抛出 InvalidOperationException（包含 HOST-BOUNDARY-008 标记）；
-    /// 若不存在则存入并返回传入的 plan。
-    member _.BindProviderRun
-        (
-            sessionId: string,
-            providerRun: string,
-            physicalUserMessageId: string,
-            plan: obj
-        ) : obj =
-        let key = providerPlanKey sessionId providerRun
-        match attemptPlans.TryGetValue key with
-        | true, established ->
-            if established.PhysicalUserMessageId = physicalUserMessageId then
-                established.Plan
-            else
-                raise (
-                    InvalidOperationException(
-                        sprintf
-                            "HOST-BOUNDARY-008: cannot re-bind provider run %s to different physical user message %s"
-                            providerRun
-                            physicalUserMessageId
-                    )
-                )
-        | false, _ ->
-            attemptPlans.[key] <-
-                { Plan = plan
-                  PhysicalUserMessageId = physicalUserMessageId }
-            plan
-
     /// 尝试读取已绑定的 attemptPlan（peek，不移除，保持存活）。
     member _.TryAttemptPlan(sessionId: string, providerRun: string) : obj =
         let key = providerPlanKey sessionId providerRun
@@ -139,7 +115,7 @@ type RecoveryAttemptPlanStore() =
     ///    - 不同 physicalUserMessageId 则返回 null（调用方表示无法绑定）；
     /// 2. 若不存在，在 pendingAttemptPlans 中查找：
     ///    - 若无 pending 则返回 null；
-    ///    - 若有 pending 则通过 bindFn(pending) 生成 boundPlan 并经 BindProviderRun 存入。
+    ///    - 若有 pending 则通过 bindFn(pending) 生成 boundPlan 并存入。
     member this.TryBindAttemptPlan
         (
             sessionId: string,
@@ -158,9 +134,31 @@ type RecoveryAttemptPlanStore() =
             let pendKey = physicalPlanKey sessionId physicalUserMessageId
             match pendingAttemptPlans.TryGetValue pendKey with
             | false, _ -> null
-            | true, pending ->
-                let bound = bindFn pending
-                this.BindProviderRun(sessionId, providerRun, physicalUserMessageId, bound)
+            | true, pending -> bind provKey physicalUserMessageId (bindFn pending)
+
+    /// provider 启动边界的绑定：总给出这次 run 的 plan，不拒收。
+    /// 已有同 physical 的绑定则重放；否则取该 physical 的 pending，没有 pending
+    /// 就用调用方从 durable 受理事实重建的 ordinary 计划。进程内缓存只是缓存，
+    /// 缺了不等于这次 run 不存在。Host 亲口说出的 run→physical 关系优先于
+    /// 旧绑定，所以 run 已绑到别的 physical 时改绑到本次观察。
+    member this.BindAttemptPlan
+        (
+            sessionId: string,
+            physicalUserMessageId: string,
+            providerRun: string,
+            bindFn: obj -> obj,
+            ordinary: obj
+        ) : obj =
+        let provKey = providerPlanKey sessionId providerRun
+        match attemptPlans.TryGetValue provKey with
+        | true, established when established.PhysicalUserMessageId = physicalUserMessageId -> established.Plan
+        | _ ->
+            let pending =
+                match pendingAttemptPlans.TryGetValue(physicalPlanKey sessionId physicalUserMessageId) with
+                | true, pending -> pending
+                | false, _ -> ordinary
+
+            bind provKey physicalUserMessageId (bindFn pending)
 
     /// 单次消费 attemptPlan：终态对齐时调用。
     /// 原子移除 attemptPlans 中的对应条目，并同时移除 pendingAttemptPlans 中对应 (sessionId, physicalUserMessageId) 条目。
