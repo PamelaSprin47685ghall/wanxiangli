@@ -64,14 +64,22 @@ type ToolResultBoundStore() =
         else
             start - 1
 
-    let rec walkUtf8Tail (text: string) (maxBytes: int) (acc: int) (start: int) : int =
-        let atEnd = start <= 0
-        let prev = if atEnd then 0 else scalarStepBack text start
-        let bytes = if atEnd then 0 else snd (scalarAt text prev)
+    let walkUtf8Tail (text: string) (maxBytes: int) : int =
+        let mutable start = text.Length
+        let mutable usedBytes = 0
+        let mutable withinBudget = true
 
-        if atEnd then start
-        elif acc + bytes > maxBytes then start
-        else walkUtf8Tail text maxBytes (acc + bytes) prev
+        while start > 0 && withinBudget do
+            let previous = scalarStepBack text start
+            let bytes = snd (scalarAt text previous)
+
+            if usedBytes + bytes > maxBytes then
+                withinBudget <- false
+            else
+                usedBytes <- usedBytes + bytes
+                start <- previous
+
+        start
 
     let sliceFrom (text: string) (start: int) : string =
         if start >= text.Length then "" else text.Substring(start)
@@ -83,7 +91,7 @@ type ToolResultBoundStore() =
         elif byteCount text <= maxBytes then
             text
         else
-            sliceFrom text (walkUtf8Tail text maxBytes 0 text.Length)
+            sliceFrom text (walkUtf8Tail text maxBytes)
 
     /// Locate segment start (one past previous \n) and the newline index (-1 if none).
     let findLineBounds (text: string) (segEnd: int) : int * int =
