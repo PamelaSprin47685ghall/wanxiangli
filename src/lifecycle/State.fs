@@ -218,11 +218,44 @@ type internal Ledger(workId: string) =
     let mutable rounds: Round list = []
     let mutable slots: Slot list = []
     let mutable openQuestion: string option = None
+    let mutable unknownQuestion: string option = None
     let mutable devops: (string * string option * string) option = None
     let receipts = Dictionary<string, Receipt>()
     let fences = Dictionary<string, obj>()
     let messages = Dictionary<string, obj>()
     let continuations = Dictionary<string, obj>()
+
+    // 程序位置只按事实重放推进：计数器由 CE 结构持有，不按 phase 跳转。
+    let mutable position: Program.Program option = None
+
+    let advancePosition (expected: Program.Step) (value: obj) =
+        match position with
+        | Some current ->
+            require (Program.step current = expected) "Facts diverge from the program"
+            position <- Some(Program.continueWith current value)
+        | None -> fail "Facts precede the program"
+
+    // 内部步骤（Commit/Relay/Advance/Launch/Complete/Reopen）不等待外部输入，
+    // 落上后立即推进穿透，直到下一个等待步（AwaitReview/AwaitEmptyReview/AwaitOperator/Ask）。
+    let rec settlePosition () =
+        match position with
+        | Some current ->
+            match Program.step current with
+            | Program.Step.AwaitReview | Program.Step.AwaitEmptyReview
+            | Program.Step.AwaitOperator | Program.Step.Ask _ -> ()
+            | _ ->
+                position <- Some(Program.continueWith current (box ()))
+                settlePosition ()
+        | None -> ()
+
+    // Answer 消费 Ask：按模式匹配（Ask 的 text 是运行时数据，不适用等号匹配）。
+    let advanceFromAsk (value: obj) =
+        match position with
+        | Some current ->
+            match Program.step current with
+            | Program.Step.Ask _ -> position <- Some(Program.continueWith current value)
+            | _ -> fail "No open question in the program"
+        | None -> fail "Facts precede the program"
 
     let requireIdle () =
         require (not (slots |> List.exists Effects.blocks)) "Effect pending"
@@ -260,6 +293,7 @@ type internal Ledger(workId: string) =
 
     let wait () =
         if slots |> List.exists (fun slot -> Effects.ofSlot slot |> Option.isSome) then "ConfirmEffect"
+        elif unknownQuestion.IsSome then "AwaitOperatorAnswer"
         else
             match phase () with
             | "Ready" -> "AwaitEmptyReview"
@@ -317,13 +351,17 @@ type internal Ledger(workId: string) =
     member _.HasBlockingPending = slots |> List.exists Effects.blocks
     member _.HasUnobservedStop =
         slots |> List.exists (function Slot.Stop(_, _, _, observed, _) -> not observed | _ -> false)
+    member _.HasOpenQuestion = openQuestion.IsSome
+    member _.HasUnknownQuestion = unknownQuestion.IsSome
+    member _.Position = position
     member _.DevOps = devops
     member _.WaitName = wait ()
     member _.PendingEffect = oldest ()
-    member _.ParkedQuestion =
-        slots |> List.tryPick (function
-            | Slot.Ask(id, _, _, Some "Parked") when openQuestion = Some id -> Some id
-            | _ -> None)
+    // 答复到达即证明问题实际送达；Park 与 Unknown 由答复接续，未知不得冒充已 Parked。
+    member _.AnswerableQuestion =
+        match openQuestion with
+        | Some id -> Some id
+        | None -> unknownQuestion
 
     member _.Describe(id: string) =
         slots |> List.tryPick (function
@@ -369,6 +407,7 @@ type internal Ledger(workId: string) =
         office <- claimedOffice
         completed <- false
         active <- Some { Id = id; Origin = origin; Milestone = milestone; Substantive = false; Obligations = Map.empty }
+        position <- Some(Program.originator milestone)
 
     member this.Snapshot(revision) =
         let activeView =
@@ -486,6 +525,7 @@ type internal Ledger(workId: string) =
         let next = clearAndRequire claimedUpdates
         replaceTenure { current with Obligations = next }
         slots <- slots @ [ Slot.Ask(questionId, text, incumbency, None) ]
+        advancePosition Program.Step.AwaitReview (box true)
         Seal.Tool call, finishActive "Asked" (Some(Effects.ask questionId text incumbency)) []
 
     member private _.Review(incumbency, call, claimedUpdates) =
@@ -496,13 +536,22 @@ type internal Ledger(workId: string) =
         require openQuestion.IsNone "Awaiting operator answer"
         let next = fill claimedUpdates
         replaceTenure next
+        // 询问投递未知时，一次实账 review 就是「我需要干什么」的答复本身：
+        // 先消费 Ask，再按普通评审推进。投递已 Parked 的询问仍只等操作员答复。
+        if unknownQuestion.IsSome then advanceFromAsk (box ())
+        advancePosition Program.Step.AwaitReview (box false)
+        settlePosition ()
+        unknownQuestion <- None
         Seal.Tool call, finishActive "Reviewed" None []
 
     member private _.Answer(messageId, incumbency, questionId) =
         let current = tenure ()
         require (current.Id = incumbency) "Tenure mismatch"
-        require (openQuestion = Some questionId) "No parked question"
+        require (openQuestion = Some questionId || unknownQuestion = Some questionId) "No parked question"
         openQuestion <- None
+        unknownQuestion <- None
+        advanceFromAsk (box ())
+        settlePosition ()
         Seal.Message messageId, finishActive "Answered" None [ "messageId", box messageId ]
 
     member private _.Relay(retirementId, incumbency, outcome, run, call, claimedUpdates, barrierId, barrierCall, successorId, openedId, origin, milestone, messageId, promptId, kind, promptMilestone, text, promptTenure) =
@@ -526,6 +575,8 @@ type internal Ledger(workId: string) =
         barrier <- Some(call, successorId)
         replaceTenure { Id = successorId; Origin = "Successor"; Milestone = milestone; Substantive = false; Obligations = Map.empty }
         slots <- slots @ [ Slot.Dispatch(promptId, kind, milestone, text, successorId, None) ]
+        advancePosition Program.Step.AwaitReview (box true)
+        settlePosition ()
         Seal.Tool call, finishActive "Relayed" (Some(Effects.dispatch promptId kind milestone text successorId)) [
             "successorId", box successorId
             "retirementId", box retirementId
@@ -548,6 +599,8 @@ type internal Ledger(workId: string) =
         require (Map.isEmpty emptied) "Advance requires an empty ledger"
         replaceTenure { current with Origin = "Originator"; Milestone = toMilestone; Substantive = false; Obligations = Map.empty }
         slots <- slots @ [ Slot.Dispatch(promptId, kind, toMilestone, text, incumbency, None) ]
+        advancePosition Program.Step.AwaitReview (box true)
+        settlePosition ()
         Seal.Tool call, finish "Advanced" (box incumbency) (box toMilestone) (Some(Effects.dispatch promptId kind toMilestone text incumbency)) [
             "from", box fromMilestone
             "toolCallId", box call
@@ -562,6 +615,8 @@ type internal Ledger(workId: string) =
         require (Map.isEmpty emptied) "Launch requires an empty ledger"
         replaceTenure { current with Obligations = emptied }
         slots <- slots @ [ Slot.Launch(operationId, digest, run, call, incumbency, None, "Create") ]
+        advancePosition Program.Step.AwaitEmptyReview (box true)
+        settlePosition ()
         Seal.Tool call, finishActive "Launched" (Some(Effects.launch operationId "Create" digest run call None)) [
             "operationId", box operationId
             "toolCallId", box call
@@ -605,10 +660,16 @@ type internal Ledger(workId: string) =
             | Slot.Stop(id, incumbency, false, false, false), "Unknown" -> Slot.Stop(id, incumbency, false, false, true)
             | Slot.Stop(id, incumbency, true, false, false), "Observed" -> Slot.Stop(id, incumbency, true, true, false)
             | _ -> fail "Confirmation does not match the effect")
-        if outcome = "Parked" then
+        match outcome with
+        | "Parked" ->
             match slots |> List.tryFind (fun slot -> Effects.idOf slot = effectId) with
             | Some(Slot.Ask(id, _, _, Some "Parked")) -> openQuestion <- Some id
             | _ -> ()
+        | "Unknown" ->
+            match slots |> List.tryFind (fun slot -> Effects.idOf slot = effectId) with
+            | Some(Slot.Ask(id, _, _, Some "Unknown")) -> unknownQuestion <- Some id
+            | _ -> ()
+        | _ -> ()
         Seal.None, finish "Confirmed" (incumbencyName ()) (milestoneName ()) (oldest ()) [ "effectId", box effectId; "outcome", box outcome ]
 
     member private _.Complete(retirementId, incumbency, outcome, run, call, claimedUpdates, stopId, stopTenure) =
@@ -624,6 +685,8 @@ type internal Ledger(workId: string) =
         active <- None
         completed <- true
         slots <- slots @ [ Slot.Stop(stopId, incumbency, false, false, false) ]
+        advancePosition Program.Step.AwaitReview (box true)
+        settlePosition ()
         Seal.Tool call, finish "Completed" (box incumbency) (box "已完成") (Some(Effects.stop stopId incumbency)) [ "retirementId", box retirementId ]
 
     member private _.Reopen(id, origin, milestone, messageId) =
@@ -637,6 +700,8 @@ type internal Ledger(workId: string) =
             require (id = Identities.reopen workId message) "Reopen identity mismatch"
             completed <- false
             replaceTenure { Id = id; Origin = origin; Milestone = milestone; Substantive = false; Obligations = Map.empty }
+            advancePosition Program.Step.AwaitOperator (box "Operator")
+            settlePosition ()
             Seal.Message message, finishActive "Reopened" None [ "messageId", box message ]
 
     member private _.Continue(id, continuationId) =

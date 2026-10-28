@@ -129,13 +129,3 @@ module internal Program =
             return! completed ()
     }
 
-    let entry phase milestone =
-        match phase with
-        | "Unopened"
-        | "Originator" -> originator milestone
-        | "Working" -> workUntilClear milestone
-        | "SuccessorFirst" -> successor milestone
-        | "Ready" -> ready ()
-        | "Cleanup" -> cleanup ()
-        | "Completed" -> completed ()
-        | other -> failwith ("No program for " + other)

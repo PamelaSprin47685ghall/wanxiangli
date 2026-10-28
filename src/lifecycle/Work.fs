@@ -110,20 +110,27 @@ module private Commands =
         | None ->
             if ledger.Opened && ledger.Office <> office then Refuse "Office is fixed"
             else
-                let phase = if ledger.Opened then ledger.Phase else "Unopened"
                 let milestone = if ledger.Opened then ledger.Milestone else Program.firstMilestone office
                 let empty = emptyLedger ledger claimed
-                // A completed work has retired its tenure. Refuse before looking it up.
-                if phase = "Completed" then Refuse "Work is complete"
-                elif phase = "AwaitingAnswer" then Refuse "Awaiting operator answer"
+                // A completed work sits on AwaitOperator. Refuse before looking up its tenure.
+                let program =
+                    match ledger.Position with
+                    | Some current -> current
+                    | None -> Program.originator milestone
+                if Program.step program = Program.Step.AwaitOperator then Refuse "Work is complete"
+                elif ledger.HasOpenQuestion then Refuse "Awaiting operator answer"
                 else
                     let tenure = tenureOf workId ledger
                     if ledger.HasBlockingPending then Refuse "Effect pending"
-                    elif phase = "Ready" && not empty then Refuse "Ready accepts only an empty review"
-                    elif phase = "Cleanup" && empty && not (List.isEmpty blockers) then Observe(blocked ledger blockers)
+                    elif ledger.HasUnknownQuestion && empty then Refuse "Question delivery is unknown"
+                    elif Program.step program = Program.Step.AwaitEmptyReview && not empty then Refuse "Ready accepts only an empty review"
+                    elif milestone = "收尾" && empty && not (List.isEmpty blockers) then Observe(blocked ledger blockers)
                     else
-                        let program = Program.entry phase milestone
                         match Program.step program with
+                        // 未知询问上的实账 review 就是「我需要干什么」的答复：写 Reviewed，
+                        // 由 Ledger 消费 Ask 后按普通评审推进。空账 review 已在上面拒绝。
+                        | Program.Step.Ask _ ->
+                            Write(prependOpening workId office ledger [ Fact.Reviewed(tenure, run, call, claimed) ])
                         | Program.Step.AwaitReview ->
                             match effectOf program (box empty) with
                             | Program.Step.Ask text ->
@@ -166,14 +173,10 @@ module private Commands =
             match ledger.TryMessage messageId with
             | Some result -> Observe result
             | None ->
-                if ledger.Phase <> "AwaitingAnswer" then Refuse "No parked question"
-                else
-                    match ledger.ActiveId with
-                    | None -> fail "No active tenure"
-                    | Some tenure ->
-                        match ledger.ParkedQuestion with
-                        | None -> fail "No parked question"
-                        | Some questionId -> Write [ Fact.OperatorAnswered(messageId, tenure, questionId) ]
+                    match ledger.AnswerableQuestion, ledger.ActiveId with
+                    | None, _ -> Refuse "No parked question"
+                    | Some questionId, Some tenure -> Write [ Fact.OperatorAnswered(messageId, tenure, questionId) ]
+                    | Some _, None -> fail "No active tenure"
         | "OperatorMessage" ->
             fields [ "type"; "kind"; "messageId" ] [] command
             let kind = text (get command "kind")
@@ -183,16 +186,13 @@ module private Commands =
             | Some result, _ -> Observe result
             | None, Some result -> Observe result
             | None, None ->
-                if ledger.Phase <> "Completed" then Refuse "Operator message is only accepted after completion"
-                else
-                    let program = Program.entry "Completed" "已完成"
-                    match Program.step program with
-                    | Program.Step.AwaitOperator ->
-                        match effectOf program (box kind) with
-                        | Program.Step.Reopen -> Write [ Fact.IncumbencyOpened(Identities.reopen workId messageId, "Originator", "执行", Some messageId) ]
-                        | Program.Step.AwaitOperator -> Observe(ignored messageId ledger)
-                        | _ -> fail "Completion program diverged"
+                match ledger.Position with
+                | Some program when Program.step program = Program.Step.AwaitOperator ->
+                    match effectOf program (box kind) with
+                    | Program.Step.Reopen -> Write [ Fact.IncumbencyOpened(Identities.reopen workId messageId, "Originator", "执行", Some messageId) ]
+                    | Program.Step.AwaitOperator -> Observe(ignored messageId ledger)
                     | _ -> fail "Completion program diverged"
+                | _ -> Refuse "Operator message is only accepted after completion"
         | "ContinueWork" ->
             fields [ "type"; "continuationId" ] [] command
             let continuationId = identifier (get command "continuationId")
