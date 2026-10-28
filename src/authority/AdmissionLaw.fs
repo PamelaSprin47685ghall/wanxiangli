@@ -19,8 +19,7 @@ type ActiveFacts =
       SelectedAgent: string }
 
 type AdmissionInput =
-    { InvalidCarrier: string option
-      SessionId: string option
+    { SessionId: string option
       PhysicalId: string option
       PromptKey: string option
       /// 线上原样的显式 participant 字段。
@@ -37,10 +36,8 @@ type AdmissionInput =
 
 [<RequireQualifiedAccess>]
 type AdmissionRejection =
-    | MalformedCarrier of string
     | MissingSession
     | MissingPhysical
-    | AuthorityUnavailable
     | InvalidExplicitAgent
     | AcceptedParticipantConflict
     | PromptKeyNotClaimed
@@ -131,7 +128,8 @@ module AdmissionLaw =
         | None, _, _ when managedCarrier input -> Admission.Reject AdmissionRejection.MissingSession
         | None, _, _ -> Admission.Unmanaged
         | Some _, None, _ when input.HostInternal -> Admission.HostInternal
-        | Some _, None, _ when managedCarrier input -> Admission.Reject AdmissionRejection.AuthorityUnavailable
+        | Some _, None, _ when managedCarrier input ->
+            invalidOp "wanxiangli/authority admit: a managed message requires the durable authority snapshot"
         | Some _, None, _ -> Admission.Unmanaged
         | Some _, Some active, None when managedCarrier input || active.IsSome ->
             Admission.Reject AdmissionRejection.MissingPhysical
@@ -139,10 +137,8 @@ module AdmissionLaw =
         | Some _, Some _, None -> Admission.Unmanaged
         | Some sessionId, Some active, Some _ -> withPhysical input sessionId active
 
-    /// 入口准入的固定次序：畸形身份载体 → 已接受 HumanRoot 的重放 → 会话/快照/物理 id
-    /// 的缺失 → 已接受或已落地的物理消息 → 精确 pending claim → Host 内部 → 未接受消息。
+    /// 入口准入的固定次序：已接受 HumanRoot 的重放 → 会话/快照/物理 id 的缺失 →
+    /// 已接受或已落地的物理消息 → 精确 pending claim → Host 内部 → 未接受消息。
     /// HumanRoot 只在没有活跃运行、且宿主给出根上解析成功的显式 participant 时授予（ExternalRoot）。
     let admit (input: AdmissionInput) : Admission =
-        match input.InvalidCarrier with
-        | Some carrier -> Admission.Reject(AdmissionRejection.MalformedCarrier carrier)
-        | None -> acceptedRootReplay input |> Option.defaultWith (fun () -> resolveValid input)
+        acceptedRootReplay input |> Option.defaultWith (fun () -> resolveValid input)

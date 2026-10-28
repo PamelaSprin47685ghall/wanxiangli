@@ -35,7 +35,6 @@ export interface OriginInput {
 
 /** 入口准入的输入（CUT-09-a）。全部是宿主已观察到的事实；participant 解析与身份种子由宿主完成。 */
 export interface AdmissionInput {
-  invalidCarrier?: 'SessionId' | 'agent' | 'PromptKey' | null
   sessionId?: string | null
   physicalId?: string | null
   promptKey?: string | null
@@ -53,7 +52,7 @@ export interface AdmissionInput {
 }
 
 export type AdmissionRejection =
-  | 'malformed-carrier' | 'missing-session' | 'missing-physical' | 'authority-unavailable'
+  | 'missing-session' | 'missing-physical'
   | 'invalid-explicit-agent' | 'accepted-participant-conflict' | 'prompt-key-not-claimed'
   | 'agent-owner-root-prompt-not-claimed' | 'claim-session-mismatch' | 'claim-origin-not-admissible'
   | 'unknown-origin-while-active'
@@ -66,7 +65,7 @@ export type Admission =
   | { kind: 'external-root' }
   | { kind: 'active-human-continuation' }
   | { kind: 'pending-prompt' }
-  | { kind: 'reject'; reason: AdmissionRejection; carrier?: string }
+  | { kind: 'reject'; reason: AdmissionRejection }
 
 
 /** interaction-authority-018 的五类预期关闭（闭集合，CUT-09-b）。 */

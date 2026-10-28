@@ -9,7 +9,6 @@ const origins = [H, A, C, { kind: 'HostInternal' }, { kind: 'UnknownOrigin' }]
 
 // Independent oracle, written from interaction-authority [005][007][009] and dispatch-protocol-006, not from the F# source.
 const oracle = (i) => {
-  if (i.invalidCarrier) return { kind: 'reject', reason: 'malformed-carrier', carrier: i.invalidCarrier }
   const managed = !!(i.promptKey || i.explicitAgent)
   const ae = i.acceptedEvidence
   if (ae && i.sessionId && i.physicalId && !i.promptKey && ae.sessionId === i.sessionId && ae.physicalId === i.physicalId
@@ -17,7 +16,14 @@ const oracle = (i) => {
     return i.explicitAgent && i.explicitAgent !== ae.selectedAgent
       ? { kind: 'reject', reason: 'accepted-participant-conflict' } : { kind: 'accepted-root-replay' }
   if (!i.sessionId) return i.hostInternal ? { kind: 'host-internal' } : managed ? { kind: 'reject', reason: 'missing-session' } : { kind: 'unmanaged' }
-  if (!i.authority) return i.hostInternal ? { kind: 'host-internal' } : managed ? { kind: 'reject', reason: 'authority-unavailable' } : { kind: 'unmanaged' }
+  if (!i.authority) {
+    // A managed verdict without the durable snapshot is a caller contract violation, not a rejection.
+    if (managed && !i.hostInternal) {
+      try { authority.admit(i) } catch (error) { assert.match(String(error), /requires the durable authority snapshot/) }
+      return { kind: 'throws' }
+    }
+    return i.hostInternal ? { kind: 'host-internal' } : { kind: 'unmanaged' }
+  }
   const active = i.authority.active ?? null
   if (!i.physicalId) return (managed || active) ? { kind: 'reject', reason: 'missing-physical' } : i.hostInternal ? { kind: 'host-internal' } : { kind: 'unmanaged' }
   if (i.acceptedContinuation) return { kind: 'already-accepted', origin: { kind: 'Continuation', continuation: i.acceptedContinuation } }
@@ -45,7 +51,6 @@ function* universe() {
   const agents = [[null, null], ['manager', 'manager'], ['engineer', 'engineer'], ['bogus', null]]
   const claims = [null, ...origins.map((origin) => ({ sessionId: 's1', origin, selectedAgent: 'engineer' })), { sessionId: 's2', origin: C, selectedAgent: 'engineer' }]
   const accepted = [null, { sessionId: 's1', physicalId: 'p1', origin: H, selectedAgent: 'manager' }, { sessionId: 's1', physicalId: 'p1', origin: A, selectedAgent: 'engineer' }, { sessionId: 's1', physicalId: 'p9', origin: H, selectedAgent: 'manager' }]
-  for (const invalidCarrier of [null, 'agent'])
   for (const sessionId of [null, 's1'])
   for (const physicalId of [null, 'p1'])
   for (const promptKey of [null, 'k1'])
@@ -56,23 +61,26 @@ function* universe() {
   for (const landedOrigin of [null, A])
   for (const pendingClaim of claims)
   for (const acceptedEvidence of accepted)
-    yield { invalidCarrier, sessionId, physicalId, promptKey, explicitAgent, explicitRootAgent, hostInternal, authority: auth, acceptedContinuation, landedOrigin, pendingClaim, acceptedEvidence }
+    yield { sessionId, physicalId, promptKey, explicitAgent, explicitRootAgent, hostInternal, authority: auth, acceptedContinuation, landedOrigin, pendingClaim, acceptedEvidence }
 }
 
 test('SPEC[authority-005] admission follows the fixed entrance order on every combination', () => {
   let n = 0; const kinds = new Set()
   for (const input of universe()) {
+    const want = oracle(input)
+    if (want.kind === 'throws') continue
     const got = authority.admit(input)
-    assert.deepEqual(got, oracle(input), JSON.stringify(input))
+    assert.deepEqual(got, want, JSON.stringify(input))
     kinds.add(got.kind === 'reject' ? `reject:${got.reason}` : got.kind); n++
   }
   // Every outcome of the law is reached at least once, so the oracle comparison is not vacuous.
-  assert.equal(kinds.size, 18, [...kinds].join(','))
-  assert.equal(n, 57344)
+  assert.equal(kinds.size, 16, [...kinds].join(','))
+  assert.equal(n, 27188)
 })
 
 test('SPEC[authority-005] a new HumanRoot is granted only on resolved explicit participant evidence with no active run', () => {
   for (const input of universe()) {
+    if (oracle(input).kind === 'throws') continue
     if (authority.admit(input).kind !== 'external-root') continue
     assert.ok(input.explicitRootAgent && input.authority && !input.authority.active && !input.promptKey && !input.pendingClaim, JSON.stringify(input))
   }
@@ -83,7 +91,7 @@ test('SPEC[authority-005] a new HumanRoot is granted only on resolved explicit p
 
 test('SPEC[authority-005] malformed admission input throws instead of guessing', () => {
   const ok = { sessionId: 's1', physicalId: 'p1', hostInternal: false, authority: { active: null } }
-  for (const bad of [null, 'x', { ...ok, hostInternal: 'no' }, { ...ok, sessionId: 7 }, { ...ok, invalidCarrier: 'Other' },
+  for (const bad of [null, 'x', { ...ok, hostInternal: 'no' }, { ...ok, sessionId: 7 },
     { ...ok, authority: { active: { kind: 'Root', selectedAgent: 'm' } } }, { ...ok, pendingClaim: { sessionId: 's1', origin: { kind: 'X' }, selectedAgent: 'e' } },
     { ...ok, acceptedEvidence: { sessionId: 's1', physicalId: 'p1', origin: H } }, { ...ok, authority: 3 }])
     assert.throws(() => authority.admit(bad), /wanxiangli\/authority: malformed/, JSON.stringify(bad))
