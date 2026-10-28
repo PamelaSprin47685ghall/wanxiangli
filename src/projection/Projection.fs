@@ -178,7 +178,7 @@ let private tenureKept (messages: obj) (barrier: obj) : obj =
             else Some(box index))
         |> box
         |> freeze
-    | _ -> box [||] |> freeze
+    | _ -> box ([||]: obj array) |> freeze
 
 // ── 意图规划与渲染布局 ─────────────────────────────────────────────────────
 

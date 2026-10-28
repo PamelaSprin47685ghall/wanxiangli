@@ -44,7 +44,7 @@ type private SufficientStats =
       mutable Seen: int }
 
 [<Emit("Number.isFinite($0)")>]
-let private isFinite (value: float) : bool = jsNative
+let private isFinite (_value: float) : bool = jsNative
 
 let private validateSessionId (sessionId: string) =
     if String.IsNullOrWhiteSpace sessionId then

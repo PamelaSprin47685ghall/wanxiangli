@@ -5,7 +5,18 @@ import { DurableWork } from 'wanxiangli/durable-work'
 import { SqliteJournal } from 'wanxiangli/eventstore'
 
 const [runtime, mode, database, effectFile] = process.argv.slice(2)
-assert.deepEqual(Object.keys(await import('wanxiangli/work')).sort(), ['Work', 'abandonLocalState'])
+assert.deepEqual(Object.keys(await import('wanxiangli/work')).sort(), [
+  'PlanAskGate',
+  'RootWorkspaceCell',
+  'SharedAsyncJournalPool',
+  'SharedEventStorePool',
+  'Work',
+  'abandonLocalState',
+  'planAskGate',
+  'rootWorkspaceCell',
+  'sharedAsyncJournalPool',
+  'sharedEventStorePool',
+])
 assert.deepEqual(Object.keys(await import('wanxiangli/eventstore')), ['SqliteJournal'])
 assert.deepEqual(Object.keys(await import('wanxiangli/durable-work')), ['DurableWork'])
 await assert.rejects(import('wanxiangli/dist/lifecycle/Work.js'), {

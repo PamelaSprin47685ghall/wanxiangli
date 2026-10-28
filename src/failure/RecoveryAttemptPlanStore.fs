@@ -84,7 +84,7 @@ type RecoveryAttemptPlanStore() =
                           "existing" ==> existing
                           "attempted" ==> plan ]
             | false, _ ->
-                pendingAttemptPlans.[key] <- plan
+                pendingAttemptPlans[key] <- plan
                 createObj
                     [ "kind" ==> AdmissionKind.Admitted
                       "plan" ==> plan ]
@@ -121,7 +121,7 @@ type RecoveryAttemptPlanStore() =
                     )
                 )
         | false, _ ->
-            attemptPlans.[key] <-
+            attemptPlans[key] <-
                 { Plan = plan
                   PhysicalUserMessageId = physicalUserMessageId }
             plan
@@ -178,7 +178,7 @@ type RecoveryAttemptPlanStore() =
 
     member _.PublishManualIntervention(sessionId: string, physicalUserMessageId: string, request: obj) : unit =
         let key = interventionKey sessionId physicalUserMessageId
-        manualChatInterventions.[key] <- (request, sessionId)
+        manualChatInterventions[key] <- (request, sessionId)
 
     member _.ManualInterventions() : obj array =
         manualChatInterventions.Values

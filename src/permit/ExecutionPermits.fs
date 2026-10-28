@@ -420,7 +420,7 @@ type SessionLeaseHandles() =
                 fail "host lease fence diverged from the exact permit owner"
 
             let handle = Wire.call2 createHandle (box leaseSequence) (box fenceSequence)
-            bySession.[sid] <- { Permit = permit; Handle = handle }
+            bySession[sid] <- { Permit = permit; Handle = handle }
             handle
 
     member _.tryGetMatching(sessionId: obj, permit: obj) : obj =

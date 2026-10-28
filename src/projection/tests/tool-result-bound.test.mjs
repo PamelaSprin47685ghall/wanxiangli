@@ -116,7 +116,7 @@ test('SPEC[tool-result-bound-005] truncation by line count keeps tail and satisf
   // Tail should be kept (the last rows)
   assert.ok(bounded.endsWith('row-10'))
   assert.ok(bounded.includes('row-9'))
-  assert.ok(!bounded.includes('row-1'))
+  assert.ok(!bounded.includes('row-1\n'))
 })
 
 test('SPEC[tool-result-bound-006] UTF-8 multi-byte and surrogate pair safe tail truncation', () => {
@@ -126,8 +126,8 @@ test('SPEC[tool-result-bound-006] UTF-8 multi-byte and surrogate pair safe tail 
   assert.equal(store.contentMaxBytes(), 10)
 
   // Emoji '𠮷' is 4 bytes (𠮷), '中' is 3 bytes, 'a' is 1 byte
-  // Construct text with 4-byte surrogate pairs and CJK characters
-  const text = 'prefix-long-data-𠮷𠮷𠮷'
+  // Construct text with 4-byte surrogate pairs and CJK characters (> 44 bytes so it triggers truncation)
+  const text = 'prefix-long-data-exceeding-host-byte-ceiling-𠮷𠮷𠮷'
   const bounded = store.bound(text)
 
   assert.ok(bounded.startsWith(store.marker))
@@ -135,9 +135,9 @@ test('SPEC[tool-result-bound-006] UTF-8 multi-byte and surrogate pair safe tail 
   const contentBytes = Buffer.byteLength(content, 'utf8')
   assert.ok(contentBytes <= 10, `content bytes ${contentBytes} must be <= 10`)
 
-  // Must not have broken surrogate pairs
-  assert.equal(/^[\uD800-\uDBFF]$/.test(content[0]), false, 'must not start with isolated high surrogate')
-  assert.equal(/^[\uDC00-\uDFFF]$/.test(content[content.length - 1]), false, 'must not end with isolated low surrogate')
+  // Must not have broken surrogate pairs (first UTF-16 code unit must not be an isolated low surrogate, last must not be an isolated high surrogate)
+  assert.equal(/^[\uDC00-\uDFFF]$/.test(content[0]), false, 'must not start with isolated low surrogate')
+  assert.equal(/^[\uD800-\uDBFF]$/.test(content[content.length - 1]), false, 'must not end with isolated high surrogate')
 
   // Verify valid UTF-8 round-trip without replacement characters
   const reencoded = Buffer.from(bounded, 'utf8').toString('utf8')
@@ -152,9 +152,9 @@ test('SPEC[tool-result-bound-007] exact budget matching without fudge factor', (
   assert.equal(store.contentMaxLines(), 2)
   assert.equal(store.contentMaxBytes(), 16)
 
-  // 4 lines of 10 bytes each = 40 bytes + 3 newlines = 43 bytes
+  // 5 lines of 10 bytes each = 50 bytes + 4 newlines = 54 bytes (> 4 lines and > 50 bytes)
   // Content max is 2 lines, 16 bytes
-  const text = '1234567890\nabcdefghij\nklmnopqrst\nuvwxyz1234'
+  const text = '0000000000\n1234567890\nabcdefghij\nklmnopqrst\nuvwxyz1234'
   const bounded = store.bound(text)
 
   assert.ok(bounded.startsWith(store.marker))

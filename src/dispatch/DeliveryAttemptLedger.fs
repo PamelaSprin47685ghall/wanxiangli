@@ -29,16 +29,16 @@ type DeliveryAttemptRecord =
 module private LedgerInternal =
 
     [<Emit("Array.isArray($0)")>]
-    let isArray (value: obj) : bool = jsNative
+    let isArray (_value: obj) : bool = jsNative
 
     [<Emit("Array.isArray($0) ? Array.from($0) : []")>]
-    let copyArray (x: obj) : obj array = jsNative
+    let copyArray (_x: obj) : obj array = jsNative
 
     [<Emit("typeof $0 === 'object' && $0 !== null")>]
-    let isObject (x: obj) : bool = jsNative
+    let isObject (_x: obj) : bool = jsNative
 
     [<Emit("typeof $0 === 'string'")>]
-    let isString (x: obj) : bool = jsNative
+    let isString (_x: obj) : bool = jsNative
 
     let emptyFacts: InterruptFacts = { issued = false; observed = None }
 
@@ -57,19 +57,27 @@ module private LedgerInternal =
     let parseFence (fenceObj: obj) : DeliveryFence option =
         if isNull fenceObj || not (isObject fenceObj) then None
         else
+            let sid1: obj = fenceObj?sessionId
+            let sid2: obj = fenceObj?SessionId
             let sid =
-                if not (isNull fenceObj?sessionId) then string fenceObj?sessionId
-                elif not (isNull fenceObj?SessionId) then string fenceObj?SessionId
+                if not (isNull sid1) then string sid1
+                elif not (isNull sid2) then string sid2
                 else ""
+            let pr1: obj = fenceObj?providerRun
+            let pr2: obj = fenceObj?ProviderRun
             let pr =
-                if not (isNull fenceObj?providerRun) then string fenceObj?providerRun
-                elif not (isNull fenceObj?ProviderRun) then string fenceObj?ProviderRun
+                if not (isNull pr1) then string pr1
+                elif not (isNull pr2) then string pr2
                 else ""
+            let cid1: obj = fenceObj?callId
+            let cid2: obj = fenceObj?CallId
+            let cid3: obj = fenceObj?toolCallId
+            let cid4: obj = fenceObj?ToolCallId
             let cid =
-                if not (isNull fenceObj?callId) then string fenceObj?callId
-                elif not (isNull fenceObj?CallId) then string fenceObj?CallId
-                elif not (isNull fenceObj?toolCallId) then string fenceObj?toolCallId
-                elif not (isNull fenceObj?ToolCallId) then string fenceObj?ToolCallId
+                if not (isNull cid1) then string cid1
+                elif not (isNull cid2) then string cid2
+                elif not (isNull cid3) then string cid3
+                elif not (isNull cid4) then string cid4
                 else ""
             let sTrim = sid.Trim()
             let pTrim = pr.Trim()
@@ -88,11 +96,15 @@ module private LedgerInternal =
             if String.IsNullOrWhiteSpace s || s = "undefined" || s = "null" then None
             else Some s
         elif isObject physicalInput then
+            let p1: obj = physicalInput?physicalUserMessageId
+            let p2: obj = physicalInput?PhysicalUserMessageId
+            let p3: obj = physicalInput?value
+            let p4: obj = physicalInput?Value
             let p =
-                if not (isNull physicalInput?physicalUserMessageId) then string physicalInput?physicalUserMessageId
-                elif not (isNull physicalInput?PhysicalUserMessageId) then string physicalInput?PhysicalUserMessageId
-                elif not (isNull physicalInput?value) then string physicalInput?value
-                elif not (isNull physicalInput?Value) then string physicalInput?Value
+                if not (isNull p1) then string p1
+                elif not (isNull p2) then string p2
+                elif not (isNull p3) then string p3
+                elif not (isNull p4) then string p4
                 else ""
             let pTrim = p.Trim()
             if String.IsNullOrWhiteSpace pTrim || pTrim = "undefined" || pTrim = "null" then None
@@ -102,25 +114,37 @@ module private LedgerInternal =
     let parseWitness (witness: obj) : (string * string * string * string) option =
         if isNull witness || not (isObject witness) then None
         else
+            let sid1: obj = witness?sessionId
+            let sid2: obj = witness?SessionId
             let sid =
-                if not (isNull witness?sessionId) then string witness?sessionId
-                elif not (isNull witness?SessionId) then string witness?SessionId
+                if not (isNull sid1) then string sid1
+                elif not (isNull sid2) then string sid2
                 else ""
+            let pr1: obj = witness?providerRun
+            let pr2: obj = witness?ProviderRun
             let pr =
-                if not (isNull witness?providerRun) then string witness?providerRun
-                elif not (isNull witness?ProviderRun) then string witness?ProviderRun
+                if not (isNull pr1) then string pr1
+                elif not (isNull pr2) then string pr2
                 else ""
+            let cid1: obj = witness?callId
+            let cid2: obj = witness?CallId
+            let cid3: obj = witness?toolCallId
+            let cid4: obj = witness?ToolCallId
             let cid =
-                if not (isNull witness?callId) then string witness?callId
-                elif not (isNull witness?CallId) then string witness?CallId
-                elif not (isNull witness?toolCallId) then string witness?toolCallId
-                elif not (isNull witness?ToolCallId) then string witness?ToolCallId
+                if not (isNull cid1) then string cid1
+                elif not (isNull cid2) then string cid2
+                elif not (isNull cid3) then string cid3
+                elif not (isNull cid4) then string cid4
                 else ""
+            let phys1: obj = witness?physicalUserMessageId
+            let phys2: obj = witness?PhysicalUserMessageId
+            let phys3: obj = witness?physical
+            let phys4: obj = witness?Physical
             let phys =
-                if not (isNull witness?physicalUserMessageId) then string witness?physicalUserMessageId
-                elif not (isNull witness?PhysicalUserMessageId) then string witness?PhysicalUserMessageId
-                elif not (isNull witness?physical) then string witness?physical
-                elif not (isNull witness?Physical) then string witness?Physical
+                if not (isNull phys1) then string phys1
+                elif not (isNull phys2) then string phys2
+                elif not (isNull phys3) then string phys3
+                elif not (isNull phys4) then string phys4
                 else ""
             let sTrim = sid.Trim()
             let pTrim = pr.Trim()
@@ -152,14 +176,14 @@ type DeliveryAttemptLedger() =
                     match current.physical with
                     | Some existing -> Some existing
                     | None -> physical
-                records.[key] <-
+                records[key] <-
                     { current with
                         physical = preservedPhysical
                         established = true
                         sequence = sequence }
                 true
             | false, _ ->
-                records.[key] <-
+                records[key] <-
                     { fence = fence
                       physical = physical
                       established = true
@@ -177,13 +201,13 @@ type DeliveryAttemptLedger() =
             let key = LedgerInternal.fenceKey fence
             match records.TryGetValue key with
             | true, current ->
-                records.[key] <-
+                records[key] <-
                     { current with
                         presented = true
                         sequence = sequence }
                 true
             | false, _ ->
-                records.[key] <-
+                records[key] <-
                     { fence = fence
                       physical = None
                       established = false
@@ -209,7 +233,7 @@ type DeliveryAttemptLedger() =
                 |> Seq.sortBy (fun r -> r.sequence)
                 |> Seq.toArray
             if matches.Length = 0 then None
-            else Some matches.[matches.Length - 1]
+            else Some matches[matches.Length - 1]
 
     member _.hasEstablished(sessionId: string) : bool =
         if String.IsNullOrWhiteSpace sessionId then false
@@ -228,7 +252,7 @@ type DeliveryAttemptLedger() =
                 match records.TryGetValue key with
                 | true, c -> c
                 | false, _ -> LedgerInternal.emptyRecord fence
-            records.[key] <-
+            records[key] <-
                 { current with
                     interrupt = { current.interrupt with issued = true }
                     interruptTask = (if isNull task then None else Some task)
@@ -245,7 +269,7 @@ type DeliveryAttemptLedger() =
                 match records.TryGetValue key with
                 | true, c -> c
                 | false, _ -> LedgerInternal.emptyRecord fence
-            records.[key] <-
+            records[key] <-
                 { current with
                     interrupt = { current.interrupt with observed = (if isNull outcome then None else Some outcome) }
                     sequence = sequence }
@@ -274,7 +298,7 @@ type DeliveryAttemptLedger() =
                 |> Seq.sortBy (fun r -> r.sequence)
                 |> Seq.toArray
             if matches.Length = 0 then None
-            else matches.[matches.Length - 1].interruptTask
+            else matches[matches.Length - 1].interruptTask
 
     member _.dropSession(sessionId: string) : unit =
         if not (String.IsNullOrWhiteSpace sessionId) then
@@ -312,7 +336,7 @@ type DeliveryAttemptLedger() =
                     rawList
                     |> Array.choose (fun item -> this.confirmedFence(item, sTrim, expectedPhysical))
                 if confirmed.Length = 0 then None
-                else Some confirmed.[confirmed.Length - 1]
+                else Some confirmed[confirmed.Length - 1]
 
     member _.hasDurableEstablished(witnesses: obj, sessionId: string) : bool =
         if isNull witnesses || String.IsNullOrWhiteSpace sessionId then false

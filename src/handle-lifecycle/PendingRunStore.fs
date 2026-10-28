@@ -72,20 +72,25 @@ let private appendCancelled (list: ResizeArray<obj>) (sub: obj option) : unit =
     | None -> ()
 
 let private parseOptionsObj (opt: obj) =
-    let aid = text "agentId" opt?agentId
-    let tok = opt?token
-    let cid = if not (isAbsent opt?childId) then string opt?childId else ""
-    let rol = if not (isAbsent opt?role) then Some (string opt?role) else None
-    let pay = if not (isAbsent opt?payload) then opt?payload else null
-    let sub = if not (isAbsent opt?subscription) then Some opt?subscription else None
+    let aidRaw: obj = opt?agentId
+    let aid = text "agentId" aidRaw
+    let tok: obj = opt?token
+    let cidRaw: obj = opt?childId
+    let cid = if not (isAbsent cidRaw) then string cidRaw else ""
+    let rolRaw: obj = opt?role
+    let rol = if not (isAbsent rolRaw) then Some (string rolRaw) else None
+    let payRaw: obj = opt?payload
+    let pay = if not (isAbsent payRaw) then payRaw else (null: obj)
+    let subRaw: obj = opt?subscription
+    let sub = if not (isAbsent subRaw) then Some subRaw else None
     aid, tok, cid, rol, pay, sub
 
 let private parsePositional (aidInput: obj) (token: obj option) (childId: obj option) (role: obj option) (payload: obj option) (sub: obj option) =
     let aid = text "agentId" aidInput
-    let tok = optVal token null
+    let tok = optVal token (null: obj)
     let cid = optStr childId
     let rol = optStrOpt role
-    let pay = optVal payload null
+    let pay = optVal payload (null: obj)
     let s = optObj sub
     aid, tok, cid, rol, pay, s
 
@@ -122,9 +127,9 @@ type PendingRunStore() as this =
     let records = Dictionary<string, PendingRunRecord>()
     let payloads = Dictionary<string, obj>()
     do
-        emitJsExpr (payloads, this) "$0.__store = $1" |> ignore
+        emitJsExpr (payloads, this) "$0.__store = $1"
 
-    member _.payloadView: obj = payloads
+    member _.payloadView: obj = box payloads
     member _.rawView() : Dictionary<string, obj> = payloads
 
     member _.register(agentIdOrOptions: obj, ?token: obj, ?childId: obj, ?role: obj, ?payload: obj, ?subscription: obj) : obj =
@@ -148,15 +153,15 @@ type PendingRunStore() as this =
               Finished = false
               Phase = "Pending" }
 
-        records.[aid] <- record
-        payloads.[aid] <- pay
+        records[aid] <- record
+        payloads[aid] <- pay
 
         freeze (createObj [
-            "registered" ==> true
-            "agentId" ==> aid
+            "registered" ==> box true
+            "agentId" ==> box aid
             "token" ==> tok
-            "childId" ==> cid
-            "previousReplaced" ==> previousReplaced
+            "childId" ==> box cid
+            "previousReplaced" ==> box previousReplaced
         ])
 
     member _.attachSubscription(agentIdInput: obj, tokenInput: obj, subscriptionInput: obj) : bool =
@@ -178,42 +183,42 @@ type PendingRunStore() as this =
         match records.TryGetValue aid with
         | false, _ ->
             freeze (createObj [
-                "claimed" ==> false
-                "agentId" ==> aid
+                "claimed" ==> box false
+                "agentId" ==> box aid
                 "token" ==> tokenInput
-                "subscription" ==> null
-                "payload" ==> null
-                "reason" ==> "NotFound"
+                "subscription" ==> (null: obj)
+                "payload" ==> (null: obj)
+                "reason" ==> box "NotFound"
             ])
         | true, current when not (tokenMatches current.Token tokenInput) ->
             freeze (createObj [
-                "claimed" ==> false
-                "agentId" ==> aid
+                "claimed" ==> box false
+                "agentId" ==> box aid
                 "token" ==> tokenInput
-                "subscription" ==> null
-                "payload" ==> null
-                "reason" ==> "TokenMismatch"
+                "subscription" ==> (null: obj)
+                "payload" ==> (null: obj)
+                "reason" ==> box "TokenMismatch"
             ])
         | true, current when current.Finished ->
             freeze (createObj [
-                "claimed" ==> false
-                "agentId" ==> aid
+                "claimed" ==> box false
+                "agentId" ==> box aid
                 "token" ==> tokenInput
-                "subscription" ==> null
-                "payload" ==> null
-                "reason" ==> "AlreadyFinished"
+                "subscription" ==> (null: obj)
+                "payload" ==> (null: obj)
+                "reason" ==> box "AlreadyFinished"
             ])
         | true, current ->
             current.Finished <- true
             current.Phase <- "Claimed"
-            let s = match current.Subscription with Some sub -> sub | None -> null
+            let s = match current.Subscription with Some sub -> sub | None -> (null: obj)
             freeze (createObj [
-                "claimed" ==> true
-                "agentId" ==> aid
+                "claimed" ==> box true
+                "agentId" ==> box aid
                 "token" ==> tokenInput
                 "subscription" ==> s
                 "payload" ==> current.Payload
-                "reason" ==> null
+                "reason" ==> (null: obj)
             ])
 
     member _.removeClaimed(agentIdInput: obj, tokenInput: obj) : bool =
@@ -235,69 +240,69 @@ type PendingRunStore() as this =
         match records.TryGetValue aid with
         | false, _ ->
             freeze (createObj [
-                "claimed" ==> false
-                "agentId" ==> aid
+                "claimed" ==> box false
+                "agentId" ==> box aid
                 "token" ==> tokenInput
-                "subscription" ==> null
-                "payload" ==> null
-                "reason" ==> "NotFound"
+                "subscription" ==> (null: obj)
+                "payload" ==> (null: obj)
+                "reason" ==> box "NotFound"
             ])
         | true, current when not (tokenMatches current.Token tokenInput) ->
             freeze (createObj [
-                "claimed" ==> false
-                "agentId" ==> aid
+                "claimed" ==> box false
+                "agentId" ==> box aid
                 "token" ==> tokenInput
-                "subscription" ==> null
-                "payload" ==> null
-                "reason" ==> "TokenMismatch"
+                "subscription" ==> (null: obj)
+                "payload" ==> (null: obj)
+                "reason" ==> box "TokenMismatch"
             ])
         | true, current when current.Finished ->
             freeze (createObj [
-                "claimed" ==> false
-                "agentId" ==> aid
+                "claimed" ==> box false
+                "agentId" ==> box aid
                 "token" ==> tokenInput
-                "subscription" ==> null
-                "payload" ==> null
-                "reason" ==> "AlreadyFinished"
+                "subscription" ==> (null: obj)
+                "payload" ==> (null: obj)
+                "reason" ==> box "AlreadyFinished"
             ])
         | true, current ->
             current.Finished <- true
             current.Phase <- "Cancelled"
-            let s = match current.Subscription with Some sub -> sub | None -> null
+            let s = match current.Subscription with Some sub -> sub | None -> (null: obj)
             let p = current.Payload
             records.Remove aid |> ignore
             payloads.Remove aid |> ignore
             freeze (createObj [
-                "claimed" ==> true
-                "agentId" ==> aid
+                "claimed" ==> box true
+                "agentId" ==> box aid
                 "token" ==> tokenInput
                 "subscription" ==> s
                 "payload" ==> p
-                "reason" ==> null
+                "reason" ==> (null: obj)
             ])
 
     member _.removeByAgentId(agentIdInput: obj) : obj =
         let aid = text "agentId" agentIdInput
         match records.TryGetValue aid with
         | true, current ->
-            let s = match current.Subscription with Some sub -> sub | None -> null
+            let s = match current.Subscription with Some sub -> sub | None -> (null: obj)
             let p = current.Payload
             records.Remove aid |> ignore
             payloads.Remove aid |> ignore
             freeze (createObj [
-                "removed" ==> true
-                "agentId" ==> aid
+                "removed" ==> box true
+                "agentId" ==> box aid
                 "token" ==> current.Token
                 "subscription" ==> s
                 "payload" ==> p
             ])
         | false, _ ->
             freeze (createObj [
-                "removed" ==> false
-                "agentId" ==> aid
-                "token" ==> null
-                "subscription" ==> null
-                "payload" ==> null
+                "removed" ==> box false
+                "agentId" ==> box aid
+                "token" ==> (null: obj)
+                "subscription" ==> (null: obj)
+                "payload" ==> (null: obj)
             ])
 
     member _.drainAll() : obj array =
@@ -305,9 +310,9 @@ type PendingRunStore() as this =
         for KeyValue(agentId, run) in records do
             run.Finished <- true
             run.Phase <- "Drained"
-            let s = match run.Subscription with Some sub -> sub | None -> null
+            let s = match run.Subscription with Some sub -> sub | None -> (null: obj)
             list.Add(freeze (createObj [
-                "agentId" ==> agentId
+                "agentId" ==> box agentId
                 "token" ==> run.Token
                 "subscription" ==> s
                 "payload" ==> run.Payload
@@ -360,11 +365,11 @@ type PendingRunStore() as this =
         |> Seq.filter (fun r -> not r.Finished)
         |> Seq.map (fun r ->
             freeze (createObj [
-                "agentId" ==> r.AgentId
-                "childId" ==> r.ChildId
+                "agentId" ==> box r.AgentId
+                "childId" ==> box r.ChildId
                 "token" ==> r.Token
-                "role" ==> (match r.Role with Some rol -> box rol | None -> null)
-                "finished" ==> r.Finished
+                "role" ==> (match r.Role with Some rol -> box rol | None -> (null: obj))
+                "finished" ==> box r.Finished
                 "payload" ==> r.Payload
             ]))
         |> Seq.toArray

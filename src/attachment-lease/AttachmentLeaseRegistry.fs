@@ -21,7 +21,7 @@ let private field (_value: obj) (_name: string) : obj = jsNative
 let private freeze (_value: obj) : obj = jsNative
 
 [<Emit("$0()")>]
-let private invokeStart (fn: obj) : obj = jsNative
+let private invokeStart (_fn: obj) : obj = jsNative
 
 let private malformed (what: string) : 'T =
     raise (ArgumentException(sprintf "wanxiangli/attachment-lease: malformed %s" what))
@@ -50,21 +50,21 @@ module private RegistryInternal =
     let toOwnerPairObj (owner: string) (kind: string) : obj =
         freeze (
             createObj
-                [ "owner" ==> owner
-                  "kind" ==> kind ]
+                [ "owner" ==> box owner
+                  "kind" ==> box kind ]
         )
 
     let toLeaseRecordObj (entry: LeaseEntry) : obj =
         freeze (
             createObj
-                [ "sessionId" ==> entry.sessionId
-                  "SessionId" ==> entry.sessionId
-                  "origin" ==> entry.origin
-                  "Origin" ==> entry.origin
-                  "agent" ==> entry.agent
-                  "Agent" ==> entry.agent
-                  "owner" ==> entry.owner
-                  "kind" ==> entry.kind ]
+                [ "sessionId" ==> box entry.sessionId
+                  "SessionId" ==> box entry.sessionId
+                  "origin" ==> box entry.origin
+                  "Origin" ==> box entry.origin
+                  "agent" ==> box entry.agent
+                  "Agent" ==> box entry.agent
+                  "owner" ==> box entry.owner
+                  "kind" ==> box entry.kind ]
         )
 
     let fieldString (target: obj) (name: string) : string option =
@@ -119,7 +119,7 @@ type AttachmentLeaseRegistry() =
         let agent = extractLeaseField leaseInput "agent" "Agent"
 
         let key = makeKey owner kind
-        bindings.[key] <-
+        bindings[key] <-
             { owner = owner
               kind = kind
               sessionId = sessionId
@@ -176,7 +176,7 @@ type AttachmentLeaseRegistry() =
         | true, inFlight -> inFlight
         | false, _ ->
             let inFlight = invokeStart start
-            flights.[key] <- inFlight
+            flights[key] <- inFlight
             inFlight
 
     member _.finishEnsure(ownerInput: obj, kindInput: obj) : unit =

@@ -5,7 +5,7 @@ import {
   SessionTopologyStore
 } from 'wanxiangli/ownership'
 
-test('SPEC[family-tree-001] Flat affiliation ("a son's son is a son") and reparenting', () => {
+test("SPEC[family-tree-001] Flat affiliation (\"a son's son is a son\") and reparenting", () => {
   const tree = new SessionFamilyTree()
 
   // Register child-1 under root-1

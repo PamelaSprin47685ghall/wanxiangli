@@ -2,6 +2,36 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { Rig } from './support.mjs'
 
+test('系统续办在结案后开立新任期且重放不重复开立', () => {
+  const manager = new Rig('Manager', 'work-system-continuation')
+  manager.review([{ key: 'job', value: 'do' }])
+  const relay = manager.review([{ key: 'job', value: null }])
+  manager.send(relay)
+  const cleanup = manager.review([])
+  manager.send(cleanup)
+  const completed = manager.review([])
+  manager.confirm(completed.effect, 'Requested')
+  const restored = manager.restored()
+  const retirement = restored.inspect().rounds.at(-1)
+  assert.equal(retirement.providerRunId, manager.lastCommand.providerRunId)
+  assert.equal(retirement.stopEffectId, completed.effect.id)
+  const command = { type: 'ContinueWork', continuationId: 'conflict-1' }
+  assert.equal(manager.call(command, 'before-stop').status, 'Conflict')
+  manager.confirm(completed.effect, 'Observed')
+  const reopened = manager.call(command, 'continuation-1')
+  assert.equal(reopened.status, 'Applied')
+  assert.equal(reopened.result.kind, 'Reopened')
+  assert.deepEqual(manager.work.inspect().barrier, {
+    toolCallId: retirement.toolCallId,
+    successorTenureId: reopened.result.incumbencyId,
+  })
+  manager.restored()
+  assert.equal(manager.call(command, 'continuation-1').status, 'Replayed')
+  assert.equal(manager.call(command, 'continuation-2').status, 'Observed')
+  assert.equal(manager.call({ type: 'ContinueWork', continuationId: 'conflict-2' }, 'continuation-3').status, 'Conflict')
+  manager.restored()
+})
+
 test('SPEC[lifecycle-007] empty asks, relay, advance, launches, cleanup and reopen', () => {
   const origin = new Rig()
   const tenures = []

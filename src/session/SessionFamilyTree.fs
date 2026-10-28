@@ -6,6 +6,9 @@ open System.Threading.Tasks
 open Fable.Core
 open Fable.Core.JsInterop
 
+[<Emit("(typeof $0.Invoke === 'function' ? $0.Invoke($1) : $0($1))")>]
+let private invokeStepQuery (_stepQuery: obj) (_curr: string) : Task<obj> = jsNative
+
 [<AttachMembers>]
 type SessionFamilyResult =
     { ok: bool
@@ -65,46 +68,52 @@ type SessionFamilyTree(?familyParent: string -> string option) =
         | false, _ -> knownOrDeclaredRoot sessionId
 
     let pruneEmptyRoot (rootId: string) =
-        if parentChildMap.ContainsKey rootId && parentChildMap.[rootId].Count = 0 then
+        if parentChildMap.ContainsKey rootId && parentChildMap[rootId].Count = 0 then
             parentChildMap.Remove rootId |> ignore
 
     let detachFromRoot (rootId: string) (childId: string) =
         if parentChildMap.ContainsKey rootId then
-            parentChildMap.[rootId].Remove childId |> ignore
+            parentChildMap[rootId].Remove childId |> ignore
 
     let parseStepResult (res: obj) : Result<string option, string> =
         if isNull res then
             Error "null step query result"
-        elif res?ok = true then
-            let p = res?parent
-            if isNull (box p) || (box p :? unit) then
+        elif (res?ok: obj) = box true then
+            let p: obj = res?parent
+            if isNull p || (p :? unit) then
                 Ok None
-            elif box p :? string then
+            elif p :? string then
                 let s = unbox<string> p
                 if String.IsNullOrEmpty s then Ok None else Ok (Some s)
             else
                 Ok None
-        elif res?ok = false then
+        elif (res?ok: obj) = box false then
+            let errObj: obj = res?error
             let err =
-                if isNull (box res?error) then "unknown query error"
-                else string res?error
+                if isNull errObj then "unknown query error"
+                else string errObj
             Error err
-        elif res?tag = 0 then
+        elif (res?tag: obj) = box 0 then
             // F# Result.Ok
-            let valObj = res?fields?(0)
+            let fields: obj = res?fields
+            let valObj: obj = fields?(0)
             if isNull valObj then
                 Ok None
-            elif box valObj :? string then
+            elif valObj :? string then
                 let s = unbox<string> valObj
                 if String.IsNullOrEmpty s then Ok None else Ok (Some s)
-            elif valObj?tag = 0 then
+            elif (valObj?tag: obj) = box 0 then
                 // Some x
-                Ok (Some (string valObj?fields?(0)))
+                let innerFields: obj = valObj?fields
+                let innerVal: obj = innerFields?(0)
+                Ok (Some (string innerVal))
             else
                 Ok None
-        elif res?tag = 1 then
+        elif (res?tag: obj) = box 1 then
             // F# Result.Error
-            Error (string res?fields?(0))
+            let fields: obj = res?fields
+            let errVal: obj = fields?(0)
+            Error (string errVal)
         else
             Error "invalid step query result shape"
 
@@ -123,14 +132,14 @@ type SessionFamilyTree(?familyParent: string -> string option) =
 
             match childParents.TryGetValue childId with
             | true, previousRoot when previousRoot <> rootId && parentChildMap.ContainsKey previousRoot ->
-                parentChildMap.[previousRoot].Remove childId |> ignore
+                parentChildMap[previousRoot].Remove childId |> ignore
             | _ -> ()
 
             if not (parentChildMap.ContainsKey rootId) then
-                parentChildMap.[rootId] <- HashSet<string>()
+                parentChildMap[rootId] <- HashSet<string>()
 
-            parentChildMap.[rootId].Add childId |> ignore
-            childParents.[childId] <- rootId
+            parentChildMap[rootId].Add childId |> ignore
+            childParents[childId] <- rootId
             knownRoots.Add rootId |> ignore
             rootId
         )
@@ -138,7 +147,7 @@ type SessionFamilyTree(?familyParent: string -> string option) =
     member _.resolveFamilyRoot(targetId: string, stepQuery: obj) : Task<SessionFamilyResult> =
         task {
             // 起始快速路径（0 次外部查询）
-            let (knownOpt, startEpoch, isAborting) =
+            let (knownOpt, _startEpoch, isAborting) =
                 lock lockObj (fun () ->
                     let k = tryFindKnownRoot targetId
                     let aborting = abortingRoots.Contains targetId
@@ -158,12 +167,7 @@ type SessionFamilyTree(?familyParent: string -> string option) =
                     let callQuery (curr: string) : Task<Result<string option, string>> =
                         task {
                             try
-                                let rawTask: Task<obj> =
-                                    if stepQuery?Invoke <> null then
-                                        stepQuery?Invoke curr
-                                    else
-                                        stepQuery $ curr
-                                let! rawRes = rawTask
+                                let! rawRes = invokeStepQuery stepQuery curr
                                 return parseStepResult rawRes
                             with ex ->
                                 return Error ex.Message
@@ -215,10 +219,10 @@ type SessionFamilyTree(?familyParent: string -> string option) =
                                     knownRoots.Add root |> ignore
                                     for ancestor in ancestors do
                                         if ancestor <> root then
-                                            childParents.[ancestor] <- root
+                                            childParents[ancestor] <- root
                                             if not (parentChildMap.ContainsKey root) then
-                                                parentChildMap.[root] <- HashSet<string>()
-                                            parentChildMap.[root].Add ancestor |> ignore
+                                                parentChildMap[root] <- HashSet<string>()
+                                            parentChildMap[root].Add ancestor |> ignore
                                     true
                                 else
                                     false
@@ -238,7 +242,7 @@ type SessionFamilyTree(?familyParent: string -> string option) =
             | None ->
                 let root = findRestoredRoot sessionId
                 if root <> sessionId then
-                    childParents.[sessionId] <- root
+                    childParents[sessionId] <- root
                     knownRoots.Add root |> ignore
                     root
                 else
@@ -286,7 +290,7 @@ type SessionFamilyTree(?familyParent: string -> string option) =
                     | false, _ -> ()
         )
 
-    member _.settleAbortOne(parentId: string, childId: string, isAborted: bool) : unit =
+    member _.settleAbortOne(_parentId: string, childId: string, isAborted: bool) : unit =
         lock lockObj (fun () ->
             mutationEpoch <- mutationEpoch + 1
             if isAborted then
@@ -330,7 +334,7 @@ type SessionFamilyTree(?familyParent: string -> string option) =
             | false, _ -> ()
 
             if parentChildMap.ContainsKey sessionId then
-                let children = parentChildMap.[sessionId] |> Seq.toArray
+                let children = parentChildMap[sessionId] |> Seq.toArray
                 for c in children do
                     childParents.Remove c |> ignore
                     clearedChildren.Add c |> ignore
