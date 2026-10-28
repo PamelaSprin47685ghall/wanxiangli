@@ -14,6 +14,9 @@ for (const [method, stream] of [['log', 'stdout'], ['warn', 'stderr'], ['error',
 let bundler
 let manager
 const checkers = new Set()
+const checked = new WeakSet()
+let previousCheckers = new Set()
+let reuse = { created: 0, reused: 0, reusedAcrossBuilds: 0 }
 let completed = 0
 let fcsMs = 0
 let diagnostics = []
@@ -29,10 +32,16 @@ async function initialize() {
       CreateChecker(...args) {
         const checker = manager.CreateChecker(...args)
         checkers.add(checker)
+        reuse.created++
         return checker
       },
       ParseAndCheckProject(...args) {
         const started = performance.now()
+        if (checked.has(args[0])) {
+          reuse.reused++
+          if (previousCheckers.has(args[0])) reuse.reusedAcrossBuilds++
+        }
+        checked.add(args[0])
         try {
           const result = manager.ParseAndCheckProject(...args)
           diagnostics = result.Errors.map(error => ({ message: error.Message, warning: error.IsWarning,
@@ -50,7 +59,7 @@ async function initialize() {
 }
 
 const statistics = () => ({ pid: process.pid, completed, checkers: checkers.size,
-  memory: process.memoryUsage(), cpu: process.cpuUsage() })
+  memory: process.memoryUsage(), cpu: process.cpuUsage(), reuse })
 const respond = value => { if (process.connected) process.send(value) }
 process.on('disconnect', () => process.exit())
 process.on('message', async request => {
@@ -62,6 +71,8 @@ process.on('message', async request => {
     fcsMs = 0
     diagnostics = []
     await initialize()
+    previousCheckers = new Set(checkers)
+    reuse = { created: 0, reused: 0, reusedAcrossBuilds: 0 }
     const rows = []
     for (const input of request.inputs) {
       const output = input.temporary

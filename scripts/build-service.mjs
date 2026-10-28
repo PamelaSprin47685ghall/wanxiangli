@@ -55,8 +55,10 @@ const server = net.createServer(socket => {
       send(socket, { ok: false, error: error.message })
       return
     }
-    clearTimeout(idle)
-    queued++
+    if (command.op !== 'status') {
+      clearTimeout(idle)
+      queued++
+    }
     queue = queue.then(async () => {
       active = socket
       try {
@@ -86,8 +88,10 @@ const server = net.createServer(socket => {
         send(socket, { ok: false, error: error.message, diagnostics: error.diagnostics ?? [], servicePid: process.pid })
       } finally {
         active = undefined
-        queued--
-        if (!closing && queued === 0) armIdle()
+        if (command.op !== 'status') {
+          queued--
+          if (!closing && queued === 0) armIdle()
+        }
       }
     })
   })

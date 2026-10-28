@@ -36,3 +36,25 @@ ToolResultBound 行为和 session 测试语法错误，未在本改动中修改�
 类型错误、发布失败、客户端断开、服务/worker 强杀及子进程回收。
 使用 macOS / Node 26.6.0；Windows 与实际 Node 二进制升级尚未实测。
 本次没有将原型的长期内存试验冒充为最终实现的长期试验。
+
+使用记录
+
+默认仍空闲十分钟退出。--status 不延长空闲期限，也不写使用记录。
+实际进入 worker 编译阶段的请求记录在 .build-service/usage.json，
+状态查询和全缓存构建不计入；记录留在本机，不上传，不进入 Git。
+intervalMs 是两次编译开始之间的间隔，idleMs 是上次完成到本次开始的间隔；
+时间戳使用 Unix 毫秒，durationMs 只覆盖编译请求及发布收尾，不包含初始化。
+服务重启后保留上次记录，超过十分钟的间隔也能观察到。
+
+totals 保存累计次数，samples 只保留最近 256 次编译。
+reuse.created 是新建 checker 数；reused 是使用已检查过项目的 checker 的次数，
+reusedAcrossBuilds 只计本次请求开始前已有 checker 的复用，避免把全量构建内
+模块间的复用误当成常驻收益。库中每个项目检查分别计数。
+workerMemory 与 serviceMemory 记录编译返回及收尾时的 RSS、JS 堆与外部内存，
+单位为字节；这是内存快照，不是峰值、空闲曲线或 macOS footprint，也不强制 GC。
+
+编译失败仍记录；进程强杀留下 pending，下次编译将其标为 unknown。
+缺失的复用报告计入 missingReuseReports，不猜测为零。累计数与最近样本分别统计。
+记录损坏或不可写时保留现有文件，在 service.log 报告并停用本服务的记录，
+不因此改变编译结果；修复记录文件后重启服务即可恢复。删除 usage.json 可清空记录，
+应先 --stop，避免活动服务写回旧记录。
