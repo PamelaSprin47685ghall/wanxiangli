@@ -1,22 +1,48 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, copyFileSync, symlinkSync, rmSync, writeFileSync, readFileSync, existsSync, readdirSync, utimesSync } from 'node:fs'
+import { mkdirSync, symlinkSync, rmSync, writeFileSync, readFileSync, existsSync, readdirSync, utimesSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { testDirectory, installBuild, stopBuild } from './build-fixture.mjs'
 const root = fileURLToPath(new URL('../..', import.meta.url))
 const data = value => `namespace CacheProbe\nmodule Data =\n    let value = ${value}\n`
 const probe = 'namespace CacheProbe\n[<Fable.Core.AttachMembers>]\ntype Probe() =\n    member _.value: int = Data.value\n'
 const project = (include = '<Compile Include="Data.fs" />') => `<Project><ItemGroup>${include}<Compile Include="Probe.fs" /></ItemGroup></Project>`
 
+function installSaveHook(directory) {
+  writeFileSync(path.join(directory, 'scripts/save-hook.mjs'), `
+import { writeFileSync, readFileSync, existsSync, rmSync, mkdirSync, appendFileSync } from 'node:fs'
+const log = console.log
+console.log = (...args) => {
+  if (existsSync('mutation.json') && !existsSync('mutation-ran')) {
+    const { mutation, boundary } = JSON.parse(readFileSync('mutation.json', 'utf8'))
+    const message = String(args[0])
+    if (boundary === 'compiler'
+      ? message.startsWith('Project:') && message.includes('FCS time:')
+      : message.startsWith('[build] alpha:')) {
+      writeFileSync('mutation-ran', 'yes')
+      new Function('writeFileSync', 'rmSync', 'mkdirSync', 'appendFileSync', mutation)(writeFileSync, rmSync, mkdirSync, appendFileSync)
+    }
+  }
+  log(...args)
+}
+`)
+  for (const name of ['build-session.mjs', 'compiler.mjs']) {
+    const file = path.join(directory, 'scripts', name)
+    writeFileSync(file, "import './save-hook.mjs'\n" + readFileSync(file, 'utf8'))
+  }
+}
+
 function fixture(t, include) {
-  const directory = mkdtempSync(path.join(tmpdir(), 'wanxiangli-build-inputs-'))
-  t.after(() => rmSync(directory, { recursive: true, force: true }))
-  mkdirSync(path.join(directory, 'scripts'))
-  copyFileSync(path.join(root, 'scripts/build.mjs'), path.join(directory, 'scripts/build.mjs'))
-  copyFileSync(path.join(root, 'scripts/compiler.mjs'), path.join(directory, 'scripts/compiler.mjs'))
+  const directory = testDirectory('inputs-')
+  t.after(() => {
+    stopBuild(directory)
+    rmSync(directory, { recursive: true, force: true })
+  })
+  installBuild(directory)
+  installSaveHook(directory)
   writeFileSync(path.join(directory, 'package.json'), '{"type":"module"}')
   symlinkSync(path.join(root, 'node_modules'), path.join(directory, 'node_modules'), 'junction')
   for (const name of ['alpha', 'beta']) {
@@ -53,29 +79,12 @@ function artifact(directory, name) {
 }
 
 function mutateDuringBuild(directory, mutation, boundary = 'log', ...args) {
-  const hook = path.join(directory, 'mutation.mjs')
-  // 真实构建照常运行；只把文件保存固定在缓存检查或编译结束的边界。
-  writeFileSync(hook, `
-import { writeFileSync, rmSync, mkdirSync, appendFileSync } from 'node:fs'
-let changed = false
-function mutate() {
-  if (changed) return
-  changed = true
-  ${mutation}
-  writeFileSync('mutation-ran', 'yes')
-}
-const log = console.log
-console.log = (...args) => {
-  const message = String(args[0])
-  if (${JSON.stringify(boundary)} === 'compiler'
-    ? message.startsWith('Project:') && message.includes('FCS time:')
-    : message.startsWith('[build] alpha:')) mutate()
-  log(...args)
-}
-`)
-  const result = run(directory, ['--import', hook, 'scripts/build.mjs', ...args])
-  assert.equal(existsSync(path.join(directory, 'mutation-ran')), true)
-  return result
+  writeFileSync(path.join(directory, 'mutation.json'), JSON.stringify({ mutation, boundary }))
+  try {
+    const result = run(directory, ['scripts/build.mjs', ...args])
+    assert.equal(existsSync(path.join(directory, 'mutation-ran')), true)
+    return result
+  } finally { rmSync(path.join(directory, 'mutation.json'), { force: true }) }
 }
 
 function rejected(directory, result) {

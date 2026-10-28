@@ -1,19 +1,22 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, copyFileSync, symlinkSync, utimesSync, realpathSync } from 'node:fs'
+import { mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, copyFileSync, symlinkSync, utimesSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createCompiler } from '../compiler.mjs'
 
+import { testDirectory, installBuild, stopBuild } from './build-fixture.mjs'
 const root = fileURLToPath(new URL('../..', import.meta.url))
 const library = path.join(root, 'node_modules/@fable-org/fable-library-js')
 const cli = path.join(root, 'node_modules/@fable-org/fable-compiler-js/index.js')
 
 function fixture(t) {
-  const directory = realpathSync(mkdtempSync(path.join(tmpdir(), 'wanxiangli-checker-')))
-  t.after(() => rmSync(directory, { recursive: true, force: true }))
+  const directory = testDirectory('checker-')
+  t.after(() => {
+    stopBuild(directory)
+    rmSync(directory, { recursive: true, force: true })
+  })
   writeFileSync(path.join(directory, 'package.json'), '{"type":"module"}')
   return directory
 }
@@ -193,12 +196,9 @@ test('WHAT[build-011] output failures reject the awaited compile and allow a cle
   await compare(compiler, file, 42)
 })
 
-test('WHAT[build-011] each build exits, unchanged modules skip FCS, and compiler changes invalidate stamps', { timeout: 60000 }, t => {
+test('WHAT[build-011] build clients exit, unchanged modules skip FCS, and compiler changes invalidate stamps', { timeout: 60000 }, t => {
   const directory = fixture(t)
-  mkdirSync(path.join(directory, 'scripts'))
-  for (const file of ['build.mjs', 'compiler.mjs']) {
-    copyFileSync(path.join(root, 'scripts', file), path.join(directory, 'scripts', file))
-  }
+  installBuild(directory)
   symlinkSync(path.join(root, 'node_modules'), path.join(directory, 'node_modules'), 'junction')
   for (const name of ['alpha', 'beta']) {
     const folder = path.join(directory, 'src', name)
