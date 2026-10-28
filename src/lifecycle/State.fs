@@ -337,6 +337,7 @@ type internal Ledger(workId: string) =
     member _.Obligations = match active with Some current -> current.Obligations | None -> Map.empty
     member _.HasBlockingPending = slots |> List.exists Effects.blocks
     member _.HasOpenQuestion = openQuestion.IsSome
+    member _.HasUnknownQuestion = unknownQuestion.IsSome
     member _.Position = position
     member _.DevOps = devops
     member _.WaitName = wait ()
@@ -511,8 +512,12 @@ type internal Ledger(workId: string) =
         require openQuestion.IsNone "Awaiting operator answer"
         let next = fill claimedUpdates
         replaceTenure next
+        // 询问投递未知时，一次实账 review 就是「我需要干什么」的答复本身：
+        // 先消费 Ask，再按普通评审推进。投递已 Parked 的询问仍只等操作员答复。
+        if unknownQuestion.IsSome then advanceFromAsk (box ())
         advancePosition Program.Step.AwaitReview (box false)
         settlePosition ()
+        unknownQuestion <- None
         Seal.Tool call, finishActive "Reviewed" None []
 
     member private _.Answer(messageId, incumbency, questionId) =

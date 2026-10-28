@@ -122,11 +122,15 @@ module private Commands =
                 else
                     let tenure = tenureOf workId ledger
                     if ledger.HasBlockingPending then Refuse "Effect pending"
-                    elif (match Program.step program with Program.Step.Ask _ -> true | _ -> false) then Refuse "Question delivery is unknown"
+                    elif ledger.HasUnknownQuestion && empty then Refuse "Question delivery is unknown"
                     elif Program.step program = Program.Step.AwaitEmptyReview && not empty then Refuse "Ready accepts only an empty review"
                     elif milestone = "收尾" && empty && not (List.isEmpty blockers) then Observe(blocked ledger blockers)
                     else
                         match Program.step program with
+                        // 未知询问上的实账 review 就是「我需要干什么」的答复：写 Reviewed，
+                        // 由 Ledger 消费 Ask 后按普通评审推进。空账 review 已在上面拒绝。
+                        | Program.Step.Ask _ ->
+                            Write(prependOpening workId office ledger [ Fact.Reviewed(tenure, run, call, claimed) ])
                         | Program.Step.AwaitReview ->
                             match effectOf program (box empty) with
                             | Program.Step.Ask text ->

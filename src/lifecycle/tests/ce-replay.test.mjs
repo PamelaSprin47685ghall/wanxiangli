@@ -82,8 +82,8 @@ test('SPEC[lifecycle-ce] 空账询问循环与实账评审：重建后任期推�
   assert.equal(direct.work.inspect().milestone, '理解与路径')
 })
 
-// 询问确认 Unknown：保留未知，不冒充已 Parked，不自动重发；Review 安全拒绝，答复到达才化解未知。
-test('SPEC[lifecycle-ce] 询问确认 Unknown：等待可观察、Review 拒绝不抛异常、答复接续重放一致', () => {
+// 询问确认 Unknown：保留未知，不冒充已 Parked，不自动重发；空账 review 拒绝，实账 review 即答复、消费未知询问。
+test('SPEC[lifecycle-ce] 询问确认 Unknown：等待可观察、空账 Review 拒绝、实账 Review 接续、答复接续重放一致', () => {
   const prefix = [
     rig => { const asked = rig.review([], { toolCallId: 'u-ask' }, 'req-u-ask'); assert.equal(asked.kind, 'Asked'); effects.uAsk = asked.effect },
     rig => rig.confirm(effects.uAsk, 'Unknown', {}, 'req-u-unknown'),
@@ -104,9 +104,9 @@ test('SPEC[lifecycle-ce] 询问确认 Unknown：等待可观察、Review 拒绝�
       assert.equal(emptyReview.status, 'Conflict')
       assert.equal(emptyReview.reason, 'Question delivery is unknown')
       const filledReview = rig.call({ type: 'Review', office: 'Plan', providerRunId: 'run-1', toolCallId: 'u-refuse-filled', updates: [{ key: 'need', value: 'x' }] }, 'req-u-refuse-filled')
-      assert.equal(filledReview.status, 'Conflict')
-      assert.equal(filledReview.reason, 'Question delivery is unknown')
-      assert.equal(rig.count, before)
+      assert.equal(filledReview.status, 'Applied')
+      assert.equal(filledReview.result.kind, 'Reviewed')
+      assert.equal(rig.count, before + 1)
     },
     rig => {
       const before = rig.count
@@ -119,13 +119,16 @@ test('SPEC[lifecycle-ce] 询问确认 Unknown：等待可观察、Review 拒绝�
       assert.equal(rig.count, before)
     },
     rig => {
-      const answered = rig.apply({ type: 'OperatorAnswer', messageId: 'answer-unknown' }, 'req-answer-unknown')
-      assert.equal(answered.kind, 'Answered')
+      const before = rig.count
+      const answered = rig.call({ type: 'OperatorAnswer', messageId: 'answer-unknown' }, 'req-answer-unknown')
+      assert.equal(answered.status, 'Conflict')
+      assert.equal(answered.reason, 'No parked question')
+      assert.equal(rig.count, before)
       assert.equal(rig.work.recover().wait, 'AwaitReview')
       const history = rig.work.history()
       assert.equal(history.at(-2).events[0].type, 'EffectConfirmed')
       assert.equal(history.at(-2).events[0].outcome, 'Unknown')
-      assert.equal(history.at(-1).events[0].type, 'OperatorAnswered')
+      assert.equal(history.at(-1).events[0].type, 'Reviewed')
     },
     rig => {
       const before = rig.count
@@ -134,7 +137,6 @@ test('SPEC[lifecycle-ce] 询问确认 Unknown：等待可观察、Review 拒绝�
       assert.equal(dup.reason, 'No parked question')
       assert.equal(rig.count, before)
     },
-    rig => { const kept = rig.review([{ key: 'need', value: 'x' }], { toolCallId: 'u-keep' }, 'req-u-keep'); assert.equal(kept.kind, 'Reviewed') },
     rig => { const relayed = rig.review([{ key: 'need', value: null }], { toolCallId: 'u-clear' }, 'req-u-clear'); assert.equal(relayed.kind, 'Relayed'); effects.uRelay = relayed.effect },
     rig => rig.confirm(effects.uRelay, 'Sent', {}, 'req-u-relay-sent'),
     rig => { const advanced = rig.review([], { toolCallId: 'u-step' }, 'req-u-step'); assert.equal(advanced.kind, 'Advanced'); effects.uAdvance = advanced.effect },
@@ -142,7 +144,7 @@ test('SPEC[lifecycle-ce] 询问确认 Unknown：等待可观察、Review 拒绝�
   ]
   const { direct } = proveReplay('Plan', 'work-ask-unknown', prefix, tail)
   assert.equal(direct.work.inspect().milestone, '理解与路径')
-  assert.equal(direct.work.records().length, 8)
+  assert.equal(direct.work.records().length, 7)
 })
 
 test('SPEC[lifecycle-ce] 接任首轮重入：重建后空账晋级与实账回评审产生同一记录', () => {
