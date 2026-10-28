@@ -1,33 +1,30 @@
-# routing
+# routing — 模型路由协议
 
-层：协议。纯校验与调用，不得 import 宿主 SDK，不读文件、不 import 用户模块、不持有容量。npm 入口 `wanxiangli/routing`。
+层：内核纯计算。独立 npm 入口 `wanxiangli/routing`。在总流程中，用户通过自己编辑的路由模块决定「哪个角色用哪个模型、并发上限多少」；本模块负责在运行前把这份模块的形状查清楚，之后每次调用都严格按协议执行并解析目标字符串。
 
-# AXIOM
+[程序待改] 宿主配置文件名 `wanxiangshu.mjs` 写死在本核错误文案里，且文案提到的推荐模板 `resources/wanxiangshu.mjs` 并不在本核发行物中。已登记在根《例外清单》。
 
-1. [使用者] 模型选择与并发限制只由用户的 `wanxiangshu.mjs` 决定；运行时不得把一份坏配置悄悄解释成某种策略。
+## 状态所有权
+- 独占拥有路由协议（Protocol 2）的形状校验、调用包装与目标字符串解码；交还的策略对象是冻结副本。
+- 不 import 模块、不读文件、不持有实际模型连接，不维护并发计数——模型选择与并发上限全部属于用户的路由模块。
+
+## AXIOM
+1. [使用者] 模型选择与并发限制只由用户自己编辑的路由模块决定；运行时不得把一份坏配置悄悄解释成某种策略。
     - 理由：用户靠编辑这一个文件控制花费与并发；被静默改写的含义只会在账单或卡死时才暴露。
 
-# LEMMA
+## LEMMA
+1. [AXIOM 1] 协议 2 模块必须显式声明 `routingProtocol === 2`（数字），`default` 与 `hasTheoreticalCapacity` 是函数；`markProviderFailed` 可省略，出现时必须是函数。
+2. [AXIOM 1] `route(role, running, previous)` 恰好三个参数同步调用，输入为冻结副本；返回确定 target 或 null/undefined（表示等待），返回 Promise、抛错或非法 target 一律抛错。
+3. [AXIOM 1] target 规范格式为 `provider/model:reasoning`，按末尾最后一个冒号解析推理档位（模型名可以含冒号）；`model` 与 `reasoning` 修剪后非空。
+4. [AXIOM 1] 所有错误都是 `Error`，消息以 `execution-model-routing:` 开头，调用方按配置错误处理，不猜一个策略继续跑。
 
-1. [本模块 AXIOM 1] 协议 2 的模块形状是 `routingProtocol === 2`（数字）、default 是 `route` 函数、`hasTheoreticalCapacity` 是函数；`markProviderFailed` 可省略，出现时必须是函数。任何不符都给出可操作的错误，不默认补齐。
-    - 推理：版本是格式版本而不是开关，三参数函数会默默忽略多余参数，只有显式标记能证明升级；缺理论容量查询若当作“永远有”，失去候选的 demand 会等一个不存在的容量生产者（execution-model-routing [013]）。
+## SPEC（调用方流程）
 
-2. [本模块 AXIOM 1] `route` 恰好收到 `(role, running, previous)`：role 修剪且非空，running 保留重复项，running 与 previous 是冻结副本；结果必须同步。Promise、抛错、非法 target 都是配置错误；null / undefined 是“等待”。
-    - 推理：running 是调用方账本的投影，调度器改动它就改了别人的事实；异步结果无法在准入点给出确定答案。
-
-3. [本模块 AXIOM 1] 理论容量查询恰好收到 `(role)`，只认布尔结果。
-    - 推理：Promise 与字符串 `"false"` 都是真值；按真值解释会让 async 查询永远“有容量”。
-
-4. [本模块 AXIOM 1] target 是修剪后的完整 `provider/model` 与非空 reasoning；持久道路的 `provider/model:reasoning` 以最后一个 ':' 分隔并走同一字段规则。
-    - 推理：模型名可以含 ':'（如 `ollama-cloud/gemma4:31b`），reasoning 不含；按第一个 ':' 切会把模型名截断、把剩余部分当 reasoning。
-
-# SPEC
-
-1. [LEMMA 1] 合法形状交还冻结策略；缺 default、版本缺失/非数字/非 2、缺或非函数的理论容量查询、非函数 markProviderFailed 都抛错。
-    - 证明：`tests/002.test.mjs`。
-2. [LEMMA 2] 三参数、重复项保留、副本冻结不可改、Promise/thenable/抛错/非法 target 抛错、undefined 等同 null。
-    - 证明：`tests/002.test.mjs`。
-3. [LEMMA 3] async、字符串、数字、undefined 结果抛错；单参数按角色回答。
-    - 证明：`tests/002.test.mjs`。
-4. [LEMMA 4] 道路 target 按最后一个 ':' 解码；空、缺 reasoning、缺 provider 抛错；providerOf 取第一个 '/' 之前。
-    - 证明：`tests/002.test.mjs`。
+1. **配置模块形状核查**：
+   - 宿主自己载入用户路由脚本后，把模块命名空间传入 `admit(moduleNamespace)`。形状不符（缺协议版本、缺必要函数、`markProviderFailed` 不是函数）立即抛错，调用方按配置错误停止启动；通过则拿到冻结的 `{ route, hasTheoreticalCapacity, markProviderFailed }`。
+2. **角色路由求解**：
+   - 传入当前角色、活跃执行列表与上一次目标调用 `route`。同步返回修剪后的目标，或 null 表示等待排队；返回 Promise、抛错或目标不合法都作为配置错误抛出。
+3. **理论容量核对**：
+   - 调用 `hasTheoreticalCapacity(query, role)`；结果必须是布尔，返回 false 时外层不再为该角色排队。
+4. **目标解码**：
+   - `decodeTarget` 解码刚产生的 target；`decodeDurableTarget` 解码持久化下来的 `provider/model:reasoning` 字符串；`providerOf` 取 target 的 provider（model 第一个 `/` 之前）。解码失败都明确抛错，不返回半截目标。

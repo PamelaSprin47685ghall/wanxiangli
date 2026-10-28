@@ -132,7 +132,15 @@
 
 # 例外清单
 
-无。草稿不是已实现能力。若再现「暂时保留的证明装置」，必须登记使用方、理由与解除条件——默认解除条件是删除。
+草稿不是已实现能力。以下是核里当下真实还在、但不该长期留在核侧的东西；只登记在这一处，各库 `AGENTS.md` 不再重复写纠偏经过。
+
+| 残留 | 使用方 | 为何还没走 | 解除条件 |
+| --- | --- | --- | --- |
+| `src/run-witness/`、`src/authority/` 的 `ClosureWitness` 编解码 | 宿主 `Execution/Routing/ModelRouting.fs`、`Interaction/Authority/Run.fs` | 名字带 witness 的观察与关闭条件记录仍被真实消费，一次性重试目标也确实需要有人持有 | 由人沿调用点判断哪些记录是真实运行所需；剩下迁出核或删掉，不凭名字删 |
+| `src/capacity/` 快照核对 | 宿主 `OpenCode/Host/ModelRoutingSurface.fs` | 容量几处记录对不上时，外层还按它返回的 `FailClosed` 收手 | 结构性保证（借用与许可各自守住自己的状态）够用后删本入口；每留一处运行时检查，先问删了用户会立刻做错事吗 |
+| 核内的宿主词汇：`todowrite-for-<role>` 工具名（`src/program/Catalog.fs`、`src/capability/OfficeMatrix.fs`）、`skill` / `assume` 实用工具名、`wanxiangshu.mjs` 配置名与 `WANXIANGSHU_*` 环境变量（`src/routing/RoutingProtocol.fs`、`src/resources/Language.fs`） | 宿主与模型当前就用这些名字对话 | 本轮不动程序，改名会同时打断核内外两侧 | 名字由万象通提供、核只当不透明字符串处理；改不动的就在拆仓那一刀一并删 |
+
+新增这类残留一律先过这张表；没有使用方与解除条件的，不进核。
 
 # 落地起点
 
@@ -169,7 +177,7 @@
 4. **进程执行是独立物理能力。** 不认识工作阶段或业务日志；超时、信号、退出分别报告，不自动重启，不冒称全树终止。执行与任务认领的合作在外侧。
 5. **资源归属独立于业务任期与物理容器。** Reserved / Unknown / 信号 / 超时不释放归属；业务退休不能代替资源收尾。Ownership 与 Work 互不塞进对方。
 6. **交付外部执行者的许可只来自 Committed。** `DeliveryRequested` 仅在 DurableWork 首次 `Committed` 之后，外层才可首次发起；Applied 不够。SessionCreated 持久绑定之前，Accepted 无效。Unknown 保持 pending，不重发。
-7. **名字带 witness / proof 的目录与装置默认劣化**（含 `run-witness`）：删掉会立刻让用户在总流程上做错事吗？不会就删或迁出核。
+7. **名字带 witness / proof 的目录与装置默认有罪，但按使用方判断，不按名字处决**：删掉它会立刻让操作员在总流程上做错事吗？不会就删或迁出核；还要留就进《例外清单》写清使用方与解除条件，不在各库文档里反复申说。
 
 ### Work / Journal / DurableWork
 

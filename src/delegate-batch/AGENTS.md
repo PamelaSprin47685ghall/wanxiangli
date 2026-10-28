@@ -1,53 +1,30 @@
-# delegate-batch
+# delegate-batch — 专属委派批次与暂存状态
 
-层：内核。纯计算与进程内状态自治，不得 import 宿主 SDK 或其它 wanxiangli 模块；不完成任何 Task；不订阅或拉取物理宿主事件，只接收宿主已提取的中立事实；拥有进程内语义批次自治状态，但不持有宿主异步运行时资源。npm 入口 `wanxiangli/delegate-batch`。
+层：内核纯计算与进程内状态自治。独立 npm 入口 `wanxiangli/delegate-batch`。在总流程中，本模块管理专属委派代理（owner scope * role）的单飞互斥批次、工具调用次序校验、JoinGuard 单飞防重以及延迟检查队列。
 
-# AXIOM
+## 状态所有权
+- **SyncDelegateBatchStore** 拥有纯数据键（ownerScope, role, delegateSession, callId）的双向索引与批次状态机（Pending → Ready → Active → Closed）。
+- **RetiredDelegateRegistry** 拥有各作用域下已退役代理会话的单项暂存状态。
+- **JoinGuardReservationStore** 拥有进程内 JoinGuard 单飞提醒的去重预留状态。
+- **DeferredInspectionStore** 拥有会话级延迟检查调用队列与替换结果缓存。
 
-1. [使用者] 一个专属 delegate（owner scope × role）同时至多一个已准入批次；新调用在已有批次时被拒，不排队、不另建重复工作。
-    - 理由：EXEC-026；busy 时另建重复工作。
-2. [使用者] 语义批次只由 ProviderRun 与 provider 的工具调用次序定义，不由调度时序定义；批次齐了才整批准入，按 provider 次序。
-    - 理由：EXEC-031；按到达时序拼批会把两次 provider 运行混成一批。
+## AXIOM
+1. [使用者] 一个专属 delegate 同时至多一个已准入批次；新调用在已有批次时被拒，不排队、不另建重复工作。
+2. [使用者] 语义批次只由 ProviderRun 与 provider 的工具调用次序定义，不由调度时序定义；批次齐了才整批准入。
 3. [使用者] 专属 delegate 呼叫与退役严格具备单飞互斥；已退役子代理在父作用域下至多暂存一项，后续退役显式替换并促成旧草稿清理。
-    - 理由：EXEC-026 / Package-14；避免孤儿会话与状态悬空。
 
-# LEMMA
+## LEMMA
+1. [AXIOM 1] 已有活跃批次时拒绝新批次入队；无批次身份但有未决调用时保持 Pending。
+2. [AXIOM 2] 批次调用列表为空、有重复项或顺序错乱时明确报错；全部工具调用收齐后批次转为 Ready。
+3. [AXIOM 3] 暂存代理退役时支持原子提取旧代理用于草稿清理。
+4. [AXIOM 1, 2] 状态清理返回结构化纯键结算清单，由宿主在外层解耦释放外部句柄。
 
-1. [AXIOM 1] admit：active → ActiveBatch；无批次身份且有 pending → BatchPending，否则 single。
-2. [AXIOM 2] 有批次身份：callOrder 为空、有重复或不含 currentCall → InvalidBatch；pending 存在但 providerRun 或 callOrder 不同 → OtherRunPending；currentCall 已收到 → DuplicateCall；否则收下，齐（收到数 = callOrder 长度）→ ready（order = callOrder），不齐 → wait；无 pending 时 open = true。
-3. [AXIOM 2] observedBatch：同 role 的宿主观察调用按宿主次序，含 currentCall 才成批，否则 null。
-4. [AXIOM 3] RetiredDelegateRegistry：
-   - stage(scope, sid)：记录当前暂存代理，若已有旧值返回 Some previous 供即时草稿清理；
-   - tryTake(scope)：原子取出并消费；
-   - clearAll()：清空全部暂存代理。
-5. [AXIOM 1, 2] SyncDelegateBatchStore：
-   - 纯 Key 结算协议：库内仅维系纯数据键（ownerScope, role, delegateSession, callId）与阶段，不持宿主 TCS/IDisposable；
-   - 双向调用索引：callsByOwnerScope 与 callsByDelegate 在单锁内原子一致变更；
-   - 批次状态机：Pending → Ready → Active → Closed 显式受控；
-   - cancelScope / clearAll 返回结构化纯 Key Settlement 列表，供宿主解耦释放资源。
+## SPEC（调用方流程）
 
-# SPEC
-
-1. [LEMMA 1, 2, 3] 证明：`tests/001.test.mjs`；与 vibe-fs 旧 `SyncDelegateStoreOps` 逐项对照见 vibe-fs `evidence/CUT-13/`。
-2. [Package-15] JoinGuardReservationStore 证明：`tests/002.test.mjs`。
-3. [LEMMA 4, 5] SyncDelegateBatchStore 与 RetiredDelegateRegistry 证明：`tests/003.test.mjs`。
-
-# Package-15 JoinGuardReservationStore
-
-1. [使用者] 进程内 JoinGuard 针对 (sessionId, terminalProviderRun) 的单飞提醒去重由 JoinGuardReservationStore 自治拥有。
-2. [规矩] formatKey 严格生成 "join-guard:" + sessionId + ":" + terminalProviderRun。
-3. [原子性] tryReserve 在全局锁内原子检查外部 hasOutstandingJoinClaim 谓词、全局 processKeys 以及传入的局部 scope：任一已占用或外部有未决 claim 则拒绝（返回 None/undefined）；通过时原子写入 processKeys 与 scope 并返回 Some(key)。
-4. [释放与清理] release 同步从 processKeys、传入 scope 与已追踪 scopes 移除 key；clearSession 按前缀同步清理指定会话；clearAll 清空全部状态。
-
-
-# DeferredInspectionStore
-
-1. [使用者] 会话级工程师延迟检查队列（pendingCalls）与已完成替换结果（replacedResults）由 DeferredInspectionStore 自治拥有。
-2. [规矩]
-   - stage(sessionId, callId, charge, keywords, estimate)：非空校验，防重复 callId；入队当前会话 FIFO 列表；
-   - takePending(sessionId)：原子取出并消费当前会话全部挂起项，清空会话挂起队列；无则返回空；
-   - recordReplacedResult(callId, replacement, ?sessionId)：记录 settled 替换文本，可按需关联会话；
-   - tryReplacedResult(callId)：供消息投影层快速检索替换结果；
-   - clearSession(sessionId)：干净清空指定会话的挂起队列与关联的替换结果，防止跨会话内存泄露；
-   - clearAll()：清空全部挂起队列与替换结果。
-3. [SPEC] 证明：`tests/004.test.mjs`。
+1. **批次准入与状态推进**：
+   - 宿主观察到工具调用时调用 `admit`。工具按顺序登记，当达到声明数量时整批准入执行；未收齐时挂起等待。
+2. **退役代理暂存与草稿回收**：
+   - 代理退役时调用 `stage` 登记；若已有旧暂存代理，安全替换并返回旧实例供调用方执行草稿清理。
+3. **JoinGuard 单飞预留与延迟检查**：
+   - 通过 `JoinGuardReservationStore.tryReserve` 竞争独占提醒权，防范重复提醒；
+   - 通过 `DeferredInspectionStore` 入队检查请求并提取替换结果，确保跨轮次检查不丢失。

@@ -1,32 +1,25 @@
-# ablation — 消融 DAG 定律与运行时门禁状态
+# ablation — 能力清单自洽校验与工具/事实可用性判定
 
-层：内核。入口 `wanxiangli/ablation`，导出工厂 `Ablation()` 及运行时状态单例 `ablationToolMapStore`、`ablationFactMapStore`、`ablationGateStore`。不依赖本仓其他模块，不直接读物理文件、不直接读环境变量。
+层：内核纯计算与状态单例。独立 npm 入口 `wanxiangli/ablation`。在总流程中，本模块根据能力依赖 DAG 校验功能清单的自洽性，并判定工具、事实与主代理在当前激活状态下能不能用，支持干净、确定性的能力开关。
 
-承接主仓 `Ablation` 的 DAG 定律、工具/事实映射缓存及门禁裁决状态（Wave-2 Package-19）。
-清单与配置集物理文件的加载由宿主/组合者执行并将条目传入，环境变量由调用方传入解析。
-本模块自治拥有进程内注册表槽位引用、映射内存缓存及所有门禁裁决规则。
+## 状态所有权
+- **Ablation** 纯函数校验器独占拥有依赖图与 DAG 无环判定算法。
+- **ablationToolMapStore / ablationFactMapStore / ablationGateState** 独占持有运行时工具/事实映射与可用性判定状态单例。
 
 ## AXIOM
-
 1. [使用者] 关掉一项能力时，不能悄悄留下依赖它的下游能力继续以完整语义运行。
-2. [开发者] 消融节点是产品清单，不是开关矩阵；本模块判断清单自洽性并根据激活状态裁决工具/事实/代理的放行。
+2. [开发者] 消融节点是产品清单，不是开关矩阵；本模块判断清单自洽性，并根据激活状态判定工具/事实/代理能不能用。
 
 ## LEMMA
+1. [AXIOM 2] 每个包恰有一个主节点，子节点必须声明父链；依赖边构成的拓扑图严禁成环。
+2. [AXIOM 1] 下游 active 时上游至少处于 borrowed 状态；依赖关系缺失或不自洽时报错。
+3. [AXIOM 1] Gate 判定：未映射的工具/事实默认可用；映射到被禁用节点的判定为不可用。
 
-1. [AXIOM 2] 每个包恰有一个同名 `package` 主节点；`slice` 子节点必须声明同包主节点为父。
-2. [AXIOM 1] `station-order` 与 `borrow` 两类边共同构成的图不得有环。
-3. [AXIOM 1] `station-order`：下游 `active` 时上游至少 `borrowed`；`borrow`：目标至少 `borrowed` 时前提至少 `borrowed`。未给出的节点按 `ablated`。
-4. [AXIOM 2] 违约只报第一处，原因文字与主仓原实现逐字一致，便于审计对照；输入先完整校验再判断，accessor 字段与稀疏数组被拒绝。
-5. [AXIOM 1] 工具/事实映射缓存由自治 Store 拥有，支持惰性 loader 与按需清理，保持调用方无内部可变状态。
-6. [AXIOM 1] Gate 决策根据节点模式精准裁决：工具/事实未映射时默认放行；映射到节点时按 `nodeDenied` 判定；工具 schema 仅在 `active` 或 `borrowed` 时放行；Primary Agent 严格按工作节点激活态绑定。
+## SPEC（调用方流程）
 
-## SPEC
-
-1. [LEMMA 1] 主节点缺失/重复、子节点父链错误分别报 `InvalidManifest`。
-    - 证明：`tests/001.test.mjs`。
-2. [LEMMA 2, 3] 两类边上的环报 `DagViolation`；三态 3×3 全组合逐一核对两类边。
-    - 证明：`tests/002.test.mjs`。
-3. [LEMMA 4] 非法输入在判断前被拒绝；调用方事后改动输入不影响已返回结果；违约对象冻结。
-    - 证明：`tests/003.test.mjs`；与主仓原实现的双算见主仓 CUT-37 证据。
-4. [LEMMA 5, 6] 注册表槽位隔离、惰性缓存、重置及门禁裁决反例。
-    - 证明：`tests/004.test.mjs`。
+1. **功能清单装载与自洽校验**：
+   - 宿主传入配置节点调用 `Ablation()`。系统校验主子节点结构与依赖环路，发现成环或断裂边立即报错。
+2. **运行时工具与事实可用性判定**：
+   - 工具执行前查询 Gate。所属节点未被关闭（active 或 borrowed）即可用；所属节点被关闭时返回拒绝，拦下这次调用。
+3. **映射缓存维护与重置**：
+   - 运行时通过 Store 自治管理映射，支持按需重置与安全清理。

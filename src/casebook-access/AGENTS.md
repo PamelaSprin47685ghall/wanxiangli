@@ -1,41 +1,25 @@
-# casebook-access
+# casebook-access — 实质文件访问路径提取
 
-层：内核。纯计算，不得 import 宿主 SDK 或其它 wanxiangli 模块；不读文件、不持有会话状态、不写事件。npm 入口 `wanxiangli/casebook-access`。
+层：内核纯计算与会话跟踪。独立 npm 入口 `wanxiangli/casebook-access`。在总流程中，本模块从工具执行记录中提取出真正发生过实质读写的文件路径，为案卷关联（relatedPaths）提供事实依据，杜绝因普通 grep 或路径搜索引入无关文件关联。
 
-# AXIOM
+## 状态所有权
+- 纯函数逻辑独占持有实质访问过滤规则。
+- 进程内会话跟踪器管理观测缓冲（buffer）与已提交工具变更记录（tracker）。
 
+## AXIOM
 1. [使用者] Case 的 relatedPaths 只来自实际执行层的实质访问：成功读取关联整个文件；成功创建、修改、删除关联该路径，移动关联新旧两端；失败或未提交的修改不计，但此前的真实读取仍计。
-    - 理由：knowledge-reuse-003。多计会让 fetch 为无关文件触发维护；少计会让真实依赖的变化漏检。
 2. [使用者] 模式检索、候选发现、目录列表、符号导航与文本里提到的路径不构成实质访问。
-    - 理由：knowledge-reuse-003。
 
-# LEMMA
+## LEMMA
+1. [AXIOM 1, 2] `accessPaths` 仅对实质读写工具记录提取路径；grep/find 等检索类工具恒为空。
+2. [AXIOM 1] `execRead` 仅提取单文件读取（cat/head/tail/sed 等），含子 shell 或动态命令者整条排除。
+3. [AXIOM 1] 会话观测缓冲在 `Drain` 时提取去重后的只读快照并排空缓冲，保留变更 tracker。
 
-1. [本模块 AXIOM 1, 2] `accessPaths` 按访问种类给路径；`mutation` 只在 committed 时计；检索类恒为空；空白路径不计。
-2. [本模块 AXIOM 1] `toolPaths`：已提交的 create/rewrite/delete 取参数 `path|filePath|file` 中第一个出现的键（其值不是文本即无路径），move 取 source 与 destination（缺一不计）；其它工具名为空。
-3. [knowledge-reuse-010] `relatedPaths` 去空白、去重、码元序升序；Fission 裂变前与各 lane 的访问取并集也用它。
-4. [本模块 AXIOM 1] `execRead`：cat/head/tail/sed 的单文件读取。含 `$(` 或反引号的命令整条不计（目标不可静态得知）；head/tail 的 `-n`、`-c` 带一个值，值不是文件。
-    - 推理：主仓旧实现只拒绝“反斜杠+反引号”，`cat \`ls\`` 被记成读取文件 `` `ls` ``；`tail -c 100 f` 被记成读取文件 `100`。两者都是凭空捏造的关联路径。
+## SPEC（调用方流程）
 
-# SPEC
-
-1. [LEMMA 1] 证明：`tests/003.test.mjs`。
-2. [LEMMA 2] 证明：`tests/003.test.mjs`。
-3. [LEMMA 3] 证明：`tests/003.test.mjs`。
-4. [LEMMA 4] 证明：`tests/003.test.mjs`；与主仓旧实现的逐项差异由 vibe-fs `evidence/CUT-27/shadow-access.mjs` 记录。
-
-
-# AXIOM (Package-06 状态抽取)
-
-3. [使用者] 会话观测缓冲与实质访问跟踪是纯内存状态容器，不触碰文件系统、宿主 SDK 或持久化存储。
-    - 理由：Package-06 状态抽取（CASE-003 / KR-003）。物理文件读取、摘要计算与落盘由宿主负责；状态维护与按身份归一化由本包独占。
-
-# LEMMA (Package-06)
-
-5. [本模块 AXIOM 3] `RecordFileRead` 仅在 path 与 output 皆非空时追加观测；contentHash 默认空字符串且不影响访问判定。
-6. [本模块 AXIOM 3] `Drain` 返回按 `"read:" + path + ":" + hash` 码元序升序且去重后的只读快照，并清空当前会话 buffer，但严格保留该会话的 tracker。
-7. [本模块 AXIOM 3] `Collect` 将已提交工具变更记入 tracker，绝不污染 buffer。
-
-# SPEC (Package-06)
-
-5. [LEMMA 5, 6, 7] 证明：`tests/004.test.mjs`（覆盖空输出不记录、Drain 清空 buffer 留 tracker、去重排序等反例）。
+1. **工具调用路径提取**：
+   - 工具执行后将工具名与参数传入 `accessPaths`。若是实质读写则返回标准化路径，若是检索操作返回空列表。
+2. **命令输出实质读取判定**：
+   - 执行终端读取命令后传入 `execRead`。cat / head / tail / sed 这类单文件读取命令返回它要读的那个路径；含命令替换（`$(...)` 或反引号）或不是读取命令时返回 null，读哪个文件无法静态得知的整条不计。
+3. **会话缓冲排空与归并**：
+   - 任务周期结束时调用 `Drain` 导出排序去重后的实质访问路径，供案卷落盘关联。

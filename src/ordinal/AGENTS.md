@@ -1,21 +1,23 @@
-# ordinal
+# ordinal — 序数观测与对数空间似然原语
 
-层：纯数值。Sphinx v2 序数观测的似然原语唯一 owner；不得 import 宿主 SDK，不拟合、不声明收敛、不做设计判定。npm 入口 `wanxiangli/ordinal`。
+层：纯数值计算。独立 npm 入口 `wanxiangli/ordinal`。在总流程中，本模块为序数比较、排序分析与偏好判断提供严格对数空间的似然评估、梯度推导与平局退化原语。
 
-# AXIOM
+## 状态所有权
+- 纯数学计算库，无内部状态，不导入外部 SDK，不执行文件与网络 I/O。
 
-1. [使用者] 似然在对数空间稳定求值；±1000 的线性预测子不得产生 log(0) 或 NaN（sphinx-v2-025）。
-2. [使用者] 平局有自己的机制（kappa），不是半个胜场；kappa → -∞ 时严格退化为二项 logistic（sphinx-v2-025）。
-3. [使用者] 排名不是一袋独立对：Plackett–Luce 只接受完整严格序，复合对只作复合似然（sphinx-v2-014）；Borda 只是描述基线。
+## AXIOM
+1. [使用者] 似然在对数空间稳定求值；大范围线性预测子不得产生 log(0) 或 NaN。
+2. [使用者] 平局有自己的机制（kappa），不是半个胜场；kappa 趋向负无穷时严格退化为二项 logistic。
+3. [使用者] 排名不是一袋独立对：Plackett–Luce 只接受完整严格序。
 
-# LEMMA
+## LEMMA
+1. [AXIOM 1] `logSigmoid` 与 `logSumExp` 实现严格数值稳定性，在极端值下保持有限实数。
+2. [AXIOM 2] 包含平局的三路概率归一（和为 1）；平局参数趋于负无穷时退化为经典二项概率。
+3. [AXIOM 3] 不完整参数或部分序安全返回 null；复合对生成保持排名因果性。
 
-1. [AXIOM 1] `logSigmoid`、`logSumExp` 与闭式一致且对大 |x| 有限。
-2. [AXIOM 1] `directionalLogLikelihood` = logSigmoid(η)，`directionalGradient` 与数值导数一致。
-3. [AXIOM 2] 三路概率和为 1；kappa = -1000 时胜率等于 logSigmoid(η)。
-4. [AXIOM 3] 不完整 theta 或部分序返回 null；MaxDiff 按全部有序对归一。
-5. [AXIOM 3] `compositePairs` 按名次给出 (前, 后)；`bordaCounts` 为每次出现的平均分。
+## SPEC（调用方流程）
 
-# SPEC
-
-1. [LEMMA 1–5] 证明：`tests/001.test.mjs`。
+1. **数值稳定似然评估**：
+   - 调用方传入预测子与参数，函数在对数空间内计算对数似然与方向梯度，杜绝浮点数下溢或溢出。
+2. **名次复合对生成与计分**：
+   - 传入严格全序数组，提取名次复合对（前，后）或计算 Borda 基础得分供决策分析使用。

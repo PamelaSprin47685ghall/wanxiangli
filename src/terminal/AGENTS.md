@@ -1,29 +1,24 @@
-# wanxiangli/terminal
+# terminal — 终端事实与消息可见性
 
-Autonomous Smalltalk/Actor-style objects for terminal facts, sticky replay, run deduplication, reference-counted sharing, and projection message visibility waiting.
+在总流程中，本模块为执行会话提供终端事实的分发、历史重放、运行去重、跨进程引用共享以及消息可见性等待，保障调用方与模型看到稳定、不丢、不重入的终端输出。
 
-## Responsibilities
+## 状态所有权
+- **TerminalRegistry**：独占拥有监听器集合、会话粘性缓存（FIFO 容量上限 256）以及最新完成运行去重字典。
+- **TerminalBus**：拥有按字符串键索引的 `TerminalRegistry` 引用计数注册表，支持先到先得的获取与基于引用一致性的释放。
+- **MessageVisibilityHub**：独占拥有会话级单次等待者字典与截止期限协调状态，负责消息变更通知与安全注销。
 
-1. **TerminalRegistry**:
-   - Owns listeners, session sticky cache (FIFO capped at 256), and last completed run deduplication dictionary.
-   - Dispatches safely to listeners; faults are reported through the explicit `reportFault` port.
-   - Deduplication rules:
-     - `Completed(Some runId, _)` is deduplicated per session.
-     - `Completed(None, _)` is never deduplicated.
-     - `Failed` and `Aborted` are never deduplicated.
-   - Distinguishes session-scoped vs process-scoped listeners, and sticky-replay vs future-only subscriptions.
-   - `HasSubscriber` checks only session-level live subscriptions.
-   - Taking snapshot under lock, invoking listener outside lock. Disposed listeners are marked `Live = false` so in-flight snapshots do not deliver.
+## 规则
+1. **去重规则**：带明确 runId 的 `Completed(Some runId, _)` 按会话进行去重；无 runId 的 `Completed(None, _)` 以及 `Failed`、`Aborted` 绝不去重。
+2. **监听与重放**：区分会话级与进程级监听器、粘性重放与仅未来事件订阅。在锁内生成快照，在锁外触发回调；已注销的监听器标记失效，阻止在途快照的迟到投递。
+3. **可见性等待**：等待者在指定预算时间内等待变更通知；通知到达时原子移除所有等待者并结算；超时到达时等待者自行注销并不留悬挂键。
 
-2. **TerminalBus**:
-   - Reference-counted registry of `TerminalRegistry` instances by string key.
-   - First-wins acquisition.
-   - Release requires reference equality (`obj.ReferenceEquals`).
+## SPEC（调用方可见流程）
 
-3. **MessageVisibilityHub**:
-   - Owns per-session one-shot waiters (`Dictionary<string, ResizeArray<VisibilityWaiter>>`) and deadline backstop coordination.
-   - Neutral timer/delay contract: accepts custom delay factory, `ITimerPort`-like objects with `.Delay(ms)`, or falls back to native `setTimeout`/`clearTimeout`.
-   - `Notify(sessionId)` atomically takes and removes all waiters for the session, cancels their deadline backstops, and resolves completion tasks.
-   - `AwaitChange(sessionId, budgetMs)` registers a waiter and attaches deadline settlement. Settled waiter removes itself from the dictionary and drops the session key when empty.
-   - `PendingCount(sessionId)` provides leak detection probe; zero waiters leaves no dangling keys.
-   - `Clear(sessionId)` and `ClearAll()` support session and global drain/cleanup.
+1. **终端事件注册与投递**：
+   - 调用方通过 `TerminalRegistry` 订阅终端事件。若为粘性订阅，已有缓存历史立即重放；新事件到达时在锁外向监听器安全分发。
+   - 监听器抛出异常时交给构造 `TerminalRegistry` 时传入的 `reportFault` 回调上报，不影响其他监听器执行。
+2. **运行完成去重**：
+   - 当调用方提交相同 runId 的已完成事件时，直接忽略重复项；当提交失败或中止事件时，如实放行并不作去重。
+3. **消息可见性等待与唤醒**：
+   - 调用方调用 `AwaitChange(sessionId, budgetMs)` 注册等待。
+   - 若会话在预算内收到 `Notify(sessionId)`，等待者被立即唤醒并完成返回；若在预算内未收到通知，到期安全返回并清理等待键。

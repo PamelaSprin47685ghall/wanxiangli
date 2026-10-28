@@ -1,24 +1,26 @@
-# quarantine
+# quarantine — 投影规则局部隔离
 
-层：内核。纯计算，不得 import 宿主 SDK 或其它 wanxiangli 模块；不持有 Current、不读写事件、不做重放。npm 入口 `wanxiangli/quarantine`。
+层：内核纯计算。独立 npm 入口 `wanxiangli/quarantine`。在总流程中，当某个投影规则在特定事件上发生业务异常时，本模块对该规则在其故障作用域（FaultScope）内的后续推进进行局部隔离，保障其他规则与全局历史回放不受阻断。
 
-# AXIOM
+## 状态所有权
+- 纯数据：独占持有 `(rule, scope)` → 失败记录的字典；每次登记或解除都返回新快照，旧快照不变。
+- 不持有持久存储，不主动发起事件重放。
 
+## AXIOM
 1. [使用者] 业务规则在某个事件上失败时，不中止重放：只隔离该规则在失败事件 FaultScope 内的尾部，Current 停在最后一次成功；其它规则、其它 scope 照常推进。
-    - 理由：durable-events-013/019/021（语义失败只截该规则的尾，不毒化整条历史）。
+    - 理由：语义失败只截该规则的尾，不毒化整条历史。
 2. [使用者] 隔离只能由按时间线出现的持久 `ProjectionCutTail` 事实解除；截尾载荷携带规则名、失败事件、原因和规则自己的 reset 补丁。
-    - 理由：冷重放必须得到与在线相同的 Current，解除不能只存在于进程内存。
+    - 理由：冷重放必须得到与在线相同的状态，解除不能只存在于进程内存。
 
-# LEMMA
+## LEMMA
+1. [AXIOM 1] 隔离记录以 `(rule, scope)` 为键，操作返回新快照，旧快照保持不变。处于隔离中的规则对后续事件一律跳过。
+2. [AXIOM 2] 截尾载荷严格由 `rule, failed_event_id, reason, reset_json` 四字段构成；畸形格式视为普通事件不予解除隔离。
+3. [AXIOM 2] 仅当规则仍然存在且失败事件已被整合时，方可解除隔离，并由调用方应用 reset 补丁。
 
-1. [AXIOM 1] 隔离账以 (rule, scope) 为键，持久不可变：`quarantine`/`release` 返回新账、旧账不变（调用方的乐观提交依赖旧快照不被改写）。同键再次登记覆盖。
-2. [AXIOM 1] 隔离中的 (rule, scope) 对后续事件一律跳过（`isQuarantined`）。
-3. [AXIOM 2] 截尾载荷线上键序固定为 `rule, failed_event_id, reason, reset_json`，四者都是字符串。`decodeCut` 只在事件类型恰为 `ProjectionCutTail`、载荷为对象且四字段皆字符串时成立；畸形截尾为 null（调用方按普通事件处理，不清隔离）。
-4. [AXIOM 2] 截尾只在规则仍在程序中、且它点名的失败事件已被整合时生效（`cutVerdict`）；解除的键是 (cut.rule, 失败事件自己的 scope)。reset 补丁由规则应用，应用失败则隔离保留——这一步归调用方，本模块不判断补丁内容。
-    - 注：解除不比对账上记录的 failedEventId 与截尾点名的是否相同（与 vibe-fs 旧实现逐位一致）。
+## SPEC（调用方流程）
 
-# SPEC
-
-1. [LEMMA 1, 2] 证明：`tests/019.test.mjs`。
-2. [LEMMA 3] 证明：`tests/019.test.mjs`；与 vibe-fs 旧 Thoth 编解码逐项对照见 vibe-fs `evidence/CUT-19/shadow-quarantine.mjs`。
-3. [LEMMA 4] 证明：`tests/019.test.mjs`。
+1. **隔离登记**：
+   - 规则执行失败时，调用方调用 `quarantine` 登记该 `(rule, scope)` 与失败事件、原因；后续事件处理自动跳过该规则。
+2. **截尾事件处理与解除**：
+   - 重放遇到事件时调用 `decodeCut`：只有事件类型恰为 `ProjectionCutTail` 且四个字段都是字符串才算截尾；格式畸形的返回 null，按普通事件处理、不解除隔离。
+   - `cutVerdict(ruleKnown, failedEventScope)` 在规则仍在程序中且失败事件已整合（给出其 scope）时返回 true。此时由调用方应用 reset 补丁，成功后调用 `release` 解除该键；reset 失败则隔离保留。

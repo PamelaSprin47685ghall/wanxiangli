@@ -1,66 +1,28 @@
-# resources
+# resources — 双语语义资源管理与槽位隔离
 
-层：内核。不得 import 任何宿主 SDK。npm 入口 `wanxiangli/resources`，公开对象 `Resources`、`ProviderLanguageStore`、`InstalledResourceSlot` 及单例 `providerLanguageStore`、`runtimeResourcesSlot`、`providerResourcesSlot`、`proseResourcesSlot`。
+独立 npm 入口 `wanxiangli/resources`。在总流程中，本模块负责管理系统面向模型的文本资源，确保所选语言（`en` 或 `zh-CN`）严格成对发行、读取时按所选语言无降级呈现，并通过 InstalledResourceSlot 隔离进程内资源实例。
 
-# AXIOM
+## 状态所有权
+- **Resources** 负责资源包根定位、路径安全上溯与模板占位符解析。
+- **ProviderLanguageStore** 独占持有会话语言偏好阶梯（显式环境 → 宿主配置 → 环境探测 → English）。
+- **InstalledResourceSlot** 独占持有已安装资源的单一引用，杜绝散落的可变全局变量。
 
+## AXIOM
 1. [使用者] 面向模型的文本要成对发行；读取时只认所选语言，缺所选语言就报错，绝不拿另一种语言顶替。
-    - 理由：用户选了哪种语言，就该看到哪种语言。悄悄换成另一种，用户读到的是别人的话。
+    - 理由：用户选了哪种语言就看到哪种语言，静默替换会让模型收到混合语言导致输出漂移。
+2. [发行] 每个语义资源在发行物里都要备齐全部声明语种，且各语种模板携带同一占位符集合。
 
-2. [发行] 每个语义资源在发行物里都要备齐全部声明语种，且各语种模板携带同一占位符集合；缺一侧或集合不一致是发行缺陷。
-    - 理由：成对性是发行物的属性，不是每次读取都该付出的门槛；把它放在发行检查里，问题在出包时就被拦住，而不是在用户读到一半时。
+## LEMMA
+1. [AXIOM 1] 读取只读取所选语种的文件，缺失时报 `package resource missing`，禁止静默回退到另一语种。
+2. [AXIOM 1] 面向模型的散文随当前语言装载；工具名、协议字段与命令保持原样不翻译。
+3. [AXIOM 1] 路径解析基于包自身绝对位置上溯定位，不依赖当前工作目录。
+4. [AXIOM 2] `InstalledResourceSlot` 在未安装时严格 fail-closed，以明确错误提示拒绝；多槽相互隔离。
 
-# LEMMA
+## SPEC（调用方流程）
 
-1. [本模块 AXIOM 1] 读取只校验并读取所选语种的文件；所选语种缺失时以指名该文件的 `package resource missing` 报错，不回退到另一语种。
-    - 推理：静默回退会让缺失一直没人发现；另一种语言在不在，不影响这次读取的诚实性。
-
-2. [本模块 AXIOM 1; 总规则 LEMMA 4] 面向模型的散文按当前语言装载；工具名、参数名、协议字段、路径、命令保持原样不翻译。
-    - 推理：散文是说给人听的，可以换语言；协议标识符是机器之间的暗号，换语言就指向了别的契约。
-
-3. [本模块 AXIOM 1] 路径以包自身的绝对位置上溯解析，不依赖当前工作目录，不探测候选路径。
-    - 推理：依赖工作目录，同一份包在不同地方跑就会读不到资源。
-
-4. [本模块 LEMMA 1] 语言是封闭代数 `English | SimplifiedChinese`；跨界以外部名 `English` / `SimplifiedChinese` 或规范标签 `en` / `zh-CN` 表达。偏好阶梯为显式环境 → 宿主配置 → 环境探测 → English；显式非法即拒绝，不静默降级。
-    - 推理：任意字符串作为语言事实会把拼写漂移变成行为漂移；未指定偏好与非法输入是两种不同的未知。
-
-5. [本模块 AXIOM 2] 全部声明语种齐备且占位符集合一致，由发行完整性检查承担（`tests/006.test.mjs`），不属于运行时读取路径。
-    - 推理：运行时读一次就检查全量发行物，等于把发行缺陷的成本摊到每一次读取上。
-
-# SPEC
-
-1. [本模块 LEMMA 5] 同一模板的各语言版本占位符集合相同；缺填值或残留占位符报错。
-    - 证明：`tests/002.test.mjs`（缺填值报错），`tests/006.test.mjs`（集合不一致由发行检查捕获）。
-
-2. [本模块 LEMMA 3] 资源根由模块自身位置确定；不回落读源码目录或产物目录内的副本。
-    - 证明：`tests/004.test.mjs`（任意 cwd 与缺失即抛）。
-
-3. [本模块 LEMMA 1] 读取只校验所选语种：另一语种缺失时所选语种照常读出；所选语种缺失时报错指名该文件，不回退。
-    - 证明：`tests/001.test.mjs`（两个方向的单语残缺反例）。
-
-4. [本模块 LEMMA 2, 4] 解析、阶梯与全局偏好切换不绑定会话；协议字面量替换后逐字符保留。
-    - 证明：`tests/005.test.mjs`。
-
-5. [总规则 SPEC 1] 单模块独立编译：`npm run build -- resources` 不编译其他子模块。
-    - 证明：构建脚本按 fsproj 逐模块编译；[TODO] 待 DevOps 运行确认。
-
-6. [本模块 LEMMA 3] 包根上溯在文件系统不再给出不同父目录时终止，报 `package root not found`，不递归至栈溢出。
-    - 证明：`tests/007.test.mjs`（无 package.json 的临时目录）。
-
-# 边界
-
-- 主仓 `resources/**` 的 334 个 provider 语义目录与 120 个 enforcer 规则目录仍归主仓各语义 owner；本库只拥有定位、成对、占位符与语言解析原语。
-- 包内样例资源 `resources/provider/library/resource-pair` 只用于自证包内定位与成对规则；`files` 白名单是否纳入 `resources/` 由 CUT-33 串行裁决。
-- 语义路径校验拒绝绝对路径、盘符与 `..` 段；“禁止带后缀名”未机械强制（现无带后缀消费者），留待真实反例出现再收紧。
-
-# 发行完整性归属
-
-- 本模块只提供“全部声明语种齐备 + 占位符集合一致”的检查实现（`tests/006.test.mjs` 与 `tests/support/distribution.mjs`），它是模块自证，不是发行门禁的接线点。
-- 权威门禁应落在 wanxiangli 包的打包/发行检查，以及宿主侧的资源分发步骤（宿主 `resources/**` 的 provider 语义目录按各语义 owner 归属）。
-- 本模块不新增平台、不新增脚本、不新增层；门禁接线由发行流程所在层决定。
-
-# 资源槽自治状态所有权 (InstalledResourceSlot)
-
-1. [状态自治] `InstalledResourceSlot` 独占持有已安装资源对象引用（`current: obj option`），彻底迁出宿主各模块中的进程内可变变量（`mutable installed` / `mutable instance`）。
-2. [严格判空] 未安装状态下调用 `require()` 触发严格 fail-closed，以模块初始化时绑定的精确 `missingErrorMessage` 抛出 `InvalidOperationException`，保证与原宿主异常语义 100% 逐字一致。
-3. [多槽隔离] 槽位实例私有维护自身状态，预置命名单例槽（`runtimeResourcesSlot`、`providerResourcesSlot`、`proseResourcesSlot`）与外部通过构造函数新建的测试实例完全隔离互不干扰。
+1. **安全资源读取**：
+   - 传入资源相对路径与目标语言读取模板。若该语言资源缺失，明确报错；成功读出后执行占位符替换。
+2. **语言阶梯判定**：
+   - 通过 `providerLanguageStore` 获取当前有效语言偏好，非法输入直接拒绝，不静默降级为默认语言。
+3. **资源槽管理 (InstalledResourceSlot)**：
+   - 系统初始化时安装全局资源到单例槽（`runtimeResourcesSlot`、`providerResourcesSlot`、`proseResourcesSlot`）；未安装调用 `require()` 立即抛出明确异常。

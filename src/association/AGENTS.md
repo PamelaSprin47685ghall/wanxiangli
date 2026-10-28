@@ -1,38 +1,26 @@
-# association
+# association — 卫星会话关联与轮次绑定
 
-层：内核。纯计算，不得 import 宿主 SDK 或其它 wanxiangli 模块；不持有关联表、不写事实。npm 入口 `wanxiangli/association`。
+层：内核纯计算与进程内状态自治。独立 npm 入口 `wanxiangli/association`。在总流程中，本模块管理主工作会话与其卫星会话（Companion）的关联法则，以及轮次消息绑定状态。
 
-# AXIOM
+## 状态所有权
+- 纯计算逻辑独占拥有卫星单向关联法则。
+- **TurnBindingStore** 独占管理进程内逻辑会话的 userMessageBindings、activeBindings 与 continuationMessageIds 字典。
 
+## AXIOM
 1. [使用者] 每个 Work 会话至多有一个同类卫星（Companion）；卫星只属于一个 Work 会话，自己不能再有卫星。
-    - 理由：COMPANION-002；第二个 Companion 或递归 Companion 会让同一份上下文被并行改写。
+    - 理由：防止递归卫星引发上下文并行篡改死锁。
 2. [使用者] 关联先于卫星的首个 prompt 写下，且两侧作为同一事实一起写；重启恢复会重放同一关联。
-    - 理由：HOST-008、managed-session-lifecycle；未关联先提示，下一次 transform 会给卫星再造一个卫星。
 
-# LEMMA
+## LEMMA
+1. [AXIOM 1] 关联判定顺序：自链拒绝 → 主会话本身是卫星（递归）拒绝 → 主会话已有同类卫星拒绝 → 卫星已归属其他工作拒绝 → 全部通过时返回 link。
+2. [AXIOM 2] 同一对关联重复提交视为幂等重放；主会话父级以初次记录为准。
+3. [AXIOM 1, 2] `TurnBindingStore` 严格管理物理用户消息游标，在活跃运行合流时原子合并：root 以持久记录为准，物理游标、角色与目录保留显式值。
 
-1. [AXIOM 1] 判定次序固定：自链 → main 本身是卫星（递归）→ main 已有另一个同类卫星 → 卫星已属另一 Work → 卫星条目是 Work 或另一种卫星 → 接受。
-2. [AXIOM 2] 同一对的重链幂等接受（恢复不变成启动失败）；接受时 main 的父取调用方提议值，否则沿用 main 已记录的父。
-3. [AXIOM 1, 2] 键查找（两侧条目、main 已有的同类卫星）由调用方回答；本模块只裁决，不扫描、不改写。
+## SPEC（调用方流程）
 
-# SPEC
-
-1. [LEMMA 1, 2, 3] 证明：`tests/001.test.mjs`；与 vibe-fs 旧 `SessionAssociationProjection.linkSatellite` 逐项对照见 vibe-fs `evidence/CUT-12/`。
-
-3. [使用者] TurnBindingStore 进程内自治管理逻辑会话的 userMessageBindings、activeBindings 与 continuationMessageIds 状态。
-    - 理由：Package-14 (TurnBinding.Store 状态所有权抽取)；状态与合流规则迁入库，消除宿主可变字典。
-
-# LEMMA
-
-4. [AXIOM 3] TurnBindingStore 绑定与合流契约：
-    - BindUserMessage 派生 root (PROMPT-002 promotion)，更新 physical 游标并保留已有 role。
-    - BindContinuationUserMessage 累积 continuation 集合并更新 physical 游标。
-    - BindPhysicalUserMaterial 仅更新 physical 游标，不造 root 也不造 continuation。
-    - BindActiveRun 合并 continuation 集合。
-    - activeRunBinding 合流时 durable authority 拥有 root，explicit 保留 physical/role/directory，continuationIds 取并集，Fission lane 继承 owner root。
-    - tryPhysicalUserMessage 优先查 activeBindings，回退 userMessageBindings。
-    - clearSession 彻底清空三字典并保持会话间状态隔离。
-
-# SPEC
-
-2. [LEMMA 4] 证明：`tests/002.test.mjs`（TurnBindingStore 7 大边界与反例规范）。
+1. **卫星关联建立**：
+   - 调用方传入主会话与拟附着的卫星会话。系统按上述顺序检查递归与独占性，全部通过时返回 link（附主会话父级）；重复关联幂等通过。
+2. **轮次消息与物理游标绑定**：
+   - 收到用户输入或续接消息时调用对应 `Bind*` 接口。系统更新物理游标与角色状态，并维护 continuation 集合。
+3. **会话隔离与清理**：
+   - 会话结束时调用 `clearSession`，彻底清空关联的三组字典，不残留跨会话内存别名。
