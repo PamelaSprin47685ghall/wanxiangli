@@ -48,6 +48,7 @@ const server = net.createServer(socket => {
       command = JSON.parse(buffer.slice(0, end))
       if (command.protocol !== 1 || command.root !== root || !['build', 'status', 'stop'].includes(command.op)
         || (command.op === 'build' && (!Array.isArray(command.selected)
+          || (command.jobs !== undefined && (!Number.isInteger(command.jobs) || command.jobs < 1 || command.jobs > 4))
           || command.selected.some(name => typeof name !== 'string') || typeof command.force !== 'boolean'))) {
         throw new Error('Invalid build request')
       }

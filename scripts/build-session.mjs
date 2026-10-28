@@ -1,22 +1,18 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { fork } from 'node:child_process'
 import { cached, discover, files, moduleInput, toolchainKey } from './build-inputs.mjs'
 import { alive, locations, owner } from './build-state.mjs'
 import { createUsage } from './build-usage.mjs'
+import { createBuildProcess } from './build-process.mjs'
 
 export function createSession(root, identity, projectLimit, output) {
   const places = locations(root)
   const stamps = path.join(root, '.build-stamps')
   const scratch = path.join(root, '.build')
   const usage = createUsage(path.join(places.state, 'usage.json'))
-  let worker
-  let workerKey
-  let retiring
-  let pending
-  let sequence = 0
-  let generation = 0
-  let completed = 0
+  const primary = createBuildProcess(root, identity, 0, output)
+  let extras = []
+  const close = () => Promise.all([primary, ...extras].map(worker => worker.close()))
   const dropStamp = name => fs.rmSync(path.join(stamps, name + '.json'), { force: true })
   const checkOwner = () => {
     if (owner(root)?.token !== identity.token) throw new Error('Build service lost workspace ownership')
@@ -27,92 +23,6 @@ export function createSession(root, identity, projectLimit, output) {
       const match = /-(\d+)$/.exec(name)
       if (match && !alive(Number(match[1]))) fs.rmSync(path.join(scratch, name), { recursive: true, force: true })
     }
-  }
-  async function retire() {
-    if (retiring) return retiring
-    const previous = worker
-    worker = undefined
-    workerKey = undefined
-    completed = 0
-    if (!previous) return
-    retiring = new Promise(resolve => {
-      if (previous.exitCode !== null || previous.signalCode !== null) {
-        resolve()
-        return
-      }
-      const timer = setTimeout(() => previous.kill('SIGKILL'), 2000)
-      previous.once('exit', () => {
-        clearTimeout(timer)
-        resolve()
-      })
-      previous.kill('SIGTERM')
-    })
-    try { await retiring }
-    finally {
-      retiring = undefined
-      if (owner(root)?.token === identity.token) fs.rmSync(path.join(places.active, 'worker.json'), { force: true })
-    }
-  }
-  async function launch(key) {
-    if (worker && workerKey !== key) await retire()
-    if (worker) return
-    generation++
-    workerKey = key
-    worker = fork(path.join(root, 'scripts/build-worker.mjs'), [root],
-      { cwd: root, execArgv: [], stdio: ['ignore', 'pipe', 'pipe', 'ipc'] })
-    const current = worker
-    fs.writeFileSync(path.join(places.active, 'worker.json'), JSON.stringify({ pid: current.pid, generation }))
-    for (const stream of ['stdout', 'stderr']) {
-      current[stream].setEncoding('utf8')
-      current[stream].on('data', text => output({ stream, text }))
-    }
-    current.on('message', message => {
-      if (message.type === 'log') {
-        output(message)
-        return
-      }
-      if (pending?.worker !== current || pending.id !== message.id) return
-      const waiting = pending
-      pending = undefined
-      clearTimeout(waiting.timer)
-      waiting.resolve(message)
-    })
-    const failed = error => {
-      if (pending?.worker !== current) return
-      const waiting = pending
-      pending = undefined
-      clearTimeout(waiting.timer)
-      waiting.reject(error)
-    }
-    current.on('error', failed)
-    current.on('exit', (code, signal) => {
-      if (worker === current) {
-        worker = undefined
-        workerKey = undefined
-        completed = 0
-        if (owner(root)?.token === identity.token) fs.rmSync(path.join(places.active, 'worker.json'), { force: true })
-      }
-      failed(new Error(`Compiler worker exited: ${code ?? signal}`))
-    })
-  }
-  function call(command) {
-    return new Promise((resolve, reject) => {
-      const id = ++sequence
-      const current = worker
-      const timer = setTimeout(() => {
-        pending = undefined
-        current.kill('SIGKILL')
-        reject(new Error('Compiler worker timed out'))
-      }, 120000)
-      pending = { id, worker: current, resolve, reject, timer }
-      current.send({ ...command, id }, error => {
-        if (error && pending?.id === id) {
-          pending = undefined
-          clearTimeout(timer)
-          reject(error)
-        }
-      })
-    })
   }
   function verifyModule(input, key) {
     try {
@@ -139,7 +49,7 @@ export function createSession(root, identity, projectLimit, output) {
     checkOwner()
     cleanAbandoned()
     const key = toolchainKey(root)
-    if (worker && key !== workerKey) await retire()
+    if (primary.pid && key !== primary.key) await close()
     const projects = discover(root)
     const allModules = !command.selected.length
     const names = allModules ? [...projects.keys()] : [...new Set(command.selected)]
@@ -151,6 +61,9 @@ export function createSession(root, identity, projectLimit, output) {
     const dirty = []
     const skipped = []
     let result = { rows: [], fcsMs: 0 }
+    let workers = []
+    const reports = []
+    let tasks = []
     let finishUsage
     let outcome = 'failure'
     try {
@@ -161,11 +74,26 @@ export function createSession(root, identity, projectLimit, output) {
         } else dirty.push({ ...input, temporary: path.join(scratch, `${input.name}-${identity.pid}`) })
       }
       if (dirty.length) {
-        await launch(key)
-        finishUsage = usage.begin({ workerPid: worker.pid, projects: dirty.length, toolchain: key })
-        result = await call({ op: 'build', inputs: dirty })
-        if (!result.ok) throw Object.assign(new Error(result.error), { diagnostics: result.diagnostics })
-        completed = result.completed
+        const count = Math.min(command.jobs ?? 1, dirty.length)
+        console.log(`[build] compiling ${dirty.length} modules with ${count} compiler process(es)`)
+        extras = Array.from({ length: count - 1 }, (_, index) => createBuildProcess(root, identity, index + 1, output))
+        workers = [primary, ...extras]
+        for (const worker of workers) await worker.start(key)
+        finishUsage = usage.begin({ workerPid: primary.pid, workerPids: workers.map(worker => worker.pid),
+          jobs: count, projects: dirty.length, toolchain: key })
+        tasks = workers.map(async (worker, index) => {
+          const reply = await worker.call({ op: 'build', inputs: dirty.filter((_, position) => position % count === index) })
+          reports[index] = reply
+          if (!reply.ok) throw Object.assign(new Error(reply.error), { diagnostics: reply.diagnostics })
+          return reply
+        })
+        await Promise.all(tasks)
+        result = {
+          rows: reports.flatMap(reply => reply.rows),
+          fcsMs: reports.reduce((sum, reply) => sum + reply.fcsMs, 0),
+          checkers: reports.reduce((sum, reply) => sum + reply.checkers, 0),
+        }
+        await Promise.all(extras.map(worker => worker.close()))
       }
       if (dirty.length) verify(inputs, projects, allModules, key)
       fs.mkdirSync(path.join(root, 'dist'), { recursive: true })
@@ -204,26 +132,38 @@ export function createSession(root, identity, projectLimit, output) {
           }
         }
       }
-      const compiledBy = dirty.length ? result.pid : null
-      const retired = completed >= projectLimit
-      if (retired) await retire()
+      const compiledBy = reports[0]?.pid ?? null
+      const retired = primary.completed >= projectLimit
+      if (retired) await primary.close()
       outcome = 'success'
       return { ok: true, built: dirty.map(input => input.name), cached: skipped, removed,
         ms: performance.now() - started, fcsMs: result.fcsMs, rows: result.rows,
-        compiledBy, workerPid: worker?.pid ?? null, generation, retired,
-        checkers: result.checkers ?? null, completed }
+        compiledBy, compiledByPids: reports.map(reply => reply.pid), jobs: workers.length,
+        workerPid: primary.pid, generation: primary.generation, retired,
+        checkers: result.checkers ?? null, completed: primary.completed }
     } catch (error) {
       for (const input of dirty) dropStamp(input.name)
-      await retire()
+      await close()
+      await Promise.allSettled(tasks)
       throw error
     } finally {
       for (const input of dirty) fs.rmSync(input.temporary, { recursive: true, force: true })
       cleanAbandoned()
-      finishUsage?.({ outcome, reuse: result.reuse ?? null, workerMemory: result.memory ?? null,
-        serviceMemory: process.memoryUsage(), retired: !worker })
+      const received = reports.filter(Boolean)
+      const reuse = received.length === workers.length && received.every(reply => reply.reuse)
+        ? Object.fromEntries(['created', 'reused', 'reusedAcrossBuilds'].map(name =>
+          [name, received.reduce((sum, reply) => sum + reply.reuse[name], 0)])) : null
+      const memory = received.length === workers.length && received.every(reply => reply.memory)
+        ? Object.fromEntries(Object.keys(received[0]?.memory ?? {}).map(name =>
+          [name, received.reduce((sum, reply) => sum + reply.memory[name], 0)])) : null
+      finishUsage?.({ outcome, reuse, workerMemory: memory,
+        workers: received.map(reply => ({ pid: reply.pid, reuse: reply.reuse, memory: reply.memory,
+          completed: reply.completed, retired: reply.pid !== primary.pid })),
+        serviceMemory: process.memoryUsage(), retired: !primary.pid })
+      extras = []
     }
   }
-  return { build, close: retire,
-    async status() { return { generation, completed, workerPid: worker?.pid ?? null,
-      compiler: worker ? await call({ op: 'stats' }) : null } } }
+  return { build, close,
+    async status() { return { generation: primary.generation, completed: primary.completed, workerPid: primary.pid,
+      compiler: primary.pid ? await primary.call({ op: 'stats' }) : null } } }
 }
