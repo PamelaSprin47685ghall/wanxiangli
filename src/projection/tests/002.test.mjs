@@ -54,5 +54,5 @@ test('SPEC[projection-002] answers are frozen and independent of later input edi
   assert.ok(Object.isFrozen(kept))
   messages[2].tenureId = 'other'
   messages.push(m('x', 'user', { tenureId: 'next' }))
-  assert.deepEqual(kept, [2])
+  assert.deepEqual(kept, [0, 1, 2])
 })

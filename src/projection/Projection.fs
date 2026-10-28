@@ -152,8 +152,10 @@ let private barrierOf (value: obj) =
 
     read "toolCallId", read "successorTenureId"
 
-/// 切点是触发调用与其结果中较晚的那一条。切点及其之前都不可见。
-/// 之后只保留标明同一后任、且不是合成行的消息。宿主 id、游标和角色都不能单独放行。
+/// 切点是触发调用与其结果中较晚的那一条。切点及其之前的其余内容都不可见。
+/// 之后只保留标明同一后任、且不是合成行的消息。宿主 id 和游标都不能单独放行。
+/// 用户消息（role=user 且不是合成行）不论在切点前后、属于哪个任期，都留给后任；
+/// 触发接力的那次 review 调用与它的结果也留给后任。
 let private tenureKept (messages: obj) (barrier: obj) : obj =
     let toolCallId, successor = barrierOf barrier
     let parsed = snapshot "messages" messages |> Array.mapi tenureMessageOf
@@ -168,7 +170,11 @@ let private tenureKept (messages: obj) (barrier: obj) : obj =
         parsed
         |> Array.indexed
         |> Array.choose (fun (index, message) ->
-            if index <= cut || message.Synthetic || message.TenureId <> Some successor then None
+            let user = message.Role.ToLowerInvariant() = "user"
+
+            if message.Synthetic then None
+            elif user || index = callAt || index = resultAt then Some(box index)
+            elif index <= cut || message.TenureId <> Some successor then None
             else Some(box index))
         |> box
         |> freeze
