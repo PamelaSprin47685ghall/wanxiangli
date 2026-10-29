@@ -48,6 +48,7 @@ export interface PairHintMessages {
   budgetSuffix(budget: number): string
   adjustBudgetForKpi(estimatedNextScopeBudget: number, kpiCompletion: 'not_started' | 'far_below' | 'partially_met' | 'met' | 'exceeded' | 'not_applicable'): number
   turnBudget(sessionId: string): number
+  setRetention(sessionId: string, remaining: number): void
   isInitialized(sessionId: string): boolean
   startTurn(sessionId: string): void
   resetSession(sessionId: string, budget: number): void
