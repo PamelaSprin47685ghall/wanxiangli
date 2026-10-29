@@ -42,7 +42,9 @@ export interface ScopeRetentionPort {
     toolCallId: string,
     beatId: string,
     scope: ScopeAnnotationInput
-  ): { ok: boolean; reason?: string; kind?: ScopeKind; remaining?: number | null; reanchor?: boolean; decremented?: boolean; beatId?: string; replacement?: string; removeStreak?: number; advisorDue?: boolean; exempt?: boolean }
+  ): { ok: boolean; reason?: string; kind?: ScopeKind; remaining?: number | null; reanchor?: boolean; decremented?: boolean; beatId?: string; replacement?: string; removeStreak?: number; advisorDue?: boolean; exempt?: boolean; provisional?: boolean; decided?: boolean; released?: string[] }
+  /** Run's calls are all in: a turn still holding only meToo is refused; returns the refused call ids. */
+  settle(sessionId: string, providerRunId: string): string[]
   status(sessionId: string): { known: boolean; epoch?: string; remaining?: number | null; removeStreak: number; advisorDue: boolean }
   projection(sessionId: string, beatId: string): { retracted: boolean; beatId?: string; aliases?: string[]; replacement?: string; streak?: number }
   retractions(sessionId: string): ReadonlyArray<{ beatId: string; aliases?: string[]; replacement: string; streak: number }>
