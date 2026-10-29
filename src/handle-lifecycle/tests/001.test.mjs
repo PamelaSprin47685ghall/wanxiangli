@@ -81,8 +81,9 @@ test('SPEC[handle-lifecycle-4] a voided child is abandoned with its void reason'
   assert.deepEqual(r({ durable: 'Abandoned', durableReason: 'Voided', snapshot: 'Missing' }), { resolution: 'abandoned', reason: 'Voided', source: 'durable' })
 })
 
-test('SPEC[handle-lifecycle-4] counterexample: an abort observation is never a completion, an unreadable snapshot only waits', () => {
-  assert.deepEqual(r({ observations: ['AbortedObserved'] }), { resolution: 'incomplete' })
+test('SPEC[handle-lifecycle-4] counterexample: an abort string is not an observation; an unreadable snapshot only waits', () => {
+  assert.throws(() => r({ observations: ['AbortedObserved'] }), /observations/)
+  assert.throws(() => r({ snapshot: 'Active', observations: ['AbortedObserved', 'SessionActive'] }), /observations/)
   assert.deepEqual(r({ observations: ['RecoveryInFlight'] }), { resolution: 'incomplete' })
   assert.deepEqual(r({ snapshot: 'Unreadable', observations: ['SessionActive', 'HostSessionGone'] }), { resolution: 'incomplete' })
   assert.deepEqual(r({ snapshot: 'Terminal', proofError: 'mismatch' }), { resolution: 'blocked', reason: 'mismatch' })
@@ -91,7 +92,7 @@ test('SPEC[handle-lifecycle-4] counterexample: an abort observation is never a c
 
 test('SPEC[handle-lifecycle-4] the first proven abandonment wins over a live session', () => {
   assert.deepEqual(r({ snapshot: 'Active', observations: ['SessionActive', 'HostSessionGone', 'ParentCancelled'] }), { resolution: 'abandoned', reason: 'HostSessionGone', source: 'observation' })
-  assert.deepEqual(r({ snapshot: 'Active', observations: ['AbortedObserved', 'SessionActive'] }), { resolution: 'active' })
+  assert.deepEqual(r({ snapshot: 'Active', observations: ['SessionActive'] }), { resolution: 'active' })
   assert.throws(() => r({ observations: ['Done'] }), /observations/)
   assert.throws(() => r({ durable: 'Abandoned', durableReason: 'Other' }), /durableReason/)
   assert.throws(() => r({ snapshot: 'Gone' }), /snapshot/)

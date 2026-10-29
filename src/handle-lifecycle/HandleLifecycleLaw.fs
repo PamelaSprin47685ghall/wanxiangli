@@ -198,7 +198,7 @@ type HandleLifecycleLaw() =
     /// reason; `snapshot` is the Host snapshot kind (Missing | Active | Terminal |
     /// Unreadable); for a Terminal snapshot `proofError` is the host's refusal of
     /// the terminal evidence (null when the proof holds); `observations` are the
-    /// Host observation kinds (AbortedObserved | ParentCancelled | DeadlineExceeded
+    /// Host observation kinds (ParentCancelled | DeadlineExceeded
     /// | HostSessionGone | RecoveryInFlight | SessionActive), in order.
     member _.recoverChild(input: obj) : obj =
         if not (isObject input) then malformed "input"
@@ -211,7 +211,7 @@ type HandleLifecycleLaw() =
             unbox<obj array> observations
             |> Array.map (fun value ->
                 match text "observations[]" value with
-                | "AbortedObserved"
+                
                 | "ParentCancelled"
                 | "DeadlineExceeded"
                 | "HostSessionGone"

@@ -27,9 +27,24 @@ type private BeatRetraction =
       Replacement: string
       Streak: int }
 
+type private Snapshot =
+    { Remaining: int option
+      RemoveStreak: int
+      LastBeatId: string option
+      LastBeatAliases: string list }
+
 type private TurnDecision =
     | Undecided
+    /// A meToo arrived before any real annotation of its turn. The turn is
+    /// booked as one keepLast at once (implementation shorthand; the law still
+    /// says a turn may not be all meToo). A real sibling arriving later takes
+    /// the turn over: keepLast is already paid, removeLast/resetScope undo the
+    /// booking first. Either way the turn spends at most one keep.
+    | Implicit of string * Snapshot
     | Decided of ScopeKind * string
+
+let private allMeToo =
+    "meToo requires exactly one real scope annotation (resetScope|keepLast|removeLast) in the same turn; a turn may not be all meToo"
 
 type private SessionState(epoch: string) =
     let mutable remaining: int option = None
@@ -50,6 +65,7 @@ type private SessionState(epoch: string) =
     member _.DurableRevision = durableRevision
     member _.SetDurableRevision(v: int) = durableRevision <- v
 
+    /// Start a new turn. Nothing carries over.
     member _.EnsureTurn(runId: string) =
         if turnRunId <> runId then
             turn <- Undecided
@@ -114,101 +130,157 @@ type private SessionState(epoch: string) =
         | Error reason -> refuse reason
         | Ok() ->
             match annotation.Kind, turn with
-            | MeToo, Undecided ->
-                refuse "meToo requires exactly one real scope annotation (resetScope|keepLast|removeLast) in the same turn"
+            // AXIOM 5: exempt tools (negotiate, askPreviousScope, deliver) are
+            // lifecycle-neutral. keepLast/meToo on them neither spend retention
+            // nor decide the turn, so they are accepted wherever they sit in a
+            // parallel batch and cannot carry a sibling for free.
+            | (KeepLast | MeToo), _ when exempt ->
+                accept
+                    [ "kind" ==> (if annotation.Kind = MeToo then "meToo" else "keepLast")
+                      "remaining" ==> (remaining |> Option.map box |> Option.defaultValue null)
+                      "decremented" ==> false
+                      "exempt" ==> true ]
             | MeToo, Decided _ ->
                 accept [ "kind" ==> "meToo"; "remaining" ==> (remaining |> Option.map box |> Option.defaultValue null) ]
-            | _, Decided (prior, priorCall) when priorCall <> callId ->
-                refuse ("turn already carries a real scope annotation on " + priorCall + " (" + string prior + "); others must be meToo")
-            | kind, _ ->
-                let mark () = turn <- Decided(kind, callId)
-
-                match kind with
-                | MeToo -> refuse "unreachable meToo"
-                | ResetScope ->
-                    mark()
-                    let priorRemaining = remaining
-                    remaining <- Some annotation.NewScopeRetentionBudget
+            | MeToo, Implicit _ ->
+                accept [ "kind" ==> "meToo"; "remaining" ==> (remaining |> Option.map box |> Option.defaultValue null) ]
+            // meToo ahead of any real annotation: book the turn as one keep now,
+            // so it runs at once whatever its place in the batch. If no real
+            // sibling ever comes, that booking is what the all-meToo turn cost.
+            | MeToo, Undecided ->
+                (match remaining with
+                 | None ->
+                    refuse (allMeToo + "; scope not initialized: this turn's real annotation must be resetScope")
+                 | Some 0 ->
+                    refuse (allMeToo + "; retention exhausted: this turn's real annotation must be resetScope")
+                 | Some n ->
+                    let snap =
+                        { Remaining = remaining
+                          RemoveStreak = removeStreak
+                          LastBeatId = lastBeatId
+                          LastBeatAliases = lastBeatAliases }
+                    turn <- Implicit(callId, snap)
+                    let next = n - 1
+                    remaining <- Some next
                     removeStreak <- 0
                     lastBeatId <- Some beatId
                     lastBeatAliases <- this.BeatAliases beatId runId callId
-                    retractions.Clear()
-                    let row =
-                        this.AppendLocal "ScopeReset"
-                            [ "callId" ==> callId
-                              "goal" ==> annotation.NewScopeGoal
-                              "budget" ==> annotation.NewScopeRetentionBudget
-                              "oldVerbatim" ==> annotation.OldScopeVerboseVerbatim
-                              "previousRemaining" ==> (priorRemaining |> Option.map box |> Option.defaultValue null) ]
+                    let row = this.AppendLocal "KeepLast" [ "callId" ==> callId; "remaining" ==> next; "beatId" ==> beatId; "aliases" ==> (lastBeatAliases |> List.toArray); "meToo" ==> true ]
                     persist row
-                    accept
-                        [ "kind" ==> "resetScope"
-                          "remaining" ==> annotation.NewScopeRetentionBudget
-                          "goal" ==> annotation.NewScopeGoal
-                          "reanchor" ==> true ]
-                | KeepLast ->
-                    match remaining with
-                    | None when not exempt ->
-                        refuse "scope not initialized: first tool annotation must be resetScope"
-                    | Some 0 when not exempt ->
-                        refuse "retention exhausted: next non-exempt tool must use resetScope"
-                    | Some n ->
-                        mark()
-                        let next = max 0 (n - 1)
-                        remaining <- Some next
-                        removeStreak <- 0
-                        lastBeatId <- Some beatId
-                        lastBeatAliases <- this.BeatAliases beatId runId callId
-                        let row = this.AppendLocal "KeepLast" [ "callId" ==> callId; "remaining" ==> next; "beatId" ==> beatId; "aliases" ==> (lastBeatAliases |> List.toArray) ]
-                        persist row
-                        accept [ "kind" ==> "keepLast"; "remaining" ==> next; "decremented" ==> true ]
-                    | None ->
-                        mark()
-                        accept [ "kind" ==> "keepLast"; "remaining" ==> null; "decremented" ==> false; "exempt" ==> true ]
-                | RemoveLast ->
-                    match remaining with
-                    | None when not exempt ->
-                        refuse "scope not initialized: first tool annotation must be resetScope"
-                    | _ ->
-                        mark()
-                        removeStreak <- removeStreak + 1
-                        let targetBeat = lastBeatId |> Option.defaultValue beatId
-                        let hostNote =
-                            "这是连续第 "
-                            + string removeStreak
-                            + " 次空转，不要空转。 / Idle spin #"
-                            + string removeStreak
-                            + "; do not spin idle."
-                        let body = annotation.Replacement.TrimEnd() + "\n\n" + hostNote
-                        let aliases = this.BeatAliases targetBeat runId callId
-                        let priorAliases =
-                            match retractions.TryGetValue targetBeat with
-                            | true, prior -> prior.Aliases
-                            | _ -> []
-                        let fromLast =
-                            if lastBeatId = Some targetBeat then lastBeatAliases else []
-                        let merged = (aliases @ priorAliases @ fromLast) |> List.distinct
-                        retractions[targetBeat] <-
-                            { BeatId = targetBeat
-                              Aliases = merged
-                              Replacement = body
-                              Streak = removeStreak }
-                        lastBeatId <- Some beatId
-                        let row =
-                            this.AppendLocal "BeatRetracted"
-                                [ "callId" ==> callId
-                                  "beatId" ==> targetBeat
-                                  "aliases" ==> (merged |> List.toArray)
-                                  "replacement" ==> body
-                                  "streak" ==> removeStreak ]
-                        persist row
-                        accept
-                            [ "kind" ==> "removeLast"
-                              "remaining" ==> (remaining |> Option.map box |> Option.defaultValue null)
-                              "beatId" ==> targetBeat
-                              "replacement" ==> body
-                              "removeStreak" ==> removeStreak
-                              "advisorDue" ==> (removeStreak >= 3) ]
+                    accept [ "kind" ==> "meToo"; "remaining" ==> next ])
+            // The turn's real keepLast after an early meToo: already paid.
+            | KeepLast, Implicit _ ->
+                turn <- Decided(KeepLast, callId)
+                accept [ "kind" ==> "keepLast"; "remaining" ==> (remaining |> Option.map box |> Option.defaultValue null); "decremented" ==> false ]
+            | _, Decided (prior, priorCall) when priorCall <> callId ->
+                refuse ("turn already carries a real scope annotation on " + priorCall + " (" + string prior + "); others must be meToo")
+            | kind, _ ->
+                // removeLast/resetScope after an early meToo: undo its keep
+                // booking, then the real annotation decides the turn alone.
+                match turn with
+                | Implicit (_, snap) ->
+                    remaining <- snap.Remaining
+                    removeStreak <- snap.RemoveStreak
+                    lastBeatId <- snap.LastBeatId
+                    lastBeatAliases <- snap.LastBeatAliases
+                    let row =
+                        this.AppendLocal "KeepLast"
+                            [ "callId" ==> callId
+                              "remaining" ==> (snap.Remaining |> Option.map box |> Option.defaultValue null)
+                              "beatId" ==> (snap.LastBeatId |> Option.map box |> Option.defaultValue null)
+                              "aliases" ==> (snap.LastBeatAliases |> List.toArray)
+                              "undo" ==> true ]
+                    persist row
+                    turn <- Undecided
+                | _ -> ()
+                let mark () = turn <- Decided(kind, callId)
+
+                let receipt =
+                  match kind with
+                  | MeToo -> refuse "unreachable meToo"
+                  | ResetScope ->
+                      mark()
+                      let priorRemaining = remaining
+                      remaining <- Some annotation.NewScopeRetentionBudget
+                      removeStreak <- 0
+                      lastBeatId <- Some beatId
+                      lastBeatAliases <- this.BeatAliases beatId runId callId
+                      retractions.Clear()
+                      let row =
+                          this.AppendLocal "ScopeReset"
+                              [ "callId" ==> callId
+                                "goal" ==> annotation.NewScopeGoal
+                                "budget" ==> annotation.NewScopeRetentionBudget
+                                "oldVerbatim" ==> annotation.OldScopeVerboseVerbatim
+                                "previousRemaining" ==> (priorRemaining |> Option.map box |> Option.defaultValue null) ]
+                      persist row
+                      accept
+                          [ "kind" ==> "resetScope"
+                            "remaining" ==> annotation.NewScopeRetentionBudget
+                            "goal" ==> annotation.NewScopeGoal
+                            "reanchor" ==> true ]
+                  | KeepLast ->
+                      match remaining with
+                      | None ->
+                          refuse "scope not initialized: first tool annotation must be resetScope"
+                      | Some 0 ->
+                          refuse "retention exhausted: next non-exempt tool must use resetScope"
+                      | Some n ->
+                          mark()
+                          let next = max 0 (n - 1)
+                          remaining <- Some next
+                          removeStreak <- 0
+                          lastBeatId <- Some beatId
+                          lastBeatAliases <- this.BeatAliases beatId runId callId
+                          let row = this.AppendLocal "KeepLast" [ "callId" ==> callId; "remaining" ==> next; "beatId" ==> beatId; "aliases" ==> (lastBeatAliases |> List.toArray) ]
+                          persist row
+                          accept [ "kind" ==> "keepLast"; "remaining" ==> next; "decremented" ==> true ]
+                  | RemoveLast ->
+                      match remaining with
+                      | None when not exempt ->
+                          refuse "scope not initialized: first tool annotation must be resetScope"
+                      | _ ->
+                          mark()
+                          removeStreak <- removeStreak + 1
+                          let targetBeat = lastBeatId |> Option.defaultValue beatId
+                          let hostNote =
+                              "这是连续第 "
+                              + string removeStreak
+                              + " 次空转，不要空转。 / Idle spin #"
+                              + string removeStreak
+                              + "; do not spin idle."
+                          let body = annotation.Replacement.TrimEnd() + "\n\n" + hostNote
+                          let aliases = this.BeatAliases targetBeat runId callId
+                          let priorAliases =
+                              match retractions.TryGetValue targetBeat with
+                              | true, prior -> prior.Aliases
+                              | _ -> []
+                          let fromLast =
+                              if lastBeatId = Some targetBeat then lastBeatAliases else []
+                          let merged = (aliases @ priorAliases @ fromLast) |> List.distinct
+                          retractions[targetBeat] <-
+                              { BeatId = targetBeat
+                                Aliases = merged
+                                Replacement = body
+                                Streak = removeStreak }
+                          lastBeatId <- Some beatId
+                          let row =
+                              this.AppendLocal "BeatRetracted"
+                                  [ "callId" ==> callId
+                                    "beatId" ==> targetBeat
+                                    "aliases" ==> (merged |> List.toArray)
+                                    "replacement" ==> body
+                                    "streak" ==> removeStreak ]
+                          persist row
+                          accept
+                              [ "kind" ==> "removeLast"
+                                "remaining" ==> (remaining |> Option.map box |> Option.defaultValue null)
+                                "beatId" ==> targetBeat
+                                "replacement" ==> body
+                                "removeStreak" ==> removeStreak
+                                "advisorDue" ==> (removeStreak >= 3) ]
+
+                receipt
 
     member this.Replay(events: obj array) =
         for row in events do

@@ -154,14 +154,17 @@ let private barrierOf (value: obj) =
 
 /// 切点是触发调用与其结果中较晚的那一条。切点及其之前的其余内容都不可见。
 /// 之后只保留标明同一后任、且不是合成行的消息。宿主 id 和游标都不能单独放行。
-/// 用户消息（role=user 且不是合成行）不论在切点前后、属于哪个任期，都留给后任；
-/// 触发接力的那次 review 调用与它的结果也留给后任。
+/// 用户消息（role=user 且不是合成行）不论在切点前后、属于哪个任期、找不找得到
+/// 切点，全部留给后任，原序保留；触发接力的那次 review 调用与它的结果也留给后任。
 let private tenureKept (messages: obj) (barrier: obj) : obj =
     let toolCallId, successor = barrierOf barrier
     let parsed = snapshot "messages" messages |> Array.mapi tenureMessageOf
 
     let indexOf predicate =
         parsed |> Array.tryFindIndex predicate
+
+    let isUser (message: TenureMessage) =
+        not message.Synthetic && message.Role.ToLowerInvariant() = "user"
 
     match indexOf (fun message -> message.ToolCallId = Some toolCallId), indexOf (fun message -> message.ResultFor = Some toolCallId) with
     | Some callAt, Some resultAt ->
@@ -170,15 +173,21 @@ let private tenureKept (messages: obj) (barrier: obj) : obj =
         parsed
         |> Array.indexed
         |> Array.choose (fun (index, message) ->
-            let user = message.Role.ToLowerInvariant() = "user"
-
             if message.Synthetic then None
-            elif user || index = callAt || index = resultAt then Some(box index)
+            elif isUser message then Some(box index)
+            elif index = callAt || index = resultAt then Some(box index)
             elif index <= cut || message.TenureId <> Some successor then None
             else Some(box index))
         |> box
         |> freeze
-    | _ -> box ([||]: obj array) |> freeze
+    | _ ->
+        // 切点不在视图里（缺一半屏障）：不知道后任从哪开始，助手与工具行一概不放，
+        // 但用户消息照样全部留给后任——后任至少看得见托付与之后的每条用户原话。
+        parsed
+        |> Array.indexed
+        |> Array.choose (fun (index, message) -> if isUser message then Some(box index) else None)
+        |> box
+        |> freeze
 
 // ── 意图规划与渲染布局 ─────────────────────────────────────────────────────
 

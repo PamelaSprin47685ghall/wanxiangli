@@ -51,7 +51,7 @@ export type Verdict =
   | { readonly verdict: 'reject'; readonly rejection: Rejection }
 
 export type ObservationKind =
-  | 'AbortedObserved' | 'ParentCancelled' | 'DeadlineExceeded' | 'HostSessionGone' | 'RecoveryInFlight' | 'SessionActive'
+  | 'ParentCancelled' | 'DeadlineExceeded' | 'HostSessionGone' | 'RecoveryInFlight' | 'SessionActive'
 
 export type AbandonReason = 'ParentCancelled' | 'DeadlineExceeded' | 'HostSessionGone' | 'Voided'
 

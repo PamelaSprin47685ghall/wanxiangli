@@ -62,16 +62,13 @@ test('resetScope opens budget; keepLast decrements; exhaust forces reset', () =>
   assert.equal(deliverOk.ok, true)
 })
 
-test('same turn: one real + meToo; second real refused; lone meToo refused', () => {
+test('same turn: one real + meToo; second real refused', () => {
   const { session, epoch } = fresh()
   scopeRetention.apply(session, epoch, 'resetScope', 'r0', 'c0', 'b0', {
     kind: 'resetScope',
     newScopeGoal: 'g',
     newScopeRetentionBudget: 5,
   })
-  const lone = scopeRetention.apply(session, epoch, 'read', 'runA', 'cA', 'bA', { kind: 'meToo' })
-  assert.equal(lone.ok, false)
-
   const keep = scopeRetention.apply(session, epoch, 'read', 'runB', 'cB1', 'bB', { kind: 'keepLast' })
   assert.equal(keep.ok, true)
   const me = scopeRetention.apply(session, epoch, 'write', 'runB', 'cB2', 'bB', { kind: 'meToo' })
@@ -208,4 +205,141 @@ test('seed after reset opens retention on new epoch', () => {
   const st = scopeRetention.status(session)
   assert.equal(st.known, true)
   assert.equal(st.remaining, 7)
+})
+
+test('exempt tools are lifecycle-neutral: never spend, never decide, any order', () => {
+  const { session, epoch } = fresh('s-exempt', '1')
+  scopeRetention.apply(session, epoch, 'resetScope', 'r0', 'c0', 'b0', {
+    kind: 'resetScope',
+    newScopeGoal: 'g',
+    newScopeRetentionBudget: 2,
+  })
+  const ask = scopeRetention.apply(session, epoch, 'askPreviousScope', 'r1', 'c1', 'b1', { kind: 'keepLast' })
+  assert.equal(ask.ok, true)
+  assert.equal(ask.remaining, 2)
+  assert.equal(ask.decremented, false)
+  // the ask does not decide the turn: the ordinary sibling still names the real annotation
+  const real1 = scopeRetention.apply(session, epoch, 'todowrite-for-engineer', 'r1', 'c2', 'b1', { kind: 'keepLast' })
+  assert.equal(real1.ok, true)
+  assert.equal(real1.remaining, 1)
+  // an exempt keepLast after the real one is not a second real annotation
+  const askAfter = scopeRetention.apply(session, epoch, 'askPrevious', 'r1', 'c2b', 'b1', { kind: 'keepLast' })
+  assert.equal(askAfter.ok, true)
+  assert.equal(scopeRetention.status(session).remaining, 1)
+
+  // exhausted: the ask is still accepted and still spends nothing
+  scopeRetention.apply(session, epoch, 'read', 'r2', 'c3', 'b2', { kind: 'keepLast' })
+  assert.equal(scopeRetention.status(session).remaining, 0)
+  const askAtZero = scopeRetention.apply(session, epoch, 'askPreviousScope', 'r3', 'c4', 'b3', { kind: 'keepLast' })
+  assert.equal(askAtZero.ok, true)
+  assert.equal(scopeRetention.status(session).remaining, 0)
+})
+
+test('meToo is order-independent inside a turn', () => {
+  const { session, epoch } = fresh('s-order', '1')
+  scopeRetention.apply(session, epoch, 'resetScope', 'r0', 'c0', 'b0', {
+    kind: 'resetScope',
+    newScopeGoal: 'g',
+    newScopeRetentionBudget: 5,
+  })
+  // meToo first, real keepLast second: accepted at once, one keep for the turn
+  const early = scopeRetention.apply(session, epoch, 'read', 'r1', 'c1', 'b1', { kind: 'meToo' })
+  assert.equal(early.ok, true)
+  assert.equal(early.kind, 'meToo')
+  assert.equal(scopeRetention.apply(session, epoch, 'grep', 'r1', 'c2', 'b1', { kind: 'meToo' }).ok, true)
+  const real = scopeRetention.apply(session, epoch, 'edit', 'r1', 'c3', 'b1', { kind: 'keepLast' })
+  assert.equal(real.ok, true)
+  assert.equal(real.remaining, 4)
+  assert.equal(scopeRetention.apply(session, epoch, 'bash', 'r1', 'c4', 'b1', { kind: 'meToo' }).ok, true)
+  assert.equal(scopeRetention.status(session).remaining, 4, 'one keep for the turn')
+  // a second real annotation in that turn is still refused
+  const second = scopeRetention.apply(session, epoch, 'write', 'r1', 'c4b', 'b1', { kind: 'keepLast' })
+  assert.equal(second.ok, false)
+
+  // the same batch in the other order spends exactly the same
+  scopeRetention.apply(session, epoch, 'edit', 'r2', 'c5', 'b2', { kind: 'keepLast' })
+  scopeRetention.apply(session, epoch, 'read', 'r2', 'c6', 'b2', { kind: 'meToo' })
+  assert.equal(scopeRetention.status(session).remaining, 3)
+})
+
+test('meToo ahead of a real removeLast: the turn spends nothing, removeLast targets the previous beat', () => {
+  const { session, epoch } = fresh('s-order-remove', '1')
+  scopeRetention.apply(session, epoch, 'resetScope', 'r0', 'c0', 'b0', {
+    kind: 'resetScope',
+    newScopeGoal: 'g',
+    newScopeRetentionBudget: 3,
+  })
+  scopeRetention.apply(session, epoch, 'edit', 'r1', 'c1', 'b1', { kind: 'keepLast' })
+  assert.equal(scopeRetention.status(session).remaining, 2)
+  assert.equal(scopeRetention.apply(session, epoch, 'read', 'r2', 'c2', 'b2', { kind: 'meToo' }).ok, true)
+  const rm = scopeRetention.apply(session, epoch, 'edit', 'r2', 'c3', 'b2', { kind: 'removeLast', replacement: 'lesson' })
+  assert.equal(rm.ok, true)
+  assert.equal(rm.beatId, 'b1', 'retracts the previous beat, not this one')
+  assert.equal(rm.removeStreak, 1)
+  assert.equal(scopeRetention.status(session).remaining, 2, 'removeLast spends nothing, whatever the order')
+  // replay agrees
+  const events = scopeRetention.journal(session)
+  scopeRetention.clear(session)
+  scopeRetention.restore(session, epoch, events)
+  assert.equal(scopeRetention.status(session).remaining, 2)
+  assert.equal(scopeRetention.projection(session, 'b1').retracted, true)
+})
+
+test('an all-meToo turn costs one keepLast (journaled as one), no carry-over', () => {
+  const { session, epoch } = fresh('s-allmetoo', '1')
+  scopeRetention.apply(session, epoch, 'resetScope', 'r0', 'c0', 'b0', {
+    kind: 'resetScope',
+    newScopeGoal: 'g',
+    newScopeRetentionBudget: 3,
+  })
+  assert.equal(scopeRetention.apply(session, epoch, 'read', 'r1', 'c1', 'b1', { kind: 'meToo' }).ok, true)
+  assert.equal(scopeRetention.apply(session, epoch, 'grep', 'r1', 'c2', 'b1', { kind: 'meToo' }).ok, true)
+  assert.equal(scopeRetention.status(session).remaining, 2, 'the turn spends one keep, not one per call')
+  const rows = scopeRetention.journal(session).filter((row) => row.kind === 'KeepLast')
+  assert.equal(rows.length, 1)
+  assert.equal(scopeRetention.journal(session).some((row) => row.kind === 'MeTooOrphan'), false)
+  // the next turn is independent: a second all-meToo turn is just one more keep
+  assert.equal(scopeRetention.apply(session, epoch, 'read', 'r2', 'c3', 'b2', { kind: 'meToo' }).ok, true)
+  assert.equal(scopeRetention.status(session).remaining, 1)
+  // replay
+  const events = scopeRetention.journal(session)
+  scopeRetention.clear(session)
+  scopeRetention.restore(session, epoch, events)
+  assert.equal(scopeRetention.status(session).remaining, 1)
+})
+
+test('exempt calls never decide or pay: an all-meToo turn with an exempt keepLast still costs one keep', () => {
+  const { session, epoch } = fresh('s-allmetoo-exempt', '1')
+  scopeRetention.apply(session, epoch, 'resetScope', 'r0', 'c0', 'b0', {
+    kind: 'resetScope',
+    newScopeGoal: 'g',
+    newScopeRetentionBudget: 2,
+  })
+  const ask = scopeRetention.apply(session, epoch, 'askPreviousScope', 'r1', 'c2', 'b1', { kind: 'keepLast' })
+  assert.equal(ask.ok, true)
+  assert.equal(ask.decremented, false)
+  assert.equal(scopeRetention.status(session).remaining, 2)
+  assert.equal(scopeRetention.apply(session, epoch, 'read', 'r1', 'c1', 'b1', { kind: 'meToo' }).ok, true)
+  assert.equal(scopeRetention.status(session).remaining, 1)
+})
+
+test('meToo with no real annotation yet at an unopened or exhausted scope is refused as all-meToo', () => {
+  const { session, epoch } = fresh('s-reset-order', '1')
+  const unopened = scopeRetention.apply(session, epoch, 'read', 'r1', 'c1', 'b1', { kind: 'meToo' })
+  assert.equal(unopened.ok, false)
+  assert.match(unopened.reason, /may not be all meToo/)
+  assert.doesNotMatch(unopened.reason, /keepLast\b.*charged|treated as keepLast/)
+  const open = scopeRetention.apply(session, epoch, 'bash', 'r1', 'c2', 'b1', {
+    kind: 'resetScope',
+    newScopeGoal: 'g',
+    newScopeRetentionBudget: 1,
+  })
+  assert.equal(open.ok, true)
+  assert.equal(scopeRetention.apply(session, epoch, 'read', 'r1', 'c2b', 'b1', { kind: 'meToo' }).ok, true, 'after the real reset, meToo rides it')
+  scopeRetention.apply(session, epoch, 'read', 'r2', 'c3', 'b2', { kind: 'keepLast' })
+  const exhausted = scopeRetention.apply(session, epoch, 'read', 'r3', 'c4', 'b3', { kind: 'meToo' })
+  assert.equal(exhausted.ok, false)
+  assert.match(exhausted.reason, /may not be all meToo/)
+  assert.match(exhausted.reason, /resetScope/)
+  assert.equal(scopeRetention.status(session).remaining, 0)
 })

@@ -176,9 +176,9 @@ let private isChinese (language: string) : bool =
 
 let private initializeReminder (language: string) : string =
     if isChinese language then
-        "[系统：估计第一个细粒度任务状态闭环所需的 retentionBudget（实质性操作下界）。用带 scope.kind=resetScope 的工具调用初始化该闭环（newScopeGoal + newScopeRetentionBudget），再执行其他工作。见共同法 «Scope»。]"
+        "[系统：估计第一个任务状态闭环所需的 retentionBudget（完成它预计还要几次 keepLast；对大小中立，按实估计，拿不准按主路径估）。用带 scope.kind=resetScope 的工具调用初始化该闭环（newScopeGoal + newScopeRetentionBudget），再执行其他工作。见共同法 «Scope»。]"
     else
-        "[System: Estimate the retentionBudget (lower bound on substantive keeps) for the first fine-grained task block. Initialize that closed-loop with a tool call whose scope.kind=resetScope (newScopeGoal + newScopeRetentionBudget) before other work. See common law «Scope».]"
+        "[System: Estimate the retentionBudget for the first task block (how many keepLast it is expected to take; size-neutral, estimated as it is, main path when unsure). Initialize that closed-loop with a tool call whose scope.kind=resetScope (newScopeGoal + newScopeRetentionBudget) before other work. See common law «Scope».]"
 
 let private negotiateReminder (language: string) : string =
     if isChinese language then
@@ -807,15 +807,21 @@ let PairHint () : PairHintMessages =
     let startTemporaryPrevious (tempId: string) (sourceSessionId: string) (metadata: obj) : obj =
         let oldModel = if isNull metadata then null else metadata?model
         let oldSystem = if isNull metadata then null else metadata?system
-        // The latest transform may advance between temp creation and provider send;
-        // inspect its boundary only at the physical temporary provider request.
+        let oldMessages = if isNull metadata then null else metadata?messages
+        // The previous Scope is asked through its own equivalent view: the sealed
+        // provider view the old Scope actually sent (already projected, retained
+        // and within the window it was accepted under). The raw Host history before
+        // the last reset is not that view; it grows with every earlier Scope.
         if isNull oldModel || not (isArray oldSystem) then
             createObj [ "ok" ==> false; "reason" ==> "no verified old Scope system and model evidence" ]
+        elif not (isArray oldMessages) || (unbox<obj array> oldMessages).Length = 0 then
+            createObj [ "ok" ==> false; "reason" ==> "no verified old Scope equivalent provider view" ]
         else
             temporaryNegotiations[tempId] <-
                 createObj [ "previousDelegator", box sourceSessionId
                             "system", cloneWire oldSystem
-                            "model", cloneWire oldModel ]
+                            "model", cloneWire oldModel
+                            "messages", cloneWire oldMessages ]
             createObj [ "ok" ==> true ]
 
     let modelForTemporary (tempId: string) : obj =
@@ -853,10 +859,7 @@ let PairHint () : PairHintMessages =
     let projectMessages (tempId: string) (question: obj) : obj =
         let latest =
             match temporaryNegotiations.TryGetValue tempId with
-            | true, view when not (isNull view?previousDelegator) ->
-                let source = string view?previousDelegator
-                let old = latestPrevious source
-                if isNull old then None else Some(cloneWire old)
+            | true, view when not (isNull view?previousDelegator) -> Some(cloneWire view?messages)
             | true, view when not (isNull view?liveDelegator) ->
                 observedMessages (string view?liveDelegator) false
                 |> Option.map (fun output -> cloneWire(box output))

@@ -48,19 +48,23 @@ test('SPEC[projection-001] synthetic rows and non-user rows of another tenure, h
     m('other-tool', 'tool', { tenureId: 'someone-else' }),
     m('host-only-assistant', 'assistant', { cursor: 10n }),
     m('upper', 'USER'),
+    m('synth-tool', 'tool', { tenureId: 'next', synthetic: true }),
   ]
   assert.deepEqual(p.tenure(messages, barrier), [0, 1, 3, 4, 6, 9])
 })
 
-test('SPEC[projection-001] a missing call or result yields nothing', () => {
+test('SPEC[projection-001] a missing call or result keeps every user message and nothing else', () => {
   assert.deepEqual(p.tenure([
     m('call', 'assistant', { toolCallId: 'review-1', tenureId: 'old' }),
     m('kept', 'user', { tenureId: 'next' }),
-  ], barrier), [])
+    m('after', 'assistant', { tenureId: 'next' }),
+  ], barrier), [1])
   assert.deepEqual(p.tenure([
+    m('root', 'user', { tenureId: 'old' }),
     m('result', 'tool', { resultFor: 'review-1', tenureId: 'old' }),
     m('kept', 'user', { tenureId: 'next' }),
-  ], barrier), [])
+    m('synth', 'user', { tenureId: 'next', synthetic: true }),
+  ], barrier), [0, 2])
   assert.deepEqual(p.tenure([], barrier), [])
 })
 
