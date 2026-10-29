@@ -44,13 +44,14 @@ export interface ScopeRetentionPort {
     scope: ScopeAnnotationInput
   ): { ok: boolean; reason?: string; kind?: ScopeKind; remaining?: number | null; reanchor?: boolean; decremented?: boolean; beatId?: string; replacement?: string; removeStreak?: number; advisorDue?: boolean; exempt?: boolean }
   status(sessionId: string): { known: boolean; epoch?: string; remaining?: number | null; removeStreak: number; advisorDue: boolean }
-  projection(sessionId: string, beatId: string): { retracted: boolean; beatId?: string; replacement?: string; streak?: number }
-  retractions(sessionId: string): ReadonlyArray<{ beatId: string; replacement: string; streak: number }>
+  projection(sessionId: string, beatId: string): { retracted: boolean; beatId?: string; aliases?: string[]; replacement?: string; streak?: number }
+  retractions(sessionId: string): ReadonlyArray<{ beatId: string; aliases?: string[]; replacement: string; streak: number }>
   configureJournal(journalFor: (sessionId: string) => RetentionJournal): void
   bindSessionJournal(sessionId: string, journalFor: (sessionId: string) => RetentionJournal): void
   unbindSessionJournal(sessionId: string): void
   ensureEpoch(sessionId: string, epochId: string): void
   reset(sessionId: string, epochId: string): void
+  seed(sessionId: string, budget: number): void
   clear(sessionId: string): void
   journal(sessionId: string): ReadonlyArray<Record<string, unknown>>
   restore(sessionId: string, epochId: string, events: ReadonlyArray<Record<string, unknown>>): void

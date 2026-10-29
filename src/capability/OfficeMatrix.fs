@@ -151,7 +151,7 @@ module ToolSurface =
         | Permission.JsPlan -> [ "todowrite-for-plan" ]
         | Permission.Deliver -> []
         | Permission.Review -> [ "review" ]
-        | Permission.ResetScope -> [ "resetScope" ]
+        | Permission.ResetScope -> []  // protocol right: annotation reanchor + askPreviousScope
         | Permission.Read
         | Permission.Write
         | Permission.Edit
@@ -186,7 +186,7 @@ module ToolSurface =
     let utilityToolNames: string list = [ "skill"; "assume" ]
 
     /// 实用工具面只给可执行办公工作的角色；Advisor 只能使用
-    /// negotiate/resetScope 协议工具，不得通过 skill/assume 绕过无办公权能边界。
+    /// negotiate / askPreviousScope / scope.kind=resetScope 协议，不得通过 skill/assume 绕过无办公权能边界。
     /// 矩阵之外的角色标签（含已退役的 distiller）一律拒绝。
     let admitsUtility (roleLabel: string) (name: string) : bool =
         roleLabel <> "advisor"

@@ -23,6 +23,7 @@ let private streamFor session epoch = "scope-retention:" + field session + ":" +
 
 type private BeatRetraction =
     { BeatId: string
+      Aliases: string list
       Replacement: string
       Streak: int }
 
@@ -34,6 +35,7 @@ type private SessionState(epoch: string) =
     let mutable remaining: int option = None
     let mutable removeStreak = 0
     let mutable lastBeatId: string option = None
+    let mutable lastBeatAliases: string list = []
     let mutable turn: TurnDecision = Undecided
     let mutable turnRunId = ""
     let retractions = Dictionary<string, BeatRetraction>()
@@ -72,11 +74,21 @@ type private SessionState(epoch: string) =
               "removeStreak" ==> removeStreak
               "advisorDue" ==> (removeStreak >= 3 || remaining = Some 0) ]
 
+    member this.SeedBudget(budget: int) =
+        remaining <- Some(max 0 budget)
+        removeStreak <- 0
+
+    member private _.BeatAliases(beatId: string) (runId: string) (callId: string) : string list =
+        [ beatId; runId; callId ]
+        |> List.filter (fun s -> not (String.IsNullOrWhiteSpace s))
+        |> List.distinct
+
     member this.ListRetractions() : obj array =
         retractions.Values
         |> Seq.map (fun r ->
             createObj
                 [ "beatId" ==> r.BeatId
+                  "aliases" ==> (r.Aliases |> List.toArray)
                   "replacement" ==> r.Replacement
                   "streak" ==> r.Streak ])
         |> Array.ofSeq
@@ -119,6 +131,7 @@ type private SessionState(epoch: string) =
                     remaining <- Some annotation.NewScopeRetentionBudget
                     removeStreak <- 0
                     lastBeatId <- Some beatId
+                    lastBeatAliases <- this.BeatAliases beatId runId callId
                     retractions.Clear()
                     let row =
                         this.AppendLocal "ScopeReset"
@@ -145,7 +158,8 @@ type private SessionState(epoch: string) =
                         remaining <- Some next
                         removeStreak <- 0
                         lastBeatId <- Some beatId
-                        let row = this.AppendLocal "KeepLast" [ "callId" ==> callId; "remaining" ==> next; "beatId" ==> beatId ]
+                        lastBeatAliases <- this.BeatAliases beatId runId callId
+                        let row = this.AppendLocal "KeepLast" [ "callId" ==> callId; "remaining" ==> next; "beatId" ==> beatId; "aliases" ==> (lastBeatAliases |> List.toArray) ]
                         persist row
                         accept [ "kind" ==> "keepLast"; "remaining" ==> next; "decremented" ==> true ]
                     | None ->
@@ -166,8 +180,17 @@ type private SessionState(epoch: string) =
                             + string removeStreak
                             + "; do not spin idle."
                         let body = annotation.Replacement.TrimEnd() + "\n\n" + hostNote
+                        let aliases = this.BeatAliases targetBeat runId callId
+                        let priorAliases =
+                            match retractions.TryGetValue targetBeat with
+                            | true, prior -> prior.Aliases
+                            | _ -> []
+                        let fromLast =
+                            if lastBeatId = Some targetBeat then lastBeatAliases else []
+                        let merged = (aliases @ priorAliases @ fromLast) |> List.distinct
                         retractions[targetBeat] <-
                             { BeatId = targetBeat
+                              Aliases = merged
                               Replacement = body
                               Streak = removeStreak }
                         lastBeatId <- Some beatId
@@ -175,6 +198,7 @@ type private SessionState(epoch: string) =
                             this.AppendLocal "BeatRetracted"
                                 [ "callId" ==> callId
                                   "beatId" ==> targetBeat
+                                  "aliases" ==> (merged |> List.toArray)
                                   "replacement" ==> body
                                   "streak" ==> removeStreak ]
                         persist row
@@ -201,11 +225,22 @@ type private SessionState(epoch: string) =
                 removeStreak <- 0
                 if not (isNull row?beatId) then
                     lastBeatId <- Some(string row?beatId)
+                let raw = row?aliases
+                if not (isNull raw) then
+                    try lastBeatAliases <- (unbox<string array> raw) |> Array.toList
+                    with _ -> ()
             | "BeatRetracted" ->
                 removeStreak <- unbox<int> row?streak
                 let beatId = string row?beatId
+                let aliases =
+                    let raw = row?aliases
+                    if isNull raw then [ beatId ]
+                    else
+                        try (unbox<string array> raw) |> Array.toList
+                        with _ -> [ beatId ]
                 retractions[beatId] <-
                     { BeatId = beatId
+                      Aliases = aliases
                       Replacement = string row?replacement
                       Streak = removeStreak }
             | _ -> ()
@@ -225,6 +260,7 @@ type ScopeRetentionPort =
     abstract projection: sessionId: string * beatId: string -> obj
     abstract retractions: sessionId: string -> obj array
     abstract reset: sessionId: string * epochId: string -> unit
+    abstract seed: sessionId: string * budget: int -> unit
     abstract clear: sessionId: string -> unit
     abstract journal: sessionId: string -> obj array
     abstract restore: sessionId: string * epochId: string * events: obj array -> unit
@@ -327,20 +363,31 @@ let ScopeRetention () : ScopeRetentionPort =
             match find sessionId with
             | None -> createObj [ "retracted" ==> false ]
             | Some state ->
-                match state.Retractions.TryGetValue beatId with
-                | true, r ->
+                let found =
+                    match state.Retractions.TryGetValue beatId with
+                    | true, r -> Some r
+                    | _ ->
+                        state.Retractions.Values
+                        |> Seq.tryFind (fun r -> List.contains beatId r.Aliases)
+                match found with
+                | Some r ->
                     createObj
                         [ "retracted" ==> true
                           "beatId" ==> r.BeatId
+                          "aliases" ==> (r.Aliases |> List.toArray)
                           "replacement" ==> r.Replacement
                           "streak" ==> r.Streak ]
-                | _ -> createObj [ "retracted" ==> false ]
+                | None -> createObj [ "retracted" ==> false ]
         member _.retractions(sessionId) =
             match find sessionId with
             | None -> [||]
             | Some state -> state.ListRetractions()
         member _.reset(sessionId, epochId) =
             sessions[sessionId] <- SessionState(epochId)
+        member _.seed(sessionId, budget) =
+            match find sessionId with
+            | Some state -> state.SeedBudget budget
+            | None -> ()
         member _.clear(sessionId) = sessions.Remove sessionId |> ignore
         member _.journal(sessionId) =
             match find sessionId with

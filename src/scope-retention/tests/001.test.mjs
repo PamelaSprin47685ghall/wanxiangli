@@ -175,3 +175,37 @@ test('durable journal round-trip restores retention and retractions', () => {
   assert.equal(list.length, 1)
   assert.equal(list[0].beatId, 'beat-a')
 })
+
+test('removeLast stores aliases; projection matches callId alias', () => {
+  const { session, epoch } = fresh('alias', '1')
+  scopeRetention.apply(session, epoch, 'resetScope', 'run0', 'c0', 'b0', {
+    kind: 'resetScope',
+    newScopeGoal: 'g',
+    newScopeRetentionBudget: 5,
+  })
+  scopeRetention.apply(session, epoch, 'read', 'provider-run-9', 'call-keep', 'provider-run-9', { kind: 'keepLast' })
+  const rm = scopeRetention.apply(session, epoch, 'read', 'provider-run-10', 'call-rm', 'provider-run-10', {
+    kind: 'removeLast',
+    replacement: 'lesson: alias match',
+  })
+  assert.equal(rm.ok, true)
+  assert.equal(rm.beatId, 'provider-run-9')
+  const list = scopeRetention.retractions(session)
+  assert.equal(list.length, 1)
+  assert.ok(list[0].aliases.includes('provider-run-9'))
+  assert.ok(list[0].aliases.includes('call-keep'))
+  const byCall = scopeRetention.projection(session, 'call-keep')
+  assert.equal(byCall.retracted, true)
+  assert.match(byCall.replacement, /lesson: alias match/)
+})
+
+test('seed after reset opens retention on new epoch', () => {
+  const session = 'seed-s'
+  scopeRetention.clear(session)
+  scopeRetention.reset(session, '2')
+  assert.equal(scopeRetention.status(session).known, false)
+  scopeRetention.seed(session, 7)
+  const st = scopeRetention.status(session)
+  assert.equal(st.known, true)
+  assert.equal(st.remaining, 7)
+})
