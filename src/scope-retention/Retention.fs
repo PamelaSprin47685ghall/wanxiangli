@@ -29,6 +29,10 @@ type private BeatRetraction =
 
 type private TurnDecision =
     | Undecided
+    /// meToo calls that arrived before the turn's real annotation. A parallel
+    /// batch has no arrival order the model controls; the real sibling may
+    /// still come. Settled when the run ends without one.
+    | Provisional of string list
     | Decided of ScopeKind * string
 
 type private SessionState(epoch: string) =
@@ -38,6 +42,9 @@ type private SessionState(epoch: string) =
     let mutable lastBeatAliases: string list = []
     let mutable turn: TurnDecision = Undecided
     let mutable turnRunId = ""
+    /// The previous turn ended with meToo only. Provisional credit is granted
+    /// once; a second all-meToo turn in a row is refused outright.
+    let mutable orphanedLast = false
     let retractions = Dictionary<string, BeatRetraction>()
     let journal = ResizeArray<obj>()
     let mutable durableRevision = 0
@@ -50,8 +57,29 @@ type private SessionState(epoch: string) =
     member _.DurableRevision = durableRevision
     member _.SetDurableRevision(v: int) = durableRevision <- v
 
-    member _.EnsureTurn(runId: string) =
+    /// Start a new turn. A previous turn that held only provisional meToo
+    /// calls never named its real annotation: it is settled as one keep (the
+    /// most a turn may spend) and journaled, so arrival order can never be
+    /// used to run tools for free.
+    member this.EnsureTurn (runId: string) (persist: obj -> unit) =
         if turnRunId <> runId then
+            match turn with
+            | Provisional calls ->
+                orphanedLast <- true
+                let charged, next =
+                    match remaining with
+                    | Some n when n > 0 -> true, Some(n - 1)
+                    | other -> false, other
+                remaining <- next
+                let row =
+                    this.AppendLocal "MeTooOrphan"
+                        [ "runId" ==> turnRunId
+                          "calls" ==> (calls |> List.rev |> List.toArray)
+                          "charged" ==> charged
+                          "remaining" ==> (next |> Option.map box |> Option.defaultValue null) ]
+                persist row
+            | Decided _ -> orphanedLast <- false
+            | Undecided -> ()
             turn <- Undecided
             turnRunId <- runId
 
@@ -101,7 +129,7 @@ type private SessionState(epoch: string) =
         (annotation: ScopeAnnotation)
         (persist: obj -> unit)
         : obj =
-        this.EnsureTurn runId
+        this.EnsureTurn runId persist
         let exempt = isExemptTool toolName
 
         let refuse (reason: string) =
@@ -114,15 +142,28 @@ type private SessionState(epoch: string) =
         | Error reason -> refuse reason
         | Ok() ->
             match annotation.Kind, turn with
-            // Exempt tools (negotiate, askPreviousScope, deliver) are lifecycle-neutral:
-            // they never spend retention and never wait for a real annotation, so their
-            // meToo cannot depend on where they sit in a parallel batch.
-            | MeToo, Undecided when exempt ->
-                accept [ "kind" ==> "meToo"; "remaining" ==> (remaining |> Option.map box |> Option.defaultValue null); "exempt" ==> true ]
-            | MeToo, Undecided ->
-                refuse "meToo requires exactly one real scope annotation (resetScope|keepLast|removeLast) in the same turn"
+            // AXIOM 5: exempt tools (negotiate, askPreviousScope, deliver) are
+            // lifecycle-neutral. keepLast/meToo on them neither spend retention
+            // nor decide the turn, so they are accepted wherever they sit in a
+            // parallel batch and cannot carry a sibling for free.
+            | (KeepLast | MeToo), _ when exempt ->
+                accept
+                    [ "kind" ==> (if annotation.Kind = MeToo then "meToo" else "keepLast")
+                      "remaining" ==> (remaining |> Option.map box |> Option.defaultValue null)
+                      "decremented" ==> false
+                      "exempt" ==> true ]
             | MeToo, Decided _ ->
                 accept [ "kind" ==> "meToo"; "remaining" ==> (remaining |> Option.map box |> Option.defaultValue null) ]
+            // Arrival order inside a batch is not the model's choice: a meToo
+            // ahead of its real sibling is held provisionally.
+            | MeToo, Undecided when not orphanedLast ->
+                turn <- Provisional [ callId ]
+                accept [ "kind" ==> "meToo"; "provisional" ==> true; "remaining" ==> (remaining |> Option.map box |> Option.defaultValue null) ]
+            | MeToo, Provisional calls ->
+                turn <- Provisional(callId :: calls)
+                accept [ "kind" ==> "meToo"; "provisional" ==> true; "remaining" ==> (remaining |> Option.map box |> Option.defaultValue null) ]
+            | MeToo, Undecided ->
+                refuse "meToo requires exactly one real scope annotation (resetScope|keepLast|removeLast) in the same turn; the previous turn already carried only meToo"
             | _, Decided (prior, priorCall) when priorCall <> callId ->
                 refuse ("turn already carries a real scope annotation on " + priorCall + " (" + string prior + "); others must be meToo")
             | kind, _ ->
@@ -153,15 +194,10 @@ type private SessionState(epoch: string) =
                           "reanchor" ==> true ]
                 | KeepLast ->
                     match remaining with
-                    | None when not exempt ->
+                    | None ->
                         refuse "scope not initialized: first tool annotation must be resetScope"
-                    | Some 0 when not exempt ->
+                    | Some 0 ->
                         refuse "retention exhausted: next non-exempt tool must use resetScope"
-                    | Some n when exempt ->
-                        // AXIOM 5: exempt tools do not spend retention. The turn is still
-                        // decided, so sibling calls may say meToo.
-                        mark()
-                        accept [ "kind" ==> "keepLast"; "remaining" ==> n; "decremented" ==> false; "exempt" ==> true ]
                     | Some n ->
                         mark()
                         let next = max 0 (n - 1)
@@ -172,9 +208,6 @@ type private SessionState(epoch: string) =
                         let row = this.AppendLocal "KeepLast" [ "callId" ==> callId; "remaining" ==> next; "beatId" ==> beatId; "aliases" ==> (lastBeatAliases |> List.toArray) ]
                         persist row
                         accept [ "kind" ==> "keepLast"; "remaining" ==> next; "decremented" ==> true ]
-                    | None ->
-                        mark()
-                        accept [ "kind" ==> "keepLast"; "remaining" ==> null; "decremented" ==> false; "exempt" ==> true ]
                 | RemoveLast ->
                     match remaining with
                     | None when not exempt ->
@@ -239,6 +272,9 @@ type private SessionState(epoch: string) =
                 if not (isNull raw) then
                     try lastBeatAliases <- (unbox<string array> raw) |> Array.toList
                     with _ -> ()
+            | "MeTooOrphan" ->
+                let raw = row?remaining
+                if not (isNull raw) then remaining <- Some(unbox<int> raw)
             | "BeatRetracted" ->
                 removeStreak <- unbox<int> row?streak
                 let beatId = string row?beatId
