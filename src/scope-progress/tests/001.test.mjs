@@ -1,3 +1,6 @@
+// PRODUCT-RETIRED (2026-10-29): Stall / ResetDue / remainingScopeTurnsEstimate are NOT host product contracts.
+// These tests keep the scope-progress *package* historical durable/advisor-queue behavior.
+// New lifecycle voice: wanxiangli/scope-retention + common law «Scope». Do not re-wire todowrite schema to estimates.
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { ScopeProgress } from '../../../dist/scope-progress/AdvisorFlow.js'

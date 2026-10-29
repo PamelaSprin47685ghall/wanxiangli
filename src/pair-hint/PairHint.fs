@@ -166,7 +166,7 @@ let private kpiAdjustedBudget (estimate: int) (completion: string) : int =
 let private Separator = "\u0000\uFEFF"
 
 [<Literal>]
-// Legacy standalone tool name; still recognized as a barrier for old transcripts.
+// Annotation-first: scope.kind=resetScope is the barrier. Legacy standalone tool name is read-only compat for old transcripts.
 let private ResetTool = "resetScope"
 
 let private isChinese (language: string) : bool =
