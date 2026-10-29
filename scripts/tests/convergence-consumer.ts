@@ -11,7 +11,8 @@ const layout: StreamLayout = new WriterSegments().streamLayout(groups[0]!)
 const legacyName: string | undefined = layout.kind === 'coexisting' ? layout.legacy : undefined
 void legacyName
 const verdict: Coexistence = new WriterSegments().coexistence(new Uint8Array(), new Uint8Array())
-void verdict
+const copied: number | undefined = verdict.kind === 'continuation' ? verdict.copiedLines : undefined
+void copied
 const stream: StreamDecodeResult = new WriterSegments().decodeStream('w', '')
 const streamCount: number = stream.ok ? stream.events.length : -1
 void streamCount

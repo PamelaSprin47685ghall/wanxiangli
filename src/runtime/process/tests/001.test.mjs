@@ -34,6 +34,17 @@ test('SPEC[process-001] receiver failure remains visible beside the real process
   assert.equal(state.failure.message, 'output receiver failed')
 })
 
+for (const thrown of [null, 'receiver rejected output']) {
+  test(`SPEC[process-001] receiver can throw ${JSON.stringify(thrown)} without escaping its process session`, async t => {
+    const run = new ProcessSession(options('bytes', [Buffer.from('output').toString('base64')]), () => { throw thrown })
+    t.after(async () => { run.signal('SIGKILL'); await closed(run) })
+    const state = await closed(run)
+    assert.deepEqual(state.exit, { code: 0, signal: null })
+    assert.equal(state.failure.operation, 'stdout')
+    assert.equal(state.failure.message, thrown ?? 'Native operation failed')
+  })
+}
+
 function noSpawn(action) {
   const original = childProcess.spawn
   let calls = 0

@@ -114,8 +114,8 @@ module internal Native =
         unbox<float> source
 
     let failure operation (error: obj) =
-        let message = get error "message"
-        let code = get error "code"
+        let message: obj = emitJsExpr error "$0 == null ? null : (typeof $0 === 'string' ? $0 : $0.message)"
+        let code: obj = emitJsExpr error "$0 == null ? null : $0.code"
 
         objectOf
             [ "operation", box operation
