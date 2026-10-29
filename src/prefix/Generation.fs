@@ -13,20 +13,20 @@ module Generation =
         | Scope of callId: string
 
     type State =
-        { Epoch: float
+        { Epoch: int64
           CompactionRuns: Set<string>
           Tenures: Set<string>
           Scopes: Set<string> }
 
     /// 一条待写入的推进行。PreviousEpoch 是写入时认定的现行世代。
     type Candidate =
-        { PreviousEpoch: float
-          NextEpoch: float
+        { PreviousEpoch: int64
+          NextEpoch: int64
           Evidence: Evidence }
 
     type Rejection =
         /// 行写于另一个世代（崩溃后重放的同一行即落在这里）。
-        | StaleEpoch of expected: float * actual: float
+        | StaleEpoch of expected: int64 * actual: int64
         /// NextEpoch 不是 PreviousEpoch 的后继。
         | NonSequentialEpoch
         /// 同一证据已经推进过一次。与 StaleEpoch 分开：世代因别的证据
@@ -34,7 +34,7 @@ module Generation =
         | AlreadyReanchored of Evidence
 
     let empty =
-        { Epoch = 0.0
+        { Epoch = 0L
           CompactionRuns = Set.empty
           Tenures = Set.empty
           Scopes = Set.empty }
@@ -49,10 +49,12 @@ module Generation =
     let propose (evidence: Evidence) (state: State) : Candidate option =
         if isReanchored evidence state then
             None
+        elif state.Epoch = System.Int64.MaxValue then
+            invalidOp "Prefix epoch is exhausted"
         else
             Some
                 { PreviousEpoch = state.Epoch
-                  NextEpoch = state.Epoch + 1.0
+                  NextEpoch = state.Epoch + 1L
                   Evidence = evidence }
 
     /// 观察到的压缩伪 run（旧到新）中，最新一个尚未推进过的成为候选。
@@ -69,7 +71,7 @@ module Generation =
             Error(AlreadyReanchored candidate.Evidence)
         elif candidate.PreviousEpoch <> state.Epoch then
             Error(StaleEpoch(state.Epoch, candidate.PreviousEpoch))
-        elif candidate.NextEpoch <> candidate.PreviousEpoch + 1.0 then
+        elif candidate.PreviousEpoch = System.Int64.MaxValue || candidate.NextEpoch <> candidate.PreviousEpoch + 1L then
             Error NonSequentialEpoch
         else
             match candidate.Evidence with

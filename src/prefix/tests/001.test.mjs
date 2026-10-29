@@ -53,3 +53,24 @@ test('SPEC[prefix-2] line epochs outside the current generation are judged, not 
     { ok: false, absorbed: false, error: 'NonSequentialEpoch' })
   assert.throws(() => prefix.commit(prefix.empty(), { previousEpoch: 0.5, nextEpoch: 1, evidence: compaction('c1') }), TypeError)
 })
+
+test('SPEC[prefix-2] large epochs keep exact successors for compaction, tenure and scope', () => {
+  let state = { epoch: 9007199254740993n, compactionRuns: [], tenures: [], scopes: [] }
+  for (const evidence of [compaction('large-run'), tenure('large-tenure'), { kind: 'scope', callId: 'large-scope' }]) {
+    const candidate = prefix.propose(state, evidence)
+    assert.equal(candidate.previousEpoch, state.epoch)
+    assert.equal(candidate.nextEpoch, state.epoch + 1n)
+    const result = prefix.commit(state, candidate)
+    assert.equal(result.ok, true)
+    assert.equal(result.state.epoch, state.epoch + 1n)
+    assert.equal(prefix.isReanchored(result.state, evidence), true)
+    state = result.state
+  }
+})
+
+test('SPEC[prefix-2] unsafe numeric epochs and int64 overflow cannot alias another generation', () => {
+  assert.throws(() => prefix.propose({ epoch: 9007199254740992, compactionRuns: [], tenures: [] }, compaction('run')), TypeError)
+  const state = { epoch: 9223372036854775807n, compactionRuns: [], tenures: [] }
+  assert.throws(() => prefix.propose(state, compaction('run')), /epoch.*exhausted/i)
+  assert.equal(state.epoch, 9223372036854775807n)
+})

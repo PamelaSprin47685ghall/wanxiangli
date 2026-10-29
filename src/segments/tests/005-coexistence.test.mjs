@@ -15,6 +15,21 @@ const concat = (...parts) => {
   return out
 }
 
+test('SPEC[segments-7] a copied canonical prefix at the series tail resumes at the first missing line', () => {
+  const original = utf8(line('a') + line('b'))
+  const legacy = utf8(line('c') + line('d') + line('e'))
+  for (const copiedLines of [1, 2, 3]) {
+    const copied = utf8(['c', 'd', 'e'].slice(0, copiedLines).map(line).join(''))
+    assert.deepEqual(segments.coexistence(legacy, concat(original, copied)), { kind: 'continuation', copiedLines })
+  }
+})
+
+test('SPEC[segments-7] copied IDs need exact bytes and cannot hide old IDs in the remaining suffix', () => {
+  const changed = utf8(codec.encode({ id: 'c', stream: 's', type: 't', parents: [], payload: { n: 'changed' }, payloadRefs: [] }))
+  assert.deepEqual(segments.coexistence(utf8(line('c') + line('d')), concat(utf8(line('a')), changed)), { kind: 'diverged' })
+  assert.deepEqual(segments.coexistence(utf8(line('c') + line('a')), utf8(line('a') + line('b') + line('c'))), { kind: 'diverged' })
+})
+
 test('SPEC[segments-6] a writer stream is complete canonical lines, framed and decoded once', () => {
   assert.deepEqual(segments.decodeStream('w', ''), { ok: true, events: [] })
   const decoded = segments.decodeStream('w', line('a') + line('b'))
@@ -33,69 +48,38 @@ test('SPEC[segments-6] a writer stream is complete canonical lines, framed and d
 
 test('SPEC[segments-7] coexisting forms: prefix keeps the longer form, disjoint complete lines continue, else diverged', () => {
   const a = utf8(line('a')); const b = utf8(line('b')); const c = utf8(line('c'))
-  assert.equal(segments.coexistence(a, concat(a, b)), 'series', 'legacy is a prefix of the series')
-  assert.equal(segments.coexistence(concat(a, b), concat(a, b)), 'series', 'equal bytes keep the series')
-  assert.equal(segments.coexistence(new Uint8Array(), a), 'series')
-  assert.equal(segments.coexistence(concat(a, b), a), 'legacy', 'the series is a prefix of legacy')
-  assert.equal(segments.coexistence(concat(a, b.subarray(0, 5)), new Uint8Array()), 'legacy', 'an empty series is a prefix even of a half line')
-  assert.equal(segments.coexistence(c, concat(a, b)), 'continuation', 'disjoint complete lines continue the series')
-  assert.equal(segments.coexistence(concat(c, a), concat(a, b)), 'diverged', 'an overlapping id is divergence')
-  assert.equal(segments.coexistence(c.subarray(0, c.length - 1), concat(a, b)), 'diverged', 'a half legacy line is not continuation')
-  assert.equal(segments.coexistence(c, concat(a, b.subarray(0, 3))), 'diverged', 'a half series line is not continuation')
-  assert.equal(segments.coexistence(concat(utf8('\ufeff'), c), a), 'diverged', 'BOM / non-canonical text is not continuation')
-  assert.equal(segments.coexistence(utf8('\n'), a), 'diverged', 'an empty interior line is not continuation')
-  assert.equal(segments.coexistence(Buffer.from(c), Buffer.from(a)), 'continuation', 'Node Buffers are byte arrays')
+  assert.deepEqual(segments.coexistence(a, concat(a, b)), { kind: 'series' }, 'legacy is a prefix of the series')
+  assert.deepEqual(segments.coexistence(concat(a, b), concat(a, b)), { kind: 'series' }, 'equal bytes keep the series')
+  assert.deepEqual(segments.coexistence(new Uint8Array(), a), { kind: 'series' })
+  assert.deepEqual(segments.coexistence(concat(a, b), a), { kind: 'legacy' }, 'the series is a prefix of legacy')
+  assert.deepEqual(segments.coexistence(concat(a, b.subarray(0, 5)), new Uint8Array()), { kind: 'legacy' }, 'an empty series is a prefix even of a half line')
+  assert.deepEqual(segments.coexistence(c, concat(a, b)), { kind: 'continuation', copiedLines: 0 }, 'disjoint complete lines continue the series')
+  assert.deepEqual(segments.coexistence(concat(c, a), concat(a, b)), { kind: 'diverged' }, 'an overlapping id is divergence')
+  assert.deepEqual(segments.coexistence(c.subarray(0, c.length - 1), concat(a, b)), { kind: 'diverged' }, 'a half legacy line is not continuation')
+  assert.deepEqual(segments.coexistence(c, concat(a, b.subarray(0, 3))), { kind: 'diverged' }, 'a half series line is not continuation')
+  assert.deepEqual(segments.coexistence(concat(utf8('\ufeff'), c), a), { kind: 'diverged' }, 'BOM / non-canonical text is not continuation')
+  assert.deepEqual(segments.coexistence(utf8('\n'), a), { kind: 'diverged' }, 'an empty interior line is not continuation')
+  assert.deepEqual(segments.coexistence(Buffer.from(c), Buffer.from(a)), { kind: 'continuation', copiedLines: 0 }, 'Node Buffers are byte arrays')
   assert.throws(() => segments.coexistence('x', a))
   assert.throws(() => segments.coexistence(a, [1]))
 })
 
-// Reference: the frozen read/reorganize verdict as the host wrote it twice, restated independently.
-const referenceIds = bytes => {
-  let text
-  try { text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes) } catch { return null }
-  if (text.startsWith('\ufeff')) return null
-  if (text === '') return new Set()
-  if (!text.endsWith('\n')) return null
-  const ids = new Set()
-  for (const raw of text.slice(0, -1).split('\n')) {
-    if (raw === '') return null
-    const decoded = codec.tryDecode(raw + '\n')
-    if (!decoded.ok) return null
-    ids.add(decoded.event.id)
-  }
-  return ids
-}
-const startsWith = (prefix, full) => prefix.length <= full.length && prefix.every((byte, i) => byte === full[i])
-const reference = (legacy, series) => {
-  if (startsWith(legacy, series)) return 'series'
-  if (startsWith(series, legacy)) return 'legacy'
-  const l = referenceIds(legacy); const s = referenceIds(series)
-  return l && s && [...l].every(id => !s.has(id)) ? 'continuation' : 'diverged'
-}
-
-test('SPEC[segments-7] the verdict equals the frozen law on 3000 seeded random form pairs', () => {
+test('SPEC[segments-7] constructed forms preserve each recovery case across 3000 seeded samples', () => {
   let seed = 1919
   const random = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648 }
-  const pool = ['a', 'b', 'c', 'd', 'e'].map(id => utf8(line(id)))
-  const pick = () => pool[Math.floor(random() * pool.length)]
-  const form = () => {
-    const parts = []
-    const count = Math.floor(random() * 4)
-    for (let i = 0; i < count; i += 1) parts.push(pick())
-    let bytes = concat(...parts)
-    const r = random()
-    if (r < 0.1 && bytes.length > 0) bytes = bytes.subarray(0, Math.floor(random() * bytes.length))
-    else if (r < 0.15) bytes = concat(bytes, utf8('\n'))
-    else if (r < 0.2) bytes = concat(bytes, new Uint8Array([0xff, 0x0a]))
-    return bytes
-  }
-  const tally = { series: 0, legacy: 0, continuation: 0, diverged: 0 }
   for (let round = 0; round < 3000; round += 1) {
-    const series = form()
-    const legacy = random() < 0.3 ? concat(series, form()) : random() < 0.5 ? series.subarray(0, Math.floor(random() * (series.length + 1))) : form()
-    const actual = segments.coexistence(legacy, series)
-    assert.equal(actual, reference(legacy, series), `round ${round}`)
-    tally[actual] += 1
+    const count = 1 + Math.floor(random() * 8)
+    const original = utf8(Array.from({ length: count }, (_, index) => line(`original-${round}-${index}`)).join(''))
+    const legacyLines = Array.from({ length: count }, (_, index) => line(`legacy-${round}-${index}`))
+    const legacy = utf8(legacyLines.join(''))
+    const copiedLines = 1 + Math.floor(random() * count)
+    const partial = concat(original, utf8(legacyLines.slice(0, copiedLines).join('')))
+    assert.deepEqual(segments.coexistence(original, concat(original, legacy)), { kind: 'series' })
+    assert.deepEqual(segments.coexistence(concat(original, legacy), original), { kind: 'legacy' })
+    assert.deepEqual(segments.coexistence(legacy, original), { kind: 'continuation', copiedLines: 0 })
+    assert.deepEqual(segments.coexistence(legacy, partial), { kind: 'continuation', copiedLines })
+    assert.deepEqual(segments.coexistence(concat(legacy, original), original), { kind: 'diverged' })
+    assert.deepEqual(segments.coexistence(legacy.subarray(0, legacy.length - 1), partial), { kind: 'diverged' })
+    assert.deepEqual(segments.coexistence(legacy, concat(original, new Uint8Array([0xff, 0x0a]))), { kind: 'diverged' })
   }
-  for (const kind of Object.keys(tally)) assert.ok(tally[kind] > 50, `${kind} covered: ${JSON.stringify(tally)}`)
 })

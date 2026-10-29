@@ -44,4 +44,5 @@ export interface ProcessSession {
   signal(name: SignalName): SignalResult;
   wait(milliseconds: number): Promise<{ kind: 'Closed' | 'TimedOut'; state: ProcessState }>;
 }
-export const ProcessSession: { new(options: ProcessOptions): ProcessSession };
+export type OutputReceiver = (channel: 'stdout' | 'stderr', bytes: Uint8Array) => void;
+export const ProcessSession: { new(options: ProcessOptions, onOutput?: OutputReceiver): ProcessSession };

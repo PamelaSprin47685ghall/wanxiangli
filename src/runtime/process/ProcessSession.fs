@@ -15,8 +15,11 @@ type SessionMessages =
     abstract signal: name: string -> obj
     abstract wait: milliseconds: float -> JS.Promise<obj>
 
-let ProcessSession (input: obj) : SessionMessages =
+let ProcessSession (input: obj) (onOutput: obj) : SessionMessages =
     let options = StartOptions.read input
+    Native.require
+        (isNullOrUndefined onOutput || emitJsExpr onOutput "typeof $0 === 'function'")
+        "Output receiver must be a function"
     let stdout = OutputTail(options.TailBytes)
     let stderr = OutputTail(options.TailBytes)
     let mutable child: obj = null
@@ -108,6 +111,15 @@ let ProcessSession (input: obj) : SessionMessages =
             | Some reject -> reject error
             | None -> ()
 
+    let receive channel (tail: OutputTail) bytes =
+        tail.Append bytes
+
+        if not (isNullOrUndefined onOutput) then
+            try
+                emitJsExpr (onOutput, channel, Array.copy bytes) "$0($1, $2)" |> ignore
+            with error ->
+                rememberFailure channel (box error) |> ignore
+
     do
         try
             child <-
@@ -136,8 +148,8 @@ let ProcessSession (input: obj) : SessionMessages =
 
                 close ())
 
-            Native.on1 (Native.get child "stdout") "data" (fun bytes -> stdout.Append(unbox bytes))
-            Native.on1 (Native.get child "stderr") "data" (fun bytes -> stderr.Append(unbox bytes))
+            Native.on1 (Native.get child "stdout") "data" (fun bytes -> receive "stdout" stdout (unbox bytes))
+            Native.on1 (Native.get child "stderr") "data" (fun bytes -> receive "stderr" stderr (unbox bytes))
             Native.on1 (Native.get child "stdout") "error" (streamError "stdout")
             Native.on1 (Native.get child "stderr") "error" (streamError "stderr")
             Native.on1 (Native.get child "stdin") "error" (streamError "stdin")

@@ -23,7 +23,7 @@ type Prefix() =
     static let stateView (state: State) : obj =
         let baseObj =
             createObj
-                [ "epoch" ==> state.Epoch
+                [ "epoch" ==> Wire.epochView state.Epoch
                   "compactionRuns" ==> Wire.stringArray state.CompactionRuns
                   "tenures" ==> Wire.stringArray state.Tenures ]
         if Set.isEmpty state.Scopes then
@@ -56,8 +56,8 @@ type Prefix() =
         | Some candidate ->
             Wire.freeze (
                 createObj
-                    [ "previousEpoch" ==> candidate.PreviousEpoch
-                      "nextEpoch" ==> candidate.NextEpoch
+                    [ "previousEpoch" ==> Wire.epochView candidate.PreviousEpoch
+                      "nextEpoch" ==> Wire.epochView candidate.NextEpoch
                       "evidence" ==> evidenceView candidate.Evidence ]
             )
 
@@ -65,7 +65,9 @@ type Prefix() =
         let fields =
             match rejection with
             | StaleEpoch(expected, actual) ->
-                [ "error" ==> "StaleEpoch"; "expected" ==> expected; "actual" ==> actual ]
+                [ "error" ==> "StaleEpoch"
+                  "expected" ==> Wire.epochView expected
+                  "actual" ==> Wire.epochView actual ]
             | NonSequentialEpoch -> [ "error" ==> "NonSequentialEpoch" ]
             | AlreadyReanchored evidence -> [ "error" ==> "AlreadyReanchored"; "evidence" ==> evidenceView evidence ]
 

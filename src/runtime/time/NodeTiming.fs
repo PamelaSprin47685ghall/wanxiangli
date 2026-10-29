@@ -47,9 +47,6 @@ module NodeTiming =
                     timer = null;
                     resolve(false);
                 }, $1);
-                if ($1 >= 1000 && timer !== null && typeof timer.unref === 'function') {
-                    timer.unref();
-                }
             })
             """
 

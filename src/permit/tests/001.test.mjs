@@ -18,6 +18,28 @@ const fresh = (fields, credit = 1) => {
   return { permits, permit }
 }
 
+test('SPEC[permit-1] adjacent int64 credits remain distinct and preserve exact ownership', () => {
+  const permits = new ExecutionPermits()
+  const first = permits.issue(identity(), 9007199254740992n)
+  const second = permits.issue(identity(), 9007199254740993n)
+  assert.equal(first.credit, 9007199254740992n)
+  assert.equal(second.credit, 9007199254740993n)
+  assert.notEqual(second, first)
+  assert.equal(permits.issue(identity(), 9007199254740993n), second)
+  assert.equal(permits.commit(first, first.fence, identity()), 'StaleFence')
+  assert.equal(permits.commit(second, BigInt(second.fence), identity()), 'Applied')
+  assert.equal(permits.releasePhysical('ses-a', 'msg-1'), 'Applied')
+})
+
+test('SPEC[permit-1] exact integer inputs accept small bigint and reject rounded numbers', () => {
+  const permits = new ExecutionPermits()
+  const permit = permits.issue(identity(), 1n)
+  assert.equal(permits.issue(identity(), 1), permit)
+  for (const credit of [9007199254740992, 9223372036854775808n, 0n, -1n]) {
+    assert.throws(() => permits.issue(identity(), credit), /positive integer/)
+  }
+})
+
 test('SPEC[permit-1] a repeated issue with the same identity and credit returns the same permit', () => {
   const { permits, permit } = fresh()
   assert.ok(Object.isFrozen(permit))
