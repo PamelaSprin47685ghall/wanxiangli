@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Wanxiangli.ScopeRetention</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Annotation.fs" />
+    <Compile Include="Retention.fs" />
+    <PackageExport Include="Annotation.fs" Member="parseScopeAnnotation" />
+    <PackageExport Include="Annotation.fs" Member="validateScopeFields" />
+    <PackageExport Include="Annotation.fs" Member="isExemptTool" />
+    <PackageExport Include="Annotation.fs" Member="MaxRetentionBudget" />
+    <PackageExport Include="Retention.fs" Member="ScopeRetention" />
+    <PackageExport Include="Retention.fs" Member="scopeRetention" />
+  </ItemGroup>
+</Project>
