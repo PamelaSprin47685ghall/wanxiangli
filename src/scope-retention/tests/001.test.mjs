@@ -131,3 +131,47 @@ test('budget hard cap', () => {
   })
   assert.equal(over.ok, false)
 })
+
+test('durable journal round-trip restores retention and retractions', () => {
+  const streams = new Map()
+  const journalFor = () => ({
+    read(stream) {
+      return streams.get(stream) ?? []
+    },
+    append(stream, expectedRevision, _requestId, body) {
+      const frames = streams.get(stream) ?? []
+      if (frames.length !== expectedRevision) return { status: 'RevisionConflict' }
+      frames.push(body)
+      streams.set(stream, frames)
+      return { status: 'Committed' }
+    },
+    close() {},
+  })
+  scopeRetention.clear('dur')
+  scopeRetention.configureJournal(journalFor)
+  scopeRetention.reset('dur', 'ep1')
+  scopeRetention.apply('dur', 'ep1', 'resetScope', 'r0', 'c0', 'b0', {
+    kind: 'resetScope',
+    newScopeGoal: 'g',
+    newScopeRetentionBudget: 4,
+  })
+  scopeRetention.apply('dur', 'ep1', 'read', 'r1', 'c1', 'beat-a', { kind: 'keepLast' })
+  scopeRetention.apply('dur', 'ep1', 'read', 'r2', 'c2', 'beat-b', {
+    kind: 'removeLast',
+    replacement: '教训：测试持久化。',
+  })
+  const mid = scopeRetention.status('dur')
+  assert.equal(mid.remaining, 3)
+  assert.equal(mid.removeStreak, 1)
+
+  // Drop memory and reload via ensureEpoch + configureJournal
+  scopeRetention.clear('dur')
+  scopeRetention.configureJournal(journalFor)
+  scopeRetention.ensureEpoch('dur', 'ep1')
+  const again = scopeRetention.status('dur')
+  assert.equal(again.remaining, 3)
+  assert.equal(again.removeStreak, 1)
+  const list = scopeRetention.retractions('dur')
+  assert.equal(list.length, 1)
+  assert.equal(list[0].beatId, 'beat-a')
+})

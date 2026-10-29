@@ -6,15 +6,29 @@ open Fable.Core
 open Fable.Core.JsInterop
 open Wanxiangli.ScopeRetention.Annotation
 
+type RetentionJournal =
+    abstract read: stream: string -> string array
+    abstract append: stream: string * expectedRevision: float * requestId: string * body: string -> obj
+    abstract close: unit -> unit
+
+[<Emit("JSON.stringify($0)")>]
+let private serialize (_value: obj) : string = jsNative
+
+[<Emit("JSON.parse($0)")>]
+let private parse (_value: string) : obj = jsNative
+
+let private valid (value: string) = not (String.IsNullOrWhiteSpace value) && not (value.Contains '\000')
+let private field (value: string) = string value.Length + ":" + value
+let private streamFor session epoch = "scope-retention:" + field session + ":" + field epoch
+
 type private BeatRetraction =
     { BeatId: string
       Replacement: string
-      Streak: int
-      HostNote: string }
+      Streak: int }
 
 type private TurnDecision =
     | Undecided
-    | Decided of ScopeKind * string // kind * toolCallId of the real annotation
+    | Decided of ScopeKind * string
 
 type private SessionState(epoch: string) =
     let mutable remaining: int option = None
@@ -24,19 +38,22 @@ type private SessionState(epoch: string) =
     let mutable turnRunId = ""
     let retractions = Dictionary<string, BeatRetraction>()
     let journal = ResizeArray<obj>()
+    let mutable durableRevision = 0
 
     member _.Epoch = epoch
     member _.Remaining = remaining
     member _.RemoveStreak = removeStreak
     member _.Retractions = retractions
     member _.Journal = journal
+    member _.DurableRevision = durableRevision
+    member _.SetDurableRevision(v: int) = durableRevision <- v
 
     member _.EnsureTurn(runId: string) =
         if turnRunId <> runId then
             turn <- Undecided
             turnRunId <- runId
 
-    member private _.Append(eventKind: string) (payload: (string * obj) list) =
+    member this.AppendLocal(eventKind: string) (payload: (string * obj) list) =
         let row =
             createObj (
                 [ "kind" ==> eventKind
@@ -45,6 +62,7 @@ type private SessionState(epoch: string) =
                 @ payload
             )
         journal.Add row
+        row
 
     member this.Status() : obj =
         createObj
@@ -52,7 +70,16 @@ type private SessionState(epoch: string) =
               "epoch" ==> epoch
               "remaining" ==> (remaining |> Option.map box |> Option.defaultValue null)
               "removeStreak" ==> removeStreak
-              "advisorDue" ==> (removeStreak >= 3 || (remaining = Some 0)) ]
+              "advisorDue" ==> (removeStreak >= 3 || remaining = Some 0) ]
+
+    member this.ListRetractions() : obj array =
+        retractions.Values
+        |> Seq.map (fun r ->
+            createObj
+                [ "beatId" ==> r.BeatId
+                  "replacement" ==> r.Replacement
+                  "streak" ==> r.Streak ])
+        |> Array.ofSeq
 
     member this.Apply
         (toolName: string)
@@ -60,6 +87,7 @@ type private SessionState(epoch: string) =
         (callId: string)
         (beatId: string)
         (annotation: ScopeAnnotation)
+        (persist: obj -> unit)
         : obj =
         this.EnsureTurn runId
         let exempt = isExemptTool toolName
@@ -81,7 +109,6 @@ type private SessionState(epoch: string) =
             | _, Decided (prior, priorCall) when priorCall <> callId ->
                 refuse ("turn already carries a real scope annotation on " + priorCall + " (" + string prior + "); others must be meToo")
             | kind, _ ->
-                // First real annotation this turn (or replay of same call).
                 let mark () = turn <- Decided(kind, callId)
 
                 match kind with
@@ -92,12 +119,15 @@ type private SessionState(epoch: string) =
                     remaining <- Some annotation.NewScopeRetentionBudget
                     removeStreak <- 0
                     lastBeatId <- Some beatId
-                    this.Append "ScopeReset"
-                        [ "callId" ==> callId
-                          "goal" ==> annotation.NewScopeGoal
-                          "budget" ==> annotation.NewScopeRetentionBudget
-                          "oldVerbatim" ==> annotation.OldScopeVerboseVerbatim
-                          "previousRemaining" ==> (priorRemaining |> Option.map box |> Option.defaultValue null) ]
+                    retractions.Clear()
+                    let row =
+                        this.AppendLocal "ScopeReset"
+                            [ "callId" ==> callId
+                              "goal" ==> annotation.NewScopeGoal
+                              "budget" ==> annotation.NewScopeRetentionBudget
+                              "oldVerbatim" ==> annotation.OldScopeVerboseVerbatim
+                              "previousRemaining" ==> (priorRemaining |> Option.map box |> Option.defaultValue null) ]
+                    persist row
                     accept
                         [ "kind" ==> "resetScope"
                           "remaining" ==> annotation.NewScopeRetentionBudget
@@ -115,10 +145,10 @@ type private SessionState(epoch: string) =
                         remaining <- Some next
                         removeStreak <- 0
                         lastBeatId <- Some beatId
-                        this.Append "KeepLast" [ "callId" ==> callId; "remaining" ==> next ]
+                        let row = this.AppendLocal "KeepLast" [ "callId" ==> callId; "remaining" ==> next; "beatId" ==> beatId ]
+                        persist row
                         accept [ "kind" ==> "keepLast"; "remaining" ==> next; "decremented" ==> true ]
                     | None ->
-                        // Exempt before first reset: allow without decrement.
                         mark()
                         accept [ "kind" ==> "keepLast"; "remaining" ==> null; "decremented" ==> false; "exempt" ==> true ]
                 | RemoveLast ->
@@ -128,9 +158,7 @@ type private SessionState(epoch: string) =
                     | _ ->
                         mark()
                         removeStreak <- removeStreak + 1
-                        let targetBeat =
-                            lastBeatId
-                            |> Option.defaultValue beatId
+                        let targetBeat = lastBeatId |> Option.defaultValue beatId
                         let hostNote =
                             "这是连续第 "
                             + string removeStreak
@@ -138,20 +166,18 @@ type private SessionState(epoch: string) =
                             + string removeStreak
                             + "; do not spin idle."
                         let body = annotation.Replacement.TrimEnd() + "\n\n" + hostNote
-                        let retraction =
+                        retractions[targetBeat] <-
                             { BeatId = targetBeat
                               Replacement = body
-                              Streak = removeStreak
-                              HostNote = hostNote }
-                        retractions[targetBeat] <- retraction
-                        // removeLast erases *this* remove's own beat from later view? No:
-                        // it erases the *previous* beat (lastBeatId). The current beat becomes the new last.
+                              Streak = removeStreak }
                         lastBeatId <- Some beatId
-                        this.Append "BeatRetracted"
-                            [ "callId" ==> callId
-                              "beatId" ==> targetBeat
-                              "replacement" ==> body
-                              "streak" ==> removeStreak ]
+                        let row =
+                            this.AppendLocal "BeatRetracted"
+                                [ "callId" ==> callId
+                                  "beatId" ==> targetBeat
+                                  "replacement" ==> body
+                                  "streak" ==> removeStreak ]
+                        persist row
                         accept
                             [ "kind" ==> "removeLast"
                               "remaining" ==> (remaining |> Option.map box |> Option.defaultValue null)
@@ -167,28 +193,23 @@ type private SessionState(epoch: string) =
             | "ScopeReset" ->
                 remaining <- Some(unbox<int> row?budget)
                 removeStreak <- 0
+                retractions.Clear()
+                if not (isNull row?callId) then
+                    lastBeatId <- Some(string row?callId)
             | "KeepLast" ->
                 remaining <- Some(unbox<int> row?remaining)
                 removeStreak <- 0
+                if not (isNull row?beatId) then
+                    lastBeatId <- Some(string row?beatId)
             | "BeatRetracted" ->
                 removeStreak <- unbox<int> row?streak
                 let beatId = string row?beatId
                 retractions[beatId] <-
                     { BeatId = beatId
                       Replacement = string row?replacement
-                      Streak = removeStreak
-                      HostNote = "" }
+                      Streak = removeStreak }
             | _ -> ()
-
-    member this.ProjectionFor(beatId: string) : obj =
-        match retractions.TryGetValue beatId with
-        | true, r ->
-            createObj
-                [ "retracted" ==> true
-                  "beatId" ==> r.BeatId
-                  "replacement" ==> r.Replacement
-                  "streak" ==> r.Streak ]
-        | _ -> createObj [ "retracted" ==> false ]
+            journal.Add row
 
 type ScopeRetentionPort =
     abstract apply:
@@ -202,26 +223,93 @@ type ScopeRetentionPort =
             obj
     abstract status: sessionId: string -> obj
     abstract projection: sessionId: string * beatId: string -> obj
+    abstract retractions: sessionId: string -> obj array
     abstract reset: sessionId: string * epochId: string -> unit
     abstract clear: sessionId: string -> unit
     abstract journal: sessionId: string -> obj array
     abstract restore: sessionId: string * epochId: string * events: obj array -> unit
+    abstract configureJournal: journalFor: (string -> RetentionJournal) -> unit
+    abstract bindSessionJournal: sessionId: string * journalFor: (string -> RetentionJournal) -> unit
+    abstract unbindSessionJournal: sessionId: string -> unit
+    abstract ensureEpoch: sessionId: string * epochId: string -> unit
 
 [<CompiledName("ScopeRetention")>]
 let ScopeRetention () : ScopeRetentionPort =
     let sessions = Dictionary<string, SessionState>()
+    let perSessionJournal = Dictionary<string, string -> RetentionJournal>()
+    let mutable journalFactory: (string -> RetentionJournal) option = None
+
+    let journalFor sessionId =
+        match perSessionJournal.TryGetValue sessionId with
+        | true, factory -> Some factory
+        | _ -> journalFactory
+
     let find sessionId =
         match sessions.TryGetValue sessionId with
         | true, state -> Some state
         | _ -> None
+
+    let loadDurable sessionId epochId (state: SessionState) =
+        match journalFor sessionId with
+        | None -> ()
+        | Some factory ->
+            try
+                let journal = factory sessionId
+                try
+                    let frames = journal.read (streamFor sessionId epochId)
+                    if frames.Length > 0 && state.Journal.Count = 0 then
+                        let events = frames |> Array.map parse
+                        state.Replay events
+                        state.SetDurableRevision frames.Length
+                finally
+                    journal.close()
+            with _ ->
+                ()
+
+    let persist sessionId epochId (state: SessionState) (row: obj) =
+        match journalFor sessionId with
+        | None -> ()
+        | Some factory ->
+            try
+                let journal = factory sessionId
+                try
+                    let expected = float state.DurableRevision
+                    let requestId = string (row?kind) + ":" + string (row?at) + ":" + string (row?callId)
+                    let result = journal.append (streamFor sessionId epochId, expected, requestId, serialize row)
+                    let status = string result?status
+                    if status = "Committed" || status = "Replayed" then
+                        state.SetDurableRevision(state.DurableRevision + 1)
+                finally
+                    journal.close()
+            with _ ->
+                ()
+
     let current sessionId epochId =
         match find sessionId with
-        | Some state when state.Epoch = epochId -> state
+        | Some state when state.Epoch = epochId ->
+            loadDurable sessionId epochId state
+            state
         | _ ->
             let state = SessionState(epochId)
             sessions[sessionId] <- state
+            loadDurable sessionId epochId state
             state
+
     { new ScopeRetentionPort with
+        member _.configureJournal(journalFor) = journalFactory <- Some journalFor
+        member _.bindSessionJournal(sessionId, journalFor) =
+            if not (String.IsNullOrWhiteSpace sessionId) then
+                perSessionJournal[sessionId] <- journalFor
+        member _.unbindSessionJournal(sessionId) =
+            perSessionJournal.Remove sessionId |> ignore
+        member _.ensureEpoch(sessionId, epochId) =
+            if not (String.IsNullOrWhiteSpace sessionId || String.IsNullOrWhiteSpace epochId) then
+                match find sessionId with
+                | Some state when state.Epoch = epochId -> loadDurable sessionId epochId state
+                | _ ->
+                    let state = SessionState(epochId)
+                    sessions[sessionId] <- state
+                    loadDurable sessionId epochId state
         member _.apply(sessionId, epochId, toolName, providerRunId, toolCallId, beatId, scope) =
             if String.IsNullOrWhiteSpace sessionId || String.IsNullOrWhiteSpace epochId then
                 createObj [ "ok" ==> false; "reason" ==> "sessionId and epochId required" ]
@@ -230,7 +318,7 @@ let ScopeRetention () : ScopeRetentionPort =
                 | Error reason -> createObj [ "ok" ==> false; "reason" ==> reason ]
                 | Ok annotation ->
                     let state = current sessionId epochId
-                    state.Apply toolName providerRunId toolCallId beatId annotation
+                    state.Apply toolName providerRunId toolCallId beatId annotation (persist sessionId epochId state)
         member _.status(sessionId) =
             match find sessionId with
             | None -> createObj [ "known" ==> false; "remaining" ==> null; "removeStreak" ==> 0; "advisorDue" ==> false ]
@@ -238,7 +326,19 @@ let ScopeRetention () : ScopeRetentionPort =
         member _.projection(sessionId, beatId) =
             match find sessionId with
             | None -> createObj [ "retracted" ==> false ]
-            | Some state -> state.ProjectionFor beatId
+            | Some state ->
+                match state.Retractions.TryGetValue beatId with
+                | true, r ->
+                    createObj
+                        [ "retracted" ==> true
+                          "beatId" ==> r.BeatId
+                          "replacement" ==> r.Replacement
+                          "streak" ==> r.Streak ]
+                | _ -> createObj [ "retracted" ==> false ]
+        member _.retractions(sessionId) =
+            match find sessionId with
+            | None -> [||]
+            | Some state -> state.ListRetractions()
         member _.reset(sessionId, epochId) =
             sessions[sessionId] <- SessionState(epochId)
         member _.clear(sessionId) = sessions.Remove sessionId |> ignore
