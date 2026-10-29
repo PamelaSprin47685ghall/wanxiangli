@@ -19,7 +19,7 @@ type ReliabilityCounterSnapshot =
       streamAborts: int64 }
 
 [<Emit("Object.freeze($0)")>]
-let private freeze (value: 'T) : 'T = jsNative
+let private freeze (_value: 'T) : 'T = jsNative
 
 [<AttachMembers>]
 type ReliabilityDiagnosticsStore() =
@@ -56,19 +56,21 @@ type ReliabilityDiagnosticsStore() =
 
     member _.Snapshot() : obj =
         lock gate (fun () ->
-            freeze
-                {| identityConflicts = identityConflicts
-                   queueFull = queueFull
-                   fatalSettlements = fatalSettlements
-                   recoveryObserveOnly = recoveryObserveOnly
-                   recoveryResumeAdmission = recoveryResumeAdmission
-                   recoveryReconcileStartedProvider = recoveryReconcileStartedProvider
-                   recoveryMarkTerminal = recoveryMarkTerminal
-                   recoveryFailClosed = recoveryFailClosed
-                   recoveryManualIntervention = recoveryManualIntervention
-                   hookFailures = hookFailures
-                   fallbackAdvances = fallbackAdvances
-                   streamAborts = streamAborts |})
+            box (
+                freeze
+                    {| identityConflicts = identityConflicts
+                       queueFull = queueFull
+                       fatalSettlements = fatalSettlements
+                       recoveryObserveOnly = recoveryObserveOnly
+                       recoveryResumeAdmission = recoveryResumeAdmission
+                       recoveryReconcileStartedProvider = recoveryReconcileStartedProvider
+                       recoveryMarkTerminal = recoveryMarkTerminal
+                       recoveryFailClosed = recoveryFailClosed
+                       recoveryManualIntervention = recoveryManualIntervention
+                       hookFailures = hookFailures
+                       fallbackAdvances = fallbackAdvances
+                       streamAborts = streamAborts |}
+            ))
 
     member _.Reset() : unit =
         lock gate (fun () ->

@@ -27,9 +27,9 @@ type RuntimePathStore() =
         else
             let trimmed = workspace.TrimEnd([| '/'; '\\' |])
             if trimmed.Length = 0 then
-                string workspace.[0]
-            elif trimmed.Length = 2 && Char.IsLetter trimmed.[0] && trimmed.[1] = ':' && workspace.Length > 2 then
-                trimmed + string workspace.[2]
+                string workspace[0]
+            elif trimmed.Length = 2 && Char.IsLetter trimmed[0] && trimmed[1] = ':' && workspace.Length > 2 then
+                trimmed + string workspace[2]
             else
                 trimmed
 
@@ -63,7 +63,7 @@ type RuntimePathStore() =
                 | true, v -> v
                 | false, _ ->
                     let v = compute key
-                    roots.[key] <- v
+                    roots[key] <- v
                     v)
         if isThenable item then
             catchThenable item (fun _ex ->

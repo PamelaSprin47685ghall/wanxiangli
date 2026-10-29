@@ -63,12 +63,12 @@ module private Commands =
         ] @ extra)
 
     let private blocked (ledger: Ledger) blockers =
-        decision "Blocked" (ledger.ActiveId |> Option.map box |> Option.defaultValue null) (box ledger.Milestone) ledger.WaitName null (box (View.obligations ledger.Obligations)) [
+        decision "Blocked" (ledger.ActiveId |> Option.map box |> Option.defaultValue null) (box ledger.Milestone) ledger.WaitName (null: obj) (box (View.obligations ledger.Obligations)) [
             "blockers", box (blockers |> List.toArray)
         ]
 
     let private ignored messageId (ledger: Ledger) =
-        decision "Ignored" (ledger.ActiveId |> Option.map box |> Option.defaultValue null) (box ledger.Milestone) ledger.WaitName null (box (View.obligations ledger.Obligations)) [
+        decision "Ignored" (ledger.ActiveId |> Option.map box |> Option.defaultValue null) (box ledger.Milestone) ledger.WaitName (null: obj) (box (View.obligations ledger.Obligations)) [
             "messageId", box messageId
         ]
 
@@ -193,6 +193,15 @@ module private Commands =
                     | Program.Step.AwaitOperator -> Observe(ignored messageId ledger)
                     | _ -> fail "Completion program diverged"
                 | _ -> Refuse "Operator message is only accepted after completion"
+        | "ContinueWork" ->
+            fields [ "type"; "continuationId" ] [] command
+            let continuationId = identifier (get command "continuationId")
+            match ledger.TryContinuation continuationId with
+            | Some result -> Observe result
+            | None ->
+                if ledger.Phase <> "Completed" then Refuse "Continuation requires completion"
+                elif ledger.HasBlockingPending || ledger.HasUnobservedStop then Refuse "Previous execution stop is not observed"
+                else Write [ Fact.WorkContinued(Identities.continuation workId continuationId, continuationId) ]
         | "Confirm" ->
             fields [ "type"; "effectId"; "outcome" ] [ "execSessionId"; "reason" ] command
             let effectId = identifier (get command "effectId")
@@ -234,7 +243,7 @@ module private Commands =
                 let target = if isNull (get command "target") then None else Some(text (get command "target"))
                 match ledger.DevOps with
                 | Some(existingId, existingTarget, existingTrigger) when existingId = devopsId && existingTarget = target && existingTrigger = trigger ->
-                    Observe(decision "DevOpsBound" (ledger.ActiveId |> Option.map box |> Option.defaultValue null) (box ledger.Milestone) ledger.WaitName null (box (View.obligations ledger.Obligations)) [ "devopsId", box devopsId ])
+                    Observe(decision "DevOpsBound" (ledger.ActiveId |> Option.map box |> Option.defaultValue null) (box ledger.Milestone) ledger.WaitName (null: obj) (box (View.obligations ledger.Obligations)) [ "devopsId", box devopsId ])
                 | Some _ -> Refuse "DevOps binding conflict"
                 | None -> Write [ Fact.DevOpsBound(devopsId, target, trigger) ]
         | _ -> fail "Unknown work command"

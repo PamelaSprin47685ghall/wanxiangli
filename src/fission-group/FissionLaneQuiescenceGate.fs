@@ -24,7 +24,7 @@ type FissionLaneQuiescenceGate() =
         | true, existing -> existing
         | false, _ ->
             let created = Dictionary<string, bool>()
-            groups.[groupId] <- created
+            groups[groupId] <- created
             created
 
     /// 标记特定组下的某个分道进入静默状态。
@@ -38,7 +38,7 @@ type FissionLaneQuiescenceGate() =
                 match laneMap.TryGetValue laneId with
                 | true, true -> false
                 | _ ->
-                    laneMap.[laneId] <- true
+                    laneMap[laneId] <- true
                     true)
 
     /// enterQuiescent 的同义别名。
@@ -56,7 +56,7 @@ type FissionLaneQuiescenceGate() =
                 | true, laneMap ->
                     match laneMap.TryGetValue laneId with
                     | true, true ->
-                        laneMap.[laneId] <- false
+                        laneMap[laneId] <- false
                         true
                     | _ -> false
                 | false, _ -> false)

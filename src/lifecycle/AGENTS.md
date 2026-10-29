@@ -27,7 +27,7 @@
 ## SPEC
 1. [LEMMA 1] 第一次 review 写入 WorkOpened 与 IncumbencyOpened。接力在同一笔写入 IncumbencyRetired、ContextBarrier、后任 IncumbencyOpened 与 PromptObliged。中断不能暴露半对。
    - 证明：`tests/001.test.mjs` 核对原子事件、屏障与恢复后的同一快照。
-2. [LEMMA 2] 空账询问，清空才接力；接任第一次空账只推进里程碑；待执行可多次启动 Manager；收尾空账结案；已完成只由操作员消息重开一次。没有资格锁定，也没有独立的生命周期 deliver。
+2. [LEMMA 2] 空账询问，清空才接力；接任第一次空账只推进里程碑；待执行可多次启动 Manager；收尾空账结案。已完成可由真实操作员消息重开；外层组合者因未完成的工作需要继续时，也可用独立的系统续办请求重开，不能冒充操作员。续办身份重放不得产生第二个任期，外层负责判断续办原因及发送结果。系统续办程序待改。没有资格锁定，也没有独立的生命周期 deliver。
    - 证明：`tests/002.test.mjs`、`tests/006.test.mjs` 与 `tests/007.test.mjs` 覆盖询问、接力、晋级、启动、结案与重开。
 3. [LEMMA 2, 3] 同一请求同一载荷重放原结果，异载荷拒绝。同一 toolCallId 的另一请求返回原结果。未知字段、空 key、写死之后的另一 office 与待执行上的非空账均零追加。
    - 证明：`tests/003.test.mjs`。

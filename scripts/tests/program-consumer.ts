@@ -4,7 +4,7 @@ const runtime = Runtime()
 const session = ProgramSession('consumer')
 const options: ProgramOptions = {
   name: 'consumer', program: 'class Js extends JsProgram { async run() { return 1; } }',
-  planB: 'Collect the result under the same request deadline.',
+  intent: 'Collect the result under the same request deadline.',
   root: '.', baseClass: 'class JsProgram {}', api: {}, capabilities: [],
   executionBudgetMs: 1000, outputBoundBytes: 4096
 }

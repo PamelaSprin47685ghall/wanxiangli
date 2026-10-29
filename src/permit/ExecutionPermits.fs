@@ -437,7 +437,7 @@ type SessionLeaseHandles() =
             let handle = Wire.call2 createHandle (Wire.integerView nextLease) (Wire.integerView nextFence)
             leaseSequence <- nextLease
             fenceSequence <- nextFence
-            bySession.[sid] <- { Permit = permit; Handle = handle }
+            bySession[sid] <- { Permit = permit; Handle = handle }
             handle
 
     member _.tryGetMatching(sessionId: obj, permit: obj) : obj =

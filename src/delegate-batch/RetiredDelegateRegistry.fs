@@ -34,7 +34,7 @@ type RetiredDelegateRegistry() =
                     match stagedByOwnerScope.TryGetValue sKey with
                     | true, prev -> Some prev
                     | false, _ -> None
-                stagedByOwnerScope.[sKey] <- dKey
+                stagedByOwnerScope[sKey] <- dKey
                 previous)
 
     /// Look up the staged deleted delegate session for the scope without removing it.

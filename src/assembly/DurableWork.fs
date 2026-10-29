@@ -47,6 +47,9 @@ module private Protocol =
     [<Emit("$0.id")>]
     let effectId (_value: obj): string = jsNative
 
+    [<Emit("$0[$1]($2)")>]
+    let callPort (_ports: obj) (_method: string) (_arg: obj): obj = jsNative
+
     [<Emit("$0 != null && (typeof $0 === 'object' || typeof $0 === 'function') && typeof $0.then === 'function'")>]
     let isThenable (_value: obj): bool = jsNative
 
@@ -136,7 +139,9 @@ let DurableWork (workId: string) (journal: Journal) (effects: obj): WorkMessages
                         let replay = (Protocol.create workId records).execute(requestId, command)
                         let replayStatus: string = replay?status
                         Protocol.require (replayStatus = "Replayed") "Replay receipt is absent"
-                        Protocol.response "Replayed" (unbox<float> replay?revision) replay?result (null: obj)
+                        let replayRev: float = replay?revision
+                        let replayRes: obj = replay?result
+                        Protocol.response "Replayed" replayRev replayRes (null: obj)
                     | "Conflict" | "NotWritten" -> Protocol.response outcome expected (null: obj) reason
                     | "Unknown" -> unknown reason
                     | _ -> unknown (box "Unknown journal acknowledgement")
@@ -146,10 +151,10 @@ let DurableWork (workId: string) (journal: Journal) (effects: obj): WorkMessages
         let status: string = reply?status
         status = "Committed" || status = "Replayed"
 
-    let confirm effectId outcome session reason =
+    let confirm (effectId: string) (outcome: string) (session: string option) (reason: string option) : bool =
         accepted (commit (Protocol.confirmId effectId outcome session, Protocol.confirmCommand effectId outcome session reason))
 
-    let textOf value name =
+    let textOf (value: obj) (name: string) : string =
         Protocol.require (Protocol.isText value) name
         unbox<string> value
 
@@ -162,28 +167,28 @@ let DurableWork (workId: string) (journal: Journal) (effects: obj): WorkMessages
     let perform effect =
         let id = Protocol.effectId effect
 
-        let finish outcome session reason =
+        let finish (outcome: string) (session: string option) (reason: string option) =
             box (confirm id outcome session reason)
 
         match Protocol.kind effect with
         | "Ask" ->
-            useText (effects?ask effect) "Ask outcome must be text" (fun outcome -> outcome = "Parked" || outcome = "Unknown") "Ask outcome is not Parked or Unknown" (fun outcome ->
+            useText (Protocol.callPort effects "ask" effect) "Ask outcome must be text" (fun outcome -> outcome = "Parked" || outcome = "Unknown") "Ask outcome is not Parked or Unknown" (fun outcome ->
                 finish outcome None None)
         | "Dispatch" ->
-            useText (effects?dispatch effect) "Dispatch outcome must be text" (fun outcome -> outcome = "Sent" || outcome = "Unknown") "Dispatch outcome is not Sent or Unknown" (fun outcome ->
+            useText (Protocol.callPort effects "dispatch" effect) "Dispatch outcome must be text" (fun outcome -> outcome = "Sent" || outcome = "Unknown") "Dispatch outcome is not Sent or Unknown" (fun outcome ->
                 finish outcome None None)
         | "Stop" ->
-            useText (effects?stop effect) "Stop outcome must be text" (fun outcome -> outcome = "Requested" || outcome = "Unknown") "Stop outcome is not Requested or Unknown" (fun outcome ->
+            useText (Protocol.callPort effects "stop" effect) "Stop outcome must be text" (fun outcome -> outcome = "Requested" || outcome = "Unknown") "Stop outcome is not Requested or Unknown" (fun outcome ->
                 finish outcome None None)
         | "Launch" ->
             match Protocol.phase effect with
             | "Create" ->
-                Protocol.flatten (effects?createSession effect) (fun receipt ->
+                Protocol.flatten (Protocol.callPort effects "createSession" effect) (fun receipt ->
                     Protocol.require (not (isNull receipt)) "createSession receipt is missing"
 
-                    match unbox<string> receipt?status with
+                    match unbox<string> (receipt?status: obj) with
                     | "SessionCreated" ->
-                        let session = textOf receipt?execSessionId "Session id must be text"
+                        let session = textOf (receipt?execSessionId: obj) "Session id must be text"
 
                         if not (confirm id "SessionCreated" (Some session) None) then
                             box false
@@ -191,22 +196,22 @@ let DurableWork (workId: string) (journal: Journal) (effects: obj): WorkMessages
                             let pending: obj = ((load ()).recover())?effect
                             Protocol.require (not (isNull pending) && Protocol.effectId pending = id && Protocol.phase pending = "Send") "Bound launch did not become sendable"
 
-                            useText (effects?sendDraft pending) "Admission outcome must be text" (fun sent -> sent = "Admitted" || sent = "Unknown") "Admission outcome is not Admitted or Unknown" (fun sent ->
+                            useText (Protocol.callPort effects "sendDraft" pending) "Admission outcome must be text" (fun sent -> sent = "Admitted" || sent = "Unknown") "Admission outcome is not Admitted or Unknown" (fun sent ->
                                 if sent = "Admitted" then
                                     finish "Admitted" (Some session) None
                                 else
                                     finish "Unknown" None None)
                     | "Unknown" -> finish "Unknown" None None
                     | "NotStarted" ->
-                        let reason = textOf receipt?reason "Refusal reason must be text"
+                        let reason = textOf (receipt?reason: obj) "Refusal reason must be text"
                         finish "NotStarted" None (Some reason)
                     | _ ->
                         Protocol.require false "Unknown session receipt"
                         box false)
             | "Send" ->
-                useText (effects?sendDraft effect) "Admission outcome must be text" (fun sent -> sent = "Admitted" || sent = "Unknown") "Admission outcome is not Admitted or Unknown" (fun sent ->
+                useText (Protocol.callPort effects "sendDraft" effect) "Admission outcome must be text" (fun sent -> sent = "Admitted" || sent = "Unknown") "Admission outcome is not Admitted or Unknown" (fun sent ->
                     if sent = "Admitted" then
-                        finish "Admitted" (Some(textOf effect?execSessionId "Bound session id must be text")) None
+                        finish "Admitted" (Some(textOf (effect?execSessionId: obj) "Bound session id must be text")) None
                     else
                         finish "Unknown" None None)
             | _ ->
@@ -232,17 +237,18 @@ let DurableWork (workId: string) (journal: Journal) (effects: obj): WorkMessages
 
     let committedEffect reply input =
         if Protocol.missing effects then None
-        elif unbox<string> reply?status <> "Committed" then None
-        elif isNull reply?result || Protocol.commandType input = "Confirm" then None
+        elif unbox<string> (reply?status: obj) <> "Committed" then None
+        elif isNull (reply?result: obj) || Protocol.commandType input = "Confirm" then None
         else
-            let effect: obj = reply?result?effect
+            let res: obj = reply?result
+            let effect: obj = res?effect
             if isNull effect then None else Some effect
 
     let afterFill reply ok =
         if unbox<bool> ok then
             reply
         else
-            Protocol.response "Unknown" (unbox<float> reply?revision - 1.) (null: obj) (box "Effect confirmation is unknown")
+            Protocol.response "Unknown" (unbox<float> (reply?revision: obj) - 1.) (null: obj) (box "Effect confirmation is unknown")
 
     let execute (requestId: string, input: obj): obj =
         let reply = commit (requestId, input)

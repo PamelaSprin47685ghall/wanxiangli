@@ -88,7 +88,7 @@ type SyncDelegateBatchStore() =
                         let created =
                             { calls = ResizeArray<string * string>()
                               seen = HashSet<string>() }
-                        observedProviderRuns.[k] <- created
+                        observedProviderRuns[k] <- created
                         created
                 if observed.seen.Add cKey then
                     observed.calls.Add(rKey, cKey))
@@ -105,14 +105,14 @@ type SyncDelegateBatchStore() =
             | true, observed ->
                 let rawCalls =
                     observed.calls
-                    |> Seq.map (fun (r, cid) -> createObj [ "role" ==> r; "callId" ==> cid ])
+                    |> Seq.map (fun (r, cid) -> createObj [ "role" ==> box r; "callId" ==> box cid ])
                     |> Seq.toArray
                 let orderObj: obj =
                     law.observedBatch(
                         createObj
-                            [ "role" ==> rKey
-                              "currentCall" ==> cKey
-                              "calls" ==> rawCalls ]
+                            [ "role" ==> box rKey
+                              "currentCall" ==> box cKey
+                              "calls" ==> box rawCalls ]
                     )
                 if isNull orderObj then
                     None
@@ -152,9 +152,9 @@ type SyncDelegateBatchStore() =
                 match existingBatchOpt with
                 | Some b when b.stage = Pending ->
                     createObj
-                        [ "providerRun" ==> b.providerRun
-                          "callOrder" ==> (b.callOrder |> List.toArray)
-                          "received" ==> (b.received.Keys |> Seq.toArray) ]
+                        [ "providerRun" ==> box b.providerRun
+                          "callOrder" ==> box (b.callOrder |> List.toArray)
+                          "received" ==> box (b.received.Keys |> Seq.toArray) ]
                 | _ -> null
 
             let batchInput =
@@ -165,16 +165,16 @@ type SyncDelegateBatchStore() =
             let verdict: obj =
                 law.admit(
                     createObj
-                        [ "active" ==> hasActive
+                        [ "active" ==> box hasActive
                           "pending" ==> pendingInput
                           "batch" ==> batchInput ]
                 )
 
-            let verdictKind = unbox<string> verdict?verdict
+            let verdictKind = unbox<string> (verdict?verdict: obj)
 
             match verdictKind with
             | "reject" ->
-                createObj [ "verdict" ==> "reject"; "reason" ==> (unbox<string> verdict?reason) ]
+                createObj [ "verdict" ==> box "reject"; "reason" ==> box (unbox<string> (verdict?reason: obj)) ]
             | "single" ->
                 let singleBatch =
                     { stage = Ready
@@ -182,50 +182,50 @@ type SyncDelegateBatchStore() =
                       callOrder = []
                       received = Dictionary<string, string>()
                       orderedInvocations = [ invKey ] }
-                batches.[bKey] <- singleBatch
-                createObj [ "verdict" ==> "single"; "invocations" ==> [| invKey |] ]
+                batches[bKey] <- singleBatch
+                createObj [ "verdict" ==> box "single"; "invocations" ==> box [| invKey |] ]
             | "wait" ->
-                let currentCall = unbox<string> batchInput?currentCall
-                let order = unbox<string array> batchInput?callOrder |> Array.toList
-                let pRun = unbox<string> batchInput?providerRun
+                let currentCall = unbox<string> (batchInput?currentCall: obj)
+                let order = unbox<string array> (batchInput?callOrder: obj) |> Array.toList
+                let pRun = unbox<string> (batchInput?providerRun: obj)
                 let batch =
-                    if unbox<bool> verdict?``open`` || Option.isNone existingBatchOpt then
+                    if unbox<bool> (verdict?``open``: obj) || Option.isNone existingBatchOpt then
                         let created =
                             { stage = Pending
                               providerRun = pRun
                               callOrder = order
                               received = Dictionary<string, string>()
                               orderedInvocations = [] }
-                        batches.[bKey] <- created
+                        batches[bKey] <- created
                         created
                     else
                         existingBatchOpt.Value
-                batch.received.[currentCall] <- invKey
-                createObj [ "verdict" ==> "wait" ]
+                batch.received[currentCall] <- invKey
+                createObj [ "verdict" ==> box "wait" ]
             | "ready" ->
-                let currentCall = unbox<string> batchInput?currentCall
-                let order = unbox<string array> batchInput?callOrder |> Array.toList
-                let pRun = unbox<string> batchInput?providerRun
+                let currentCall = unbox<string> (batchInput?currentCall: obj)
+                let order = unbox<string array> (batchInput?callOrder: obj) |> Array.toList
+                let pRun = unbox<string> (batchInput?providerRun: obj)
                 let batch =
-                    if unbox<bool> verdict?``open`` || Option.isNone existingBatchOpt then
+                    if unbox<bool> (verdict?``open``: obj) || Option.isNone existingBatchOpt then
                         let created =
                             { stage = Pending
                               providerRun = pRun
                               callOrder = order
                               received = Dictionary<string, string>()
                               orderedInvocations = [] }
-                        batches.[bKey] <- created
+                        batches[bKey] <- created
                         created
                     else
                         existingBatchOpt.Value
-                batch.received.[currentCall] <- invKey
-                let readyOrder = unbox<string array> verdict?order |> Array.toList
-                let orderedInvs = readyOrder |> List.map (fun callId -> batch.received.[callId])
+                batch.received[currentCall] <- invKey
+                let readyOrder = unbox<string array> (verdict?order: obj) |> Array.toList
+                let orderedInvs = readyOrder |> List.map (fun callId -> batch.received[callId])
                 batch.stage <- Ready
                 batch.orderedInvocations <- orderedInvs
                 createObj
-                    [ "verdict" ==> "ready"
-                      "invocations" ==> (orderedInvs |> List.toArray) ]
+                    [ "verdict" ==> box "ready"
+                      "invocations" ==> box (orderedInvs |> List.toArray) ]
             | other ->
                 invalidOp ("Unexpected admit verdict from DelegateBatchLawCore: " + other))
 
@@ -252,12 +252,12 @@ type SyncDelegateBatchStore() =
         lock gate (fun () ->
             match batches.TryGetValue bKey with
             | false, _ ->
-                createObj [ "ok" ==> false; "error" ==> "sync delegate call was cancelled before dispatch" ]
+                createObj [ "ok" ==> box false; "error" ==> box "sync delegate call was cancelled before dispatch" ]
             | true, batch when batch.stage <> Ready && batch.stage <> Active ->
-                createObj [ "ok" ==> false; "error" ==> "sync delegate call was cancelled before dispatch" ]
+                createObj [ "ok" ==> box false; "error" ==> box "sync delegate call was cancelled before dispatch" ]
             | true, batch ->
                 if callsByDelegate.ContainsKey dKey then
-                    createObj [ "ok" ==> false; "error" ==> "sync delegate rejected: dedicated delegate already has an in-flight call" ]
+                    createObj [ "ok" ==> box false; "error" ==> box "sync delegate rejected: dedicated delegate already has an in-flight call" ]
                 else
                     batch.stage <- Active
                     let inFlight =
@@ -269,18 +269,18 @@ type SyncDelegateBatchStore() =
                           agent = cleanKey agent
                           invocationKeys = invocationKeys
                           stage = Dispatched }
-                    callRecords.[cKey] <- inFlight
-                    callsByDelegate.[dKey] <- cKey
+                    callRecords[cKey] <- inFlight
+                    callsByDelegate[dKey] <- cKey
 
                     let list =
                         match callsByOwnerScope.TryGetValue sKey with
                         | true, l -> l
                         | false, _ ->
                             let l = ResizeArray<string>()
-                            callsByOwnerScope.[sKey] <- l
+                            callsByOwnerScope[sKey] <- l
                             l
                     list.Add cKey
-                    createObj [ "ok" ==> true ])
+                    createObj [ "ok" ==> box true ])
 
     member _.tryPeekCallByDelegate(delegateSessionId: string) : string option =
         let dKey = cleanKey delegateSessionId
@@ -364,8 +364,8 @@ type SyncDelegateBatchStore() =
             | false, _ -> ()
 
             createObj
-                [ "cancelledCalls" ==> (cancelledCalls.ToArray())
-                  "cancelledInvocations" ==> (cancelledInvocations.ToArray()) ])
+                [ "cancelledCalls" ==> box (cancelledCalls.ToArray())
+                  "cancelledInvocations" ==> box (cancelledInvocations.ToArray()) ])
 
     member _.clearAll() : obj =
         lock gate (fun () ->
@@ -389,8 +389,8 @@ type SyncDelegateBatchStore() =
             callRecords.Clear()
 
             createObj
-                [ "cancelledCalls" ==> (allCalls.ToArray())
-                  "cancelledInvocations" ==> (allInvocations.ToArray()) ])
+                [ "cancelledCalls" ==> box (allCalls.ToArray())
+                  "cancelledInvocations" ==> box (allInvocations.ToArray()) ])
 
     member _.activeCallsCount : int =
         lock gate (fun () -> callsByDelegate.Count)

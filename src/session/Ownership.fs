@@ -301,7 +301,7 @@ type SessionTopologyStore() =
     member _.directoriesMap = directories
 
     member _.putParent(childId: string, parentId: string) : unit =
-        parents.[childId] <- parentId
+        parents[childId] <- parentId
 
     member _.getParent(childId: string) : string =
         match parents.TryGetValue(childId) with
@@ -320,7 +320,7 @@ type SessionTopologyStore() =
         parents.Clear()
 
     member _.putDirectory(sessionId: string, directory: string) : unit =
-        directories.[sessionId] <- directory
+        directories[sessionId] <- directory
 
     member _.getDirectory(sessionId: string) : string =
         match directories.TryGetValue(sessionId) with
@@ -354,7 +354,7 @@ type SignalBroadcaster() =
 
     member _.subscribe(listener: obj -> obj) : obj =
         listeners.Add(listener)
-        createObj [ "dispose" ==> (fun () -> listeners.Remove(listener) |> ignore) ]
+        createObj [ "dispose" ==> box (fun () -> listeners.Remove(listener) |> ignore) ]
 
     member _.snapshot() : (obj -> obj) array =
         listeners.ToArray()

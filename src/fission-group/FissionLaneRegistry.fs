@@ -36,7 +36,7 @@ type FissionLaneRegistry() =
                   OwnerSessionId = ownerSessionId
                   LaneIndex = laneIndex
                   LaneCount = laneCount }
-            lock gate (fun () -> lanes.[laneSessionId] <- record)
+            lock gate (fun () -> lanes[laneSessionId] <- record)
 
     member _.unbindLane(laneSessionId: string) : bool =
         if String.IsNullOrEmpty laneSessionId then
