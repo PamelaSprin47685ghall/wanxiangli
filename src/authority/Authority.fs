@@ -107,17 +107,7 @@ module internal Wire =
     let admissionInput (value: obj) : AdmissionInput =
         if not (isObject value) then malformed "admission input"
         else
-            let carrier = optionalText "invalidCarrier" (field value "invalidCarrier")
-
-            match carrier with
-            | Some "SessionId"
-            | Some "agent"
-            | Some "PromptKey"
-            | None -> ()
-            | Some _ -> malformed "invalidCarrier"
-
-            { InvalidCarrier = carrier
-              SessionId = optionalText "sessionId" (field value "sessionId")
+            { SessionId = optionalText "sessionId" (field value "sessionId")
               PhysicalId = optionalText "physicalId" (field value "physicalId")
               PromptKey = optionalText "promptKey" (field value "promptKey")
               ExplicitAgent = optionalText "explicitAgent" (field value "explicitAgent")
@@ -135,10 +125,8 @@ module internal Wire =
 
     let rejectionLabel (rejection: AdmissionRejection) : string =
         match rejection with
-        | AdmissionRejection.MalformedCarrier _ -> "malformed-carrier"
         | AdmissionRejection.MissingSession -> "missing-session"
         | AdmissionRejection.MissingPhysical -> "missing-physical"
-        | AdmissionRejection.AuthorityUnavailable -> "authority-unavailable"
         | AdmissionRejection.InvalidExplicitAgent -> "invalid-explicit-agent"
         | AdmissionRejection.AcceptedParticipantConflict -> "accepted-participant-conflict"
         | AdmissionRejection.PromptKeyNotClaimed -> "prompt-key-not-claimed"
@@ -156,8 +144,6 @@ module internal Wire =
         | Admission.ExternalRoot -> createObj [ "kind" ==> "external-root" ]
         | Admission.ActiveHumanContinuation -> createObj [ "kind" ==> "active-human-continuation" ]
         | Admission.PendingPrompt -> createObj [ "kind" ==> "pending-prompt" ]
-        | Admission.Reject(AdmissionRejection.MalformedCarrier carrier) ->
-            createObj [ "kind" ==> "reject"; "reason" ==> "malformed-carrier"; "carrier" ==> carrier ]
         | Admission.Reject rejection -> createObj [ "kind" ==> "reject"; "reason" ==> rejectionLabel rejection ]
 
 

@@ -67,9 +67,9 @@
 公开能力：
 - `FreezePending(sessionId, physicalUserMessageId, planSessionId, planPhysicalUserMessageId, plan, isEqual?)`: 准入判定。若身份不匹配返回 IdentityMismatch；若已存在相同 plan 返回 ReplayedExisting；若冲突返回 PlanConflict；若无则存入并返回 Admitted。
 - `TryPending(sessionId, physicalUserMessageId)`: 读取未绑定的 pre-inference 计划，无则返回 null。
-- `BindProviderRun(sessionId, providerRun, physicalUserMessageId, plan)`: 绑定 attemptPlan 到 providerRun。若已有同 physical 计划幂等返回；若已有不同 physical 计划则抛出 InvalidOperationException（包含 HOST-BOUNDARY-008 标记）；若无则存入。
 - `TryAttemptPlan(sessionId, providerRun)`: 读取已绑定的 attemptPlan（peek，不移除）。
 - `TryBindAttemptPlan(sessionId, physicalUserMessageId, providerRun, bindFn)`: 绑定或重放。已有同 physical 返回 bound plan；已有不同 physical 返回 null；若无 bound 则取 pending 并通过 bindFn 转换后绑定存入。
+- `BindAttemptPlan(sessionId, physicalUserMessageId, providerRun, bindFn, ordinary)`: provider 启动边界的绑定，总返回 plan、从不拒收。已有同 physical 绑定则重放；否则取该 physical 的 pending，没有就用调用方从 durable 受理事实重建的 `ordinary`；run 已绑到别的 physical 时改绑到本次 Host 观察。
 - `ConsumeAttemptPlan(sessionId, providerRun)`: 终态对齐单次消费。原子移除 bound attemptPlans 及对应的 pendingAttemptPlans，返回被消费的 plan。
 - `PublishManualIntervention(sessionId, physicalUserMessageId, request)`: 登记恢复干预请求。
 - `ManualInterventions()`: 获取当前所有干预请求数组。
