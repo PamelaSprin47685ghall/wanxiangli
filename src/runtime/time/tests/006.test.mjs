@@ -1,6 +1,18 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { Time } from '../../../../dist/runtime/Runtime.js'
+import { spawnSync } from 'node:child_process'
+
+test('WHAT[TIME-CAPABILITY-006] an owned exit wait keeps its timeout reachable in an otherwise idle process', () => {
+  const moduleUrl = new URL('../../../../dist/runtime/Runtime.js', import.meta.url).href
+  const child = spawnSync(process.execPath, ['--input-type=module', '-e', `
+    const { Time } = await import(process.argv[1]);
+    const exited = await Time.raceExit(new Promise(() => {}), 1000);
+    console.log(JSON.stringify(exited));
+  `, moduleUrl], { encoding: 'utf8', timeout: 3000 })
+  assert.equal(child.status, 0, child.stderr)
+  assert.equal(child.stdout.trim(), 'false')
+})
 
 test('WHAT[TIME-CAPABILITY-006] an expired timer delay only settles the wait, it mints no business fact', async () => {
   let settled = false

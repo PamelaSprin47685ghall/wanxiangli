@@ -1,24 +1,29 @@
 export type Evidence =
   | { readonly kind: 'compaction'; readonly run: string }
   | { readonly kind: 'tenure'; readonly incumbencyId: string }
+  | { readonly kind: 'scope'; readonly callId: string }
+
+/** 非负 int64；number 只接受安全整数，超出安全范围用 bigint。 */
+export type Epoch = number | bigint
 
 /** 冻结的世代状态。数组已去重并按序号排序。 */
 export interface PrefixState {
-  readonly epoch: number
+  readonly epoch: Epoch
   readonly compactionRuns: readonly string[]
   readonly tenures: readonly string[]
+  readonly scopes?: readonly string[]
 }
 
 /** 一条待写入的推进行；不改变任何状态。 */
 export interface Candidate {
-  readonly previousEpoch: number
-  readonly nextEpoch: number
+  readonly previousEpoch: Epoch
+  readonly nextEpoch: Epoch
   readonly evidence: Evidence
 }
 
 export type CommitResult =
   | { readonly ok: true; readonly state: PrefixState }
-  | { readonly ok: false; readonly absorbed: true; readonly error: 'StaleEpoch'; readonly expected: number; readonly actual: number }
+  | { readonly ok: false; readonly absorbed: true; readonly error: 'StaleEpoch'; readonly expected: Epoch; readonly actual: Epoch }
   | { readonly ok: false; readonly absorbed: true; readonly error: 'AlreadyReanchored'; readonly evidence: Evidence }
   | { readonly ok: false; readonly absorbed: false; readonly error: 'NonSequentialEpoch' }
 

@@ -25,6 +25,10 @@ const lineOf = item => new TextEncoder().encode(codec.encode(item))
 process.stdout.write(JSON.stringify({
   groups: segments.groupWriterFiles(['w-0001.ndjson', 'w-0000.ndjson', 'w.ndjson', 'x-٠٠٠٠.ndjson']).map(group => segments.streamLayout(group).kind),
   coexistence: [segments.coexistence(lineOf(left), lineOf(root)), segments.coexistence(lineOf(root), lineOf(root))],
+  resumed: segments.coexistence(
+    new TextEncoder().encode(codec.encode(left) + codec.encode(right)),
+    new TextEncoder().encode(codec.encode(root) + codec.encode(left)),
+  ),
   stream: segments.decodeStream('w', codec.encode(root) + codec.encode(left)).events.length,
   shelfmark: new CasebookIndexLaw().shelfmarkFor('private-session-a', '## Restart behavior\nfull canonical question').startsWith('Restart behavior · '),
   maintenance: new CasebookMaintenanceLaw().summarize([new CasebookMaintenanceLaw().fileDiff('a.txt', 'old\n', 'new\n')]).refresh,

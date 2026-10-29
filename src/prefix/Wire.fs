@@ -18,9 +18,6 @@ module internal Wire =
     [<Emit("Array.isArray($0)")>]
     let isArray (_value: obj) : bool = jsNative
 
-    [<Emit("Number.isSafeInteger($0)")>]
-    let isSafeInteger (_value: obj) : bool = jsNative
-
     [<Emit("(() => { throw new TypeError($0) })()")>]
     let fail (_message: string) : 'a = jsNative
 
@@ -44,21 +41,31 @@ module internal Wire =
         elif isString raw then Some(unbox<string> raw)
         else fail $"prefix: field '%s{key}' must be a string or null"
 
-    /// 现行世代：非负安全整数。
-    let epoch (value: obj) (key: string) : float =
+    [<Emit("(typeof $0 === 'bigint' && $0 >= -9223372036854775808n && $0 <= 9223372036854775807n) || Number.isSafeInteger($0)")>]
+    let private isInt64 (_value: obj) : bool = jsNative
+
+    [<Emit("BigInt($0)")>]
+    let private asInt64 (_value: obj) : int64 = jsNative
+
+    let epochView (value: int64) : obj =
+        if value >= -9007199254740991L && value <= 9007199254740991L then
+            box (float value)
+        else
+            box value
+
+    let epoch (value: obj) (key: string) : int64 =
         let raw = if isObject value then get value key else null
 
-        if isSafeInteger raw && unbox<float> raw >= 0.0 then
-            unbox<float> raw
+        if isInt64 raw && asInt64 raw >= 0L then
+            asInt64 raw
         else
             fail $"prefix: field '%s{key}' must be a non-negative integer epoch"
 
-    /// 推进行上的世代号：任意安全整数。越界或负值是行的内容，由 commit 判定，不在解码时拒绝。
-    let lineEpoch (value: obj) (key: string) : float =
+    let lineEpoch (value: obj) (key: string) : int64 =
         let raw = if isObject value then get value key else null
 
-        if isSafeInteger raw then
-            unbox<float> raw
+        if isInt64 raw then
+            asInt64 raw
         else
             fail $"prefix: field '%s{key}' must be an integer epoch"
 

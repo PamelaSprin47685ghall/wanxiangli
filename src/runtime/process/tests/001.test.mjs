@@ -9,6 +9,42 @@ import { options, session, ready, closed, output, temporary } from './support.mj
 
 const baselineEnv = JSON.parse(childProcess.execFileSync(process.execPath, ['-e', 'console.log(JSON.stringify(process.env))'], { env: {}, encoding: 'utf8' }))
 
+test('SPEC[process-001] an output receiver gets every byte even when the retained tail overflows', async t => {
+  const received = { stdout: [], stderr: [] }
+  const run = new ProcessSession(options('flood', [], { tailBytes: 64 }), (channel, bytes) => {
+    received[channel].push(Buffer.from(bytes))
+  })
+  t.after(async () => { run.signal('SIGKILL'); await closed(run) })
+  assert.equal((await closed(run)).failure, null)
+  const expectedOut = Buffer.concat([Buffer.alloc(128 * 65536, 0x61), Buffer.from('最后的原始输出🧭\n')])
+  const expectedErr = Buffer.concat([Buffer.alloc(16 * 65536, 0x61), Buffer.from('stderr-tail\n')])
+  assert.equal(Buffer.concat(received.stdout).equals(expectedOut), true)
+  assert.equal(Buffer.concat(received.stderr).equals(expectedErr), true)
+  assert.ok(run.read('stdout', 0).discarded > 0, 'the observation tail remains bounded')
+})
+
+test('SPEC[process-001] receiver failure remains visible beside the real process exit', async t => {
+  const run = new ProcessSession(options('bytes', [Buffer.from('output').toString('base64')]), (channel) => {
+    if (channel === 'stdout') throw new Error('output receiver failed')
+  })
+  t.after(async () => { run.signal('SIGKILL'); await closed(run) })
+  const state = await closed(run)
+  assert.deepEqual(state.exit, { code: 0, signal: null })
+  assert.equal(state.failure.operation, 'stdout')
+  assert.equal(state.failure.message, 'output receiver failed')
+})
+
+for (const thrown of [null, 'receiver rejected output']) {
+  test(`SPEC[process-001] receiver can throw ${JSON.stringify(thrown)} without escaping its process session`, async t => {
+    const run = new ProcessSession(options('bytes', [Buffer.from('output').toString('base64')]), () => { throw thrown })
+    t.after(async () => { run.signal('SIGKILL'); await closed(run) })
+    const state = await closed(run)
+    assert.deepEqual(state.exit, { code: 0, signal: null })
+    assert.equal(state.failure.operation, 'stdout')
+    assert.equal(state.failure.message, thrown ?? 'Native operation failed')
+  })
+}
+
 function noSpawn(action) {
   const original = childProcess.spawn
   let calls = 0
@@ -17,6 +53,10 @@ function noSpawn(action) {
   try { assert.throws(action); assert.equal(calls, 0) }
   finally { childProcess.spawn = original; syncBuiltinESMExports() }
 }
+
+test('SPEC[process-001] an invalid receiver is refused before spawn', () => {
+  noSpawn(() => new ProcessSession(options('report'), {}))
+})
 
 test('SPEC[process-001] direct argv, explicit cwd and environment reach a real process unchanged', async t => {
   const cwd = temporary(t)

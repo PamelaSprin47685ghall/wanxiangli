@@ -10,8 +10,17 @@ module internal Wire =
     [<Emit("typeof $0 === 'string'")>]
     let isString (_value: obj) : bool = jsNative
 
-    [<Emit("typeof $0 === 'number' && Number.isSafeInteger($0) && $0 > 0")>]
+    [<Emit("(typeof $0 === 'bigint' && $0 > 0n && $0 <= 9223372036854775807n) || (Number.isSafeInteger($0) && $0 > 0)")>]
     let isPositiveInteger (_value: obj) : bool = jsNative
+
+    [<Emit("BigInt($0)")>]
+    let integer (_value: obj) : int64 = jsNative
+
+    [<Emit("((typeof $0 === 'bigint' && $0 >= 0n && $0 <= 9223372036854775807n) || (Number.isSafeInteger($0) && $0 >= 0)) && BigInt($0) === $1")>]
+    let matchesInteger (_value: obj) (_expected: int64) : bool = jsNative
+
+    let integerView (value: int64) : obj =
+        if value <= 9007199254740991L then box (float value) else box value
 
     [<Emit("$0 == null")>]
     let isNullish (_value: obj) : bool = jsNative
@@ -193,8 +202,8 @@ module internal Lifecycle =
 type internal Entry =
     { Handle: obj
       Identity: Identity
-      Credit: float
-      Fence: float
+      Credit: int64
+      Fence: int64
       // DSL-MUTABLE: state — the one lifecycle of this exact permit
       mutable State: State }
 
@@ -206,18 +215,18 @@ type ExecutionPermits() =
     let issued = Wire.weakSet ()
     let bySession = Dictionary<string, Entry>()
     // DSL-MUTABLE: resource — monotonic permit identity and fence
-    let mutable nextLeaseId = 0.0
-    let mutable nextFence = 0.0
+    let mutable nextLeaseId = 0L
+    let mutable nextFence = 0L
 
     let fail (message: string) : 'a =
         raise (InvalidOperationException("execution-model-routing: " + message))
 
-    let handleOf (entry: Entry) (leaseId: float) =
+    let handleOf (entry: Entry) (leaseId: int64) =
         Wire.freeze (
             createObj
-                [ "leaseId" ==> leaseId
-                  "fence" ==> entry.Fence
-                  "credit" ==> entry.Credit
+                [ "leaseId" ==> Wire.integerView leaseId
+                  "fence" ==> Wire.integerView entry.Fence
+                  "credit" ==> Wire.integerView entry.Credit
                   "identity" ==> Identity.encode entry.Identity ]
         )
 
@@ -234,7 +243,7 @@ type ExecutionPermits() =
             match bySession.TryGetValue sessionId with
             | false, _ -> Error Rejection.StaleLease
             | true, entry when not (Wire.same entry.Handle permit) -> Error Rejection.StaleLease
-            | true, entry when not (Wire.same (box entry.Fence) fence) -> Error Rejection.WrongFence
+            | true, entry when not (Wire.matchesInteger fence entry.Fence) -> Error Rejection.WrongFence
             | true, entry -> Ok entry
 
     let apply (entry: Entry) decision =
@@ -264,13 +273,16 @@ type ExecutionPermits() =
         if not (Wire.isPositiveInteger credit) then
             fail "permit issue requires a positive integer capacity credit"
 
-        let credit = unbox<float> credit
+        let credit = Wire.integer credit
 
         match bySession.TryGetValue identity.SessionId with
         | true, entry when entry.Identity = identity && entry.Credit = credit -> entry.Handle
         | _ ->
-            nextLeaseId <- nextLeaseId + 1.0
-            nextFence <- nextFence + 1.0
+            if nextLeaseId = Int64.MaxValue || nextFence = Int64.MaxValue then
+                fail "execution permit sequence is exhausted"
+
+            nextLeaseId <- nextLeaseId + 1L
+            nextFence <- nextFence + 1L
 
             let entry =
                 { Handle = (null: obj)
@@ -394,8 +406,8 @@ type internal SessionLeaseEntry =
 type SessionLeaseHandles() =
     let bySession = Dictionary<string, SessionLeaseEntry>()
     // DSL-MUTABLE: resource — host handle identity, kept in step with the library permit
-    let mutable leaseSequence = 0.0
-    let mutable fenceSequence = 0.0
+    let mutable leaseSequence = 0L
+    let mutable fenceSequence = 0L
 
     let fail (message: string) : 'a =
         raise (InvalidOperationException("execution-model-routing: " + message))
@@ -412,14 +424,19 @@ type SessionLeaseHandles() =
         match bySession.TryGetValue sid with
         | true, entry when Wire.same entry.Permit permit -> entry.Handle
         | _ ->
-            leaseSequence <- leaseSequence + 1.0
-            fenceSequence <- fenceSequence + 1.0
+            if leaseSequence = Int64.MaxValue || fenceSequence = Int64.MaxValue then
+                fail "session lease sequence is exhausted"
+
+            let nextLease = leaseSequence + 1L
+            let nextFence = fenceSequence + 1L
 
             let permitFence: obj = permit?fence
-            if Wire.isNullish permitFence || not (Wire.same permitFence (box fenceSequence)) then
+            if not (Wire.matchesInteger permitFence nextFence) then
                 fail "host lease fence diverged from the exact permit owner"
 
-            let handle = Wire.call2 createHandle (box leaseSequence) (box fenceSequence)
+            let handle = Wire.call2 createHandle (Wire.integerView nextLease) (Wire.integerView nextFence)
+            leaseSequence <- nextLease
+            fenceSequence <- nextFence
             bySession.[sid] <- { Permit = permit; Handle = handle }
             handle
 
@@ -450,16 +467,16 @@ type SessionLeaseHandles() =
         Wire.freeze (
             createObj
                 [ "activeCount" ==> float bySession.Count
-                  "nextLeaseId" ==> leaseSequence
-                  "nextFence" ==> fenceSequence ]
+                  "nextLeaseId" ==> Wire.integerView leaseSequence
+                  "nextFence" ==> Wire.integerView fenceSequence ]
         )
 
     member _.clear() : unit =
         bySession.Clear()
 
-    member _.nextLeaseId: float = leaseSequence
-    member _.nextFence: float = fenceSequence
-    member _.getNextLeaseId() : float = leaseSequence
-    member _.getNextFence() : float = fenceSequence
+    member _.nextLeaseId: obj = Wire.integerView leaseSequence
+    member _.nextFence: obj = Wire.integerView fenceSequence
+    member _.getNextLeaseId() : obj = Wire.integerView leaseSequence
+    member _.getNextFence() : obj = Wire.integerView fenceSequence
 
 let sessionLeaseHandles = SessionLeaseHandles()
