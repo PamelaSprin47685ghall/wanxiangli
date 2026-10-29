@@ -11,6 +11,7 @@ type PairHintMessages =
     abstract budgetSuffix: budget: int -> string
     abstract adjustBudgetForKpi: estimatedNextScopeBudget: int * kpiCompletion: string -> int
     abstract turnBudget: sessionId: string -> int
+    abstract setRetention: sessionId: string * remaining: int -> unit
     abstract isInitialized: sessionId: string -> bool
     abstract startTurn: sessionId: string -> unit
     abstract resetSession: sessionId: string * budget: int -> unit
@@ -140,6 +141,12 @@ type private ScopeSession() =
             hasPreviousScope <- true
             toolTails.Clear()
 
+    /// Sync displayed retention remaining after keepLast / removeLast without clearing tails.
+    member _.SetRetention(remaining: int) =
+        if pending = NoPending then
+            budget <- max 0 remaining
+            budgetKnown <- true
+
 let private kpiAdjustedBudget (estimate: int) (completion: string) : int =
     if estimate < 0 then invalidArg "estimatedNextScopeBudget" "Next scope budget cannot be negative"
     let numerator, denominator =
@@ -159,6 +166,7 @@ let private kpiAdjustedBudget (estimate: int) (completion: string) : int =
 let private Separator = "\u0000\uFEFF"
 
 [<Literal>]
+// Annotation-first: scope.kind=resetScope is the barrier. Legacy standalone tool name is read-only compat for old transcripts.
 let private ResetTool = "resetScope"
 
 let private isChinese (language: string) : bool =
@@ -168,15 +176,15 @@ let private isChinese (language: string) : bool =
 
 let private initializeReminder (language: string) : string =
     if isChinese language then
-        "[系统：估计第一个细粒度任务状态闭环所需的 turnBudget。先调用 resetScope 初始化该闭环，再执行其他工作。]"
+        "[系统：估计第一个细粒度任务状态闭环所需的 retentionBudget（实质性操作下界）。用带 scope.kind=resetScope 的工具调用初始化该闭环（newScopeGoal + newScopeRetentionBudget），再执行其他工作。见共同法 «Scope»。]"
     else
-        "[System: Estimate the turnBudget for the first fine-grained task block (state closed-loop). Then call resetScope immediately, before doing anything else.]"
+        "[System: Estimate the retentionBudget (lower bound on substantive keeps) for the first fine-grained task block. Initialize that closed-loop with a tool call whose scope.kind=resetScope (newScopeGoal + newScopeRetentionBudget) before other work. See common law «Scope».]"
 
 let private negotiateReminder (language: string) : string =
     if isChinese language then
-        "[系统：先调用 negotiate(questions: string) 向委托者澄清本次任务。把需要确认的多个具体问题集中写入 questions 参数；调用一经受理即视为协商完成，时序继续，不必也不要等待答复；之后即可调用 resetScope 初始化 scope。若取得委托者答复，可能随后作为 steer 补到，不阻塞时序。后续可以继续提问，不影响正常的 resetScope。]"
+        "[系统：先调用 negotiate(questions: string) 向委托者澄清本次任务（可同拍在 scope 里带 resetScope；negotiate 受理后 reset 立即生效）。把需要确认的多个具体问题集中写入 questions；调用一经受理即协商完成，时序继续，不必等待答复。见共同法 «Scope»。]"
     else
-        "[System: Before any resetScope initialization, call negotiate(questions: string) NOW. Ask the delegator all questions needed to clarify this assignment. Group related questions into the single plural questions argument. Once the call is accepted, negotiation is complete and the timeline continues: do not wait for any answer, and call resetScope promptly. If the delegator’s answer is obtained, it may arrive later as a user steer; it never blocks the timeline. You may negotiate again at any time; later calls never delay resetScope.]"
+        "[System: Call negotiate(questions: string) NOW to clarify this assignment (you may carry scope.kind=resetScope on the same turn; once negotiate is accepted, that reset takes effect immediately). Group related questions into questions. Acceptance completes negotiation; do not wait for an answer. See common law «Scope».]"
 
 let private askPreviousScopeReminder (language: string) : string =
     if isChinese language then
@@ -186,9 +194,9 @@ let private askPreviousScopeReminder (language: string) : string =
 
 let private weakReminder (language: string) : string =
     if isChinese language then
-        "[系统：当前 scope 的 turnBudget 已用尽（剩余 0）。继续完成正在进行的工作，不得因本提醒中断、暂停或放弃任务；当前状态闭环完成后，请调用 resetScope 开启新的闭环。]"
+        "[系统：当前 scope 的 retention 已用尽（剩余 0）。继续完成正在进行的工作，不得因本提醒中断、暂停或放弃；当前状态闭环完成后，下一次非豁免工具必须 scope.kind=resetScope。见共同法 «Scope»。]"
     else
-        "[System: This scope's turnBudget is exhausted (0 remaining). Continue the work already in progress. Do not interrupt, pause, or abandon it for this reminder. Call resetScope to begin the next scope after closing the current state loop.]"
+        "[System: This scope's retention is exhausted (0 remaining). Continue work already in progress; do not interrupt or abandon it for this reminder. After closing the current state loop, the next non-exempt tool must use scope.kind=resetScope. See common law «Scope».]"
 
 [<Emit("Array.isArray($0)")>]
 let private isArray (_value: obj) : bool = jsNative
@@ -272,7 +280,7 @@ let private appendText (content: obj) (addition: string) : obj =
 let private appendOnce (content: obj) (addition: string) (already: string -> bool) : obj =
     if already (tail content) then content else appendText content addition
 
-let private budgetSuffix (budget: int) = $"[Remaining turnBudget: %d{max 0 budget}]"
+let private budgetSuffix (budget: int) = $"[Remaining retention: %d{max 0 budget}]"
 
 let private withContent (message: obj) (updatedContent: obj) : obj =
     let result = copy message
@@ -429,7 +437,9 @@ type private NeutralCall =
       Id: string
       Tool: string
       Field: string
-      ResultFor: string }
+      ResultFor: string
+      /// scope.kind when present (resetScope|keepLast|removeLast|meToo); empty otherwise.
+      ScopeKind: string }
 
 type private NeutralMessage =
     { Index: int
@@ -448,12 +458,60 @@ let private trueField (value: obj) (name: string) : bool =
     let raw = field value name
     not (isNull raw) && jsTypeof raw = "boolean" && unbox<bool> raw
 
+[<Emit("(() => { try { return JSON.parse($0) } catch (_) { return null } })()")>]
+let private tryParseJson (_raw: string) : obj = jsNative
+
+/// Read scope.kind from a tool part / neutral part. Accepts nested
+/// `scope.kind`, `arguments.scope.kind`, `input.scope.kind`,
+/// `state.input.scope.kind`, JSON-string arguments, or flat `scopeKind`.
+let private scopeKindOf (value: obj) : string =
+    if isNull value then ""
+    else
+        let fromScope (scope: obj) =
+            if isNull scope then "" else fieldText scope "kind"
+
+        let fromBag (bag: obj) =
+            if isNull bag then ""
+            else
+                let direct = fromScope (field bag "scope")
+                if direct <> "" then direct
+                else
+                    // Flat equivalent: scopeKind / "scope.kind" key if a host flattened it.
+                    let flat = fieldText bag "scopeKind"
+                    if flat <> "" then flat
+                    else fieldText bag "scope.kind"
+
+        let nested =
+            let top = fromBag value
+            if top <> "" then top
+            else
+                let args = field value "arguments"
+                let fromArgs =
+                    if isNull args then ""
+                    elif jsTypeof args = "string" then fromBag (tryParseJson (unbox<string> args))
+                    else fromBag args
+                if fromArgs <> "" then fromArgs
+                else
+                    let input = field value "input"
+                    let fromInput = fromBag input
+                    if fromInput <> "" then fromInput
+                    else
+                        let state = field value "state"
+                        if isNull state then ""
+                        else
+                            let stateInput = field state "input"
+                            let fromState = fromBag stateInput
+                            if fromState <> "" then fromState
+                            else fromBag state
+        nested
+
 let private neutralCall (index: int) (value: obj) : NeutralCall =
     { Part = index
       Id = fieldText value "id"
       Tool = fieldText value "tool"
       Field = fieldText value "terminalField"
-      ResultFor = fieldText value "resultFor" }
+      ResultFor = fieldText value "resultFor"
+      ScopeKind = scopeKindOf value }
 
 let private neutralMessage (index: int) (value: obj) : NeutralMessage =
     let rawParts = field value "parts"
@@ -471,12 +529,15 @@ let private neutralMessage (index: int) (value: obj) : NeutralMessage =
       ResultFor = fieldText value "resultFor"
       ResultField = fieldText value "resultField" }
 
-let private neutralIsReset (part: NeutralCall) : bool = part.Tool = ResetTool
+let private neutralIsReset (part: NeutralCall) : bool =
+    // Transition: legacy standalone tool name still counts; preferred signal is
+    // scope.kind=resetScope on any tool call (and its paired result via id).
+    part.Tool = ResetTool || part.ScopeKind = "resetScope"
 
 let private isAlwaysRetained (part: NeutralCall) : bool =
     match part.Tool with
     | "resetScope" | "assume" | "negotiate" | "askPreviousScope" | "askPrevious" | "advisor" -> true
-    | _ -> false
+    | _ -> part.ScopeKind = "resetScope"
 
 /// Thinking is the model's scratch reasoning for a scope that is now finished;
 /// it is retired with that scope. Assistant prose and provider bytes stay.
@@ -645,7 +706,9 @@ let private isResetWirePart (part: obj) =
     let direct = fieldText part "tool"
     let name = if direct <> "" then direct else fieldText part "name"
     let kind = fieldText part "type"
-    name = "resetScope" && (kind = "tool" || kind = "toolCall" || kind = "tool-call" || kind = "")
+    let toolShape = kind = "tool" || kind = "toolCall" || kind = "tool-call" || kind = "tool_call" || kind = ""
+    // Legacy tool name OR any tool call carrying scope.kind=resetScope.
+    toolShape && (name = "resetScope" || scopeKindOf part = "resetScope")
 
 let private precedingScopeMessages (messages: obj array) : obj array option =
     let resets =
@@ -939,6 +1002,7 @@ let PairHint () : PairHintMessages =
         member _.adjustBudgetForKpi(estimatedNextScopeBudget, kpiCompletion) =
             kpiAdjustedBudget estimatedNextScopeBudget kpiCompletion
         member _.turnBudget(sessionId) = (current sessionId).Budget
+        member _.setRetention(sessionId, remaining) = (current sessionId).SetRetention remaining
         member _.isInitialized(sessionId) = (current sessionId).Initialized
         member _.startTurn(sessionId) = (current sessionId).StartTurn()
         member _.resetSession(sessionId, budget) = (current sessionId).Reset(budget)

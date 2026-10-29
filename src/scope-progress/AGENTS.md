@@ -1,6 +1,8 @@
 # scope-progress
 
-独立 npm 入口：`wanxiangli/scope-progress`。本包只管理 Scope 的计费回合和自动 Advisor 咨询状态，不知道具体 Host、会话消息格式、Provider SDK、Journal 的物理格式与文件位置。
+> **产品面退役说明（WP0 / 2026-10-29）**：宿主不再把 `remainingScopeTurnsEstimate` 当作工具必填字段，也不再以 Stall／ResetDue 开顾问席。Scope 生命周期以 `scope-retention` + 共同法 «Scope» 的 retention 为准。本包及其测试仍描述**历史计费／顾问队列**能力，供冷日志与尚未拆除的 durable 路径阅读；**新文案与新 WHAT 不得再把估计字段写成现行入口。** `tests/*.test.mjs` 是 **PACKAGE-HISTORICAL** 契约（包内 durable／顾问队列），不是宿主产品验收；勿把 Stall／ResetDue 再挂回 todowrite schema。
+
+独立 npm 入口：`wanxiangli/scope-progress`。本包管理（或曾管理）Scope 的计费回合和自动 Advisor 咨询状态，不知道具体 Host、会话消息格式、Provider SDK、Journal 的物理格式与文件位置。
 
 ## AXIOM
 

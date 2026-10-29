@@ -4,14 +4,14 @@
 
 ## AXIOM
 
-1. [使用者] 只有显式 resetScope 调用能清理旧上下文；真实 operator 输入与 reset 调用及结果必须保留。以 user role 运输的 `attribution: agent` 答复不等于真实操作员，旧 epoch 的代理答复属于可清理过程；模型自行决定经验与原文交接。
+1. [使用者] 只有显式 scope 重锚能清理旧上下文：优先任意工具上的 `scope.kind=resetScope` 注解（及其配对结果），过渡兼容旧独立工具名 `resetScope`；真实 operator 输入与该次 reset 调用及结果必须保留。以 user role 运输的 `attribution: agent` 答复不等于真实操作员，旧 epoch 的代理答复属于可清理过程；模型自行决定经验与原文交接。
 2. [使用者] 用户消息注入与工具结果注入是两条独立、明确的 API；OMP role/content 和 OpenCode info/parts/state.output 的真实载体不能混淆。
 
 ## LEMMA
 
 1. [AXIOM 1] 最新 reset 是唯一清理边界。之前的用户消息与 reset 对保留，之后完整保留；同批工具调用在 reset 的块位置切分。
 2. [AXIOM 2] 用户消息和工具结果有两种独立的后缀写入位置，但只在模型即将收到的请求副本中呈现。真实工具返回值、用户原文与持久化历史保持原样；同一提示不重复添加。
-3. [AXIOM 1, 2] 预算与倒数提示已独立迁往 `wanxiangli/scope-progress`：有效 `todowrite` 的必填估计按真实 ProviderRun 聚合 `min`，没有报告的请求免费；估计 0 导致下一主回合由宿主发送单独强 `resetScope` steer。PairHint 只负责 `negotiate` 和第二次起 `askPreviousScope` 尚待首问时的独立强 steer；普通用户/代理消息不修改进度状态。工具结果不追加倒数。
+3. [AXIOM 1, 2] Scope **生命周期额度**是 retention（`scope-retention` + 共同法 «Scope»），不是回合估计。`remainingScopeTurnsEstimate` / Stall·ResetDue 计费路径已从宿主产品面退役（`scope-progress` 包可仍存历史日志能力，但不再驱工具 schema 或顾问开席）。PairHint 只负责 `negotiate` 与第二次起 `askPreviousScope` 尚待首问时的强 steer，以及 `scope.kind=resetScope`（兼容旧工具名）上下文屏障；普通用户/代理消息不修改 retention。工具结果不追加倒数。
 4. [AXIOM 1, 2] 保留已观测 Provider 原文、工具调用和配对结果的真实字节，普通旧工具过程才按 reset barrier 移除；可获得的 assistant 正文不能因为与旧普通工具同消息而丢失。旧 Scope 的 thinking/reasoning 与旧工具过程一起退役，最新 reset 之后的 thinking 完整保留。Side-request 不修改真实工作 Session，也不污染最新主会话视图。
 
 ## SPEC
@@ -24,7 +24,7 @@
 
 6. tests/006.test.mjs：来自不同宿主的同一份 HNI 中立消息视图，得到相同的 reset 保留计划、用户提醒与工具结果后缀位置；旧原始消息不进入 ScopeSession。
 7. tests/007.test.mjs：先构造预算递减与新 steer 造成历史尾巴改字节的红态，再证明首次呈现冻结、冷重锚允许重建、side-request 不抢先冻结。
-8. tests/008.test.mjs：受委托方首次 negotiate(questions) 受理前只提醒 negotiate；受理即完成，立即解除 pending、激活 resetScope，时序继续，不等也不依赖答复 steer；随后可选协商不暂停重置。同一委托者绑定复用不强制重问，换委托者时旧回执失效；答复回执仍须 prepare 且由正确接收方确认才结算，但结算与否不影响门禁。
+8. tests/008.test.mjs：受委托方首次 negotiate(questions) 受理前只提醒 negotiate；受理即完成，立即解除 pending、激活 scope 重锚（`scope.kind=resetScope`），时序继续，不等也不依赖答复 steer；随后可选协商不暂停重置。同一委托者绑定复用不强制重问，换委托者时旧回执失效；答复回执仍须 prepare 且由正确接收方确认才结算，但结算与否不影响门禁。
 9. tests/009.test.mjs：动态初始化、首次协商、零预算弱提醒与协商回答经实见语言呈现；中文请求不混英语 `[System:]` 行为指令，非法语言不静默退回英文；同 epoch 的已呈现结果字节不因语言切换而漂移。宿主 HNI 在 cognitive-environment/018 验证真实语言权威。
 10. tests/010.test.mjs：negotiate 与 askPreviousScope 首问的相同时序冻结、相同解锁见证（首次有效调用受理即解除），首问后 budget 恢复和旧工具结果提示字节冻结。
 11. tests/011.test.mjs：assume、negotiate、askPreviousScope/askPrevious、advisor 原始工具调用和成对结果历次 reset 保留；未配对伪结果与普通旧调用不得混进来。
@@ -34,14 +34,17 @@
 14. tests/014.test.mjs：首次 reset 前每次请求独立 strong steer、绝不写用户/工具原文；首次 reset 后包括真人追加指令和任何 agent 载体消息都延续当前预算，不重新催 reset；旧 epoch 的 agent-attributed user 回复也不能伪装成永久保留的操作员消息；未完成首次 negotiate 与第二次起 askPreviousScope 义务只在强 steer 持续提示；冷历史虽含 reset 但本进程预算未恢复时必须像尚无预算那样持续强催真正重置，不能当已初始化并虚报 0。
 
 
-15. tests/015.test.mjs：冷重启后的历史 `resetScope` 只证明旧事件存在，未确证当前预算时必须持续通过强 agent steer 催重新 `resetScope`；不得把内存默认 0 当作已耗尽预算、发弱提示或改写工具尾巴。真正重置获得预算后仍按实际回合递减，只有真实 0 触发弱提醒。
+15. tests/015.test.mjs：冷重启后的历史 `resetScope` 只证明旧事件存在，未确证当前预算时必须持续通过强 agent steer 催重新 `scope.kind=resetScope`；不得把内存默认 0 当作已耗尽预算、发弱提示或改写工具尾巴。真正重置获得预算后仍按实际回合递减，只有真实 0 触发弱提醒。
 
 16. tests/016.test.mjs：可获得的 assistant 正文穿越 reset、旧 Scope thinking 退役、最新 reset 之后 thinking 保留；旧普通工具调用与返回配对裁剪，`assume/negotiate/askPreviousScope/askPrevious/advisor/resetScope` 关键工具调用与配对结果始终保留。独立 `OutboundViewStore` 负责真实 Provider archive/serialize/discardSealed 事实，**不**用已删除的 `startTemporaryFromFrozen` 在咨询期再次复制整段历史。
+
+17. tests/018.test.mjs：任意工具上的 `scope.kind=resetScope`（含 `arguments.scope` / `state.input.scope`）与旧独立 `resetScope` 工具名同为屏障；该次调用及配对结果保留，旧普通工具过程按最新屏障裁剪。
+
 
 ## 协商补充公理（2026-10-24）
 
 1. [使用者] 父→子、调用者→Advisor 只传当前任务指令；不复制历史背景。第一次澄清必须使用单参数 `negotiate(questions: string)`，一次可集中多个问题。工具调用仅返回已接纳异步传送，不等待真实回答。
-2. [AXIOM] 已绑定接收方在首次协商答复真实成为 user steer 之前不激活 `resetScope`；此后协商可选、随时且绝不暂停正常重置。同一接收方/委托者重用不会重复要求首次协商，代际更换时废弃旧回执。
+2. [AXIOM] 已绑定接收方在首次协商答复真实成为 user steer 之前不激活 scope 重锚（`scope.kind=resetScope`）；此后协商可选、随时且绝不暂停正常重置。同一接收方/委托者重用不会重复要求首次协商，代际更换时废弃旧回执。
 3. [AXIOM] `questions` 仅能路由给实际委托者，回答须与接收方、代际、回执身份匹配并经物理消息确认，才可 `completeNegotiationReply` / `confirmNegotiationSteer`。工具调用回执、空回答、旧委托、错误会话的回答不得解除初始约束。真正的 BTW 临时对话与 SDK 发消息、副作用工具拒绝属于宿主接缝，不进入中立库。
 
 ## 边界

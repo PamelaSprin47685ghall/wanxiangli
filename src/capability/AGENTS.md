@@ -46,7 +46,7 @@
 
 ## Advisor 例外：协议工具不等于办公实用工具（2026-10-24）
 
-Advisor 的 `OfficeMatrix.permissions` 仍是空集，`skill` 与 `assume` 虽是矩阵外的宿主工具，但也必须通过 `admitsUtility` 对 Advisor **明确拒绝**。`negotiate(questions: string)` 和 `resetScope` 是独立的非授权性协议工具，在物理 Host 接口准入，不是赋予 Advisor 通用 utility 权限。测试必须同时覆盖 capability 的 utility 拒绝和 Host 实际权限对象／请求投影；提示词里写“不得使用”不足以构成能力边界。
+Advisor 的 `OfficeMatrix.permissions` 仍是空集，`skill` 与 `assume` 虽是矩阵外的宿主工具，但也必须通过 `admitsUtility` 对 Advisor **明确拒绝**。`negotiate(questions: string)`、`askPreviousScope` 与任意工具上的 `scope.kind=resetScope` 注解同属 Scope 协议（办公权能 `ResetScope`），在物理 Host 接口准入；**没有独立 resetScope 工具**。不是赋予 Advisor 通用 utility 权限。测试必须同时覆盖 capability 的 utility 拒绝和 Host 实际权限对象／请求投影；提示词里写“不得使用”不足以构成能力边界。
 
 ## LiveHostConfigStore 活配置状态与深层树读写
 
