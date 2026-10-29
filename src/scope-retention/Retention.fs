@@ -114,6 +114,11 @@ type private SessionState(epoch: string) =
         | Error reason -> refuse reason
         | Ok() ->
             match annotation.Kind, turn with
+            // Exempt tools (negotiate, askPreviousScope, deliver) are lifecycle-neutral:
+            // they never spend retention and never wait for a real annotation, so their
+            // meToo cannot depend on where they sit in a parallel batch.
+            | MeToo, Undecided when exempt ->
+                accept [ "kind" ==> "meToo"; "remaining" ==> (remaining |> Option.map box |> Option.defaultValue null); "exempt" ==> true ]
             | MeToo, Undecided ->
                 refuse "meToo requires exactly one real scope annotation (resetScope|keepLast|removeLast) in the same turn"
             | MeToo, Decided _ ->
@@ -152,6 +157,11 @@ type private SessionState(epoch: string) =
                         refuse "scope not initialized: first tool annotation must be resetScope"
                     | Some 0 when not exempt ->
                         refuse "retention exhausted: next non-exempt tool must use resetScope"
+                    | Some n when exempt ->
+                        // AXIOM 5: exempt tools do not spend retention. The turn is still
+                        // decided, so sibling calls may say meToo.
+                        mark()
+                        accept [ "kind" ==> "keepLast"; "remaining" ==> n; "decremented" ==> false; "exempt" ==> true ]
                     | Some n ->
                         mark()
                         let next = max 0 (n - 1)

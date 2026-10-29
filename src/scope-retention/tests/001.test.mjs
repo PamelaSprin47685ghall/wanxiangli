@@ -209,3 +209,30 @@ test('seed after reset opens retention on new epoch', () => {
   assert.equal(st.known, true)
   assert.equal(st.remaining, 7)
 })
+
+test('exempt tools are lifecycle-neutral: keepLast spends nothing, meToo needs no prior real annotation', () => {
+  const { session, epoch } = fresh('s-exempt', '1')
+  scopeRetention.apply(session, epoch, 'resetScope', 'r0', 'c0', 'b0', {
+    kind: 'resetScope',
+    newScopeGoal: 'g',
+    newScopeRetentionBudget: 2,
+  })
+  const ask = scopeRetention.apply(session, epoch, 'askPreviousScope', 'r1', 'c1', 'b1', { kind: 'keepLast' })
+  assert.equal(ask.ok, true)
+  assert.equal(ask.remaining, 2)
+  assert.equal(ask.decremented, false)
+  // the ask decided the turn, so its sibling may say meToo
+  const sibling = scopeRetention.apply(session, epoch, 'todowrite-for-engineer', 'r1', 'c2', 'b1', { kind: 'meToo' })
+  assert.equal(sibling.ok, true)
+
+  // order inside a parallel batch does not matter for the exempt call
+  const askFirst = scopeRetention.apply(session, epoch, 'askPreviousScope', 'r2', 'c3', 'b2', { kind: 'meToo' })
+  assert.equal(askFirst.ok, true)
+  const real = scopeRetention.apply(session, epoch, 'todowrite-for-engineer', 'r2', 'c4', 'b2', { kind: 'keepLast' })
+  assert.equal(real.ok, true)
+  assert.equal(real.remaining, 1)
+
+  // a lone meToo on an ordinary tool is still refused
+  const lone = scopeRetention.apply(session, epoch, 'read', 'r3', 'c5', 'b3', { kind: 'meToo' })
+  assert.equal(lone.ok, false)
+})
