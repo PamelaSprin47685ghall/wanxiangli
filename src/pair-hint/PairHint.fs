@@ -166,6 +166,7 @@ let private kpiAdjustedBudget (estimate: int) (completion: string) : int =
 let private Separator = "\u0000\uFEFF"
 
 [<Literal>]
+// Legacy standalone tool name; still recognized as a barrier for old transcripts.
 let private ResetTool = "resetScope"
 
 let private isChinese (language: string) : bool =
@@ -436,7 +437,9 @@ type private NeutralCall =
       Id: string
       Tool: string
       Field: string
-      ResultFor: string }
+      ResultFor: string
+      /// scope.kind when present (resetScope|keepLast|removeLast|meToo); empty otherwise.
+      ScopeKind: string }
 
 type private NeutralMessage =
     { Index: int
@@ -455,12 +458,60 @@ let private trueField (value: obj) (name: string) : bool =
     let raw = field value name
     not (isNull raw) && jsTypeof raw = "boolean" && unbox<bool> raw
 
+[<Emit("(() => { try { return JSON.parse($0) } catch (_) { return null } })()")>]
+let private tryParseJson (_raw: string) : obj = jsNative
+
+/// Read scope.kind from a tool part / neutral part. Accepts nested
+/// `scope.kind`, `arguments.scope.kind`, `input.scope.kind`,
+/// `state.input.scope.kind`, JSON-string arguments, or flat `scopeKind`.
+let private scopeKindOf (value: obj) : string =
+    if isNull value then ""
+    else
+        let fromScope (scope: obj) =
+            if isNull scope then "" else fieldText scope "kind"
+
+        let fromBag (bag: obj) =
+            if isNull bag then ""
+            else
+                let direct = fromScope (field bag "scope")
+                if direct <> "" then direct
+                else
+                    // Flat equivalent: scopeKind / "scope.kind" key if a host flattened it.
+                    let flat = fieldText bag "scopeKind"
+                    if flat <> "" then flat
+                    else fieldText bag "scope.kind"
+
+        let nested =
+            let top = fromBag value
+            if top <> "" then top
+            else
+                let args = field value "arguments"
+                let fromArgs =
+                    if isNull args then ""
+                    elif jsTypeof args = "string" then fromBag (tryParseJson (unbox<string> args))
+                    else fromBag args
+                if fromArgs <> "" then fromArgs
+                else
+                    let input = field value "input"
+                    let fromInput = fromBag input
+                    if fromInput <> "" then fromInput
+                    else
+                        let state = field value "state"
+                        if isNull state then ""
+                        else
+                            let stateInput = field state "input"
+                            let fromState = fromBag stateInput
+                            if fromState <> "" then fromState
+                            else fromBag state
+        nested
+
 let private neutralCall (index: int) (value: obj) : NeutralCall =
     { Part = index
       Id = fieldText value "id"
       Tool = fieldText value "tool"
       Field = fieldText value "terminalField"
-      ResultFor = fieldText value "resultFor" }
+      ResultFor = fieldText value "resultFor"
+      ScopeKind = scopeKindOf value }
 
 let private neutralMessage (index: int) (value: obj) : NeutralMessage =
     let rawParts = field value "parts"
@@ -478,12 +529,15 @@ let private neutralMessage (index: int) (value: obj) : NeutralMessage =
       ResultFor = fieldText value "resultFor"
       ResultField = fieldText value "resultField" }
 
-let private neutralIsReset (part: NeutralCall) : bool = part.Tool = ResetTool
+let private neutralIsReset (part: NeutralCall) : bool =
+    // Transition: legacy standalone tool name still counts; preferred signal is
+    // scope.kind=resetScope on any tool call (and its paired result via id).
+    part.Tool = ResetTool || part.ScopeKind = "resetScope"
 
 let private isAlwaysRetained (part: NeutralCall) : bool =
     match part.Tool with
     | "resetScope" | "assume" | "negotiate" | "askPreviousScope" | "askPrevious" | "advisor" -> true
-    | _ -> false
+    | _ -> part.ScopeKind = "resetScope"
 
 /// Thinking is the model's scratch reasoning for a scope that is now finished;
 /// it is retired with that scope. Assistant prose and provider bytes stay.
@@ -652,7 +706,9 @@ let private isResetWirePart (part: obj) =
     let direct = fieldText part "tool"
     let name = if direct <> "" then direct else fieldText part "name"
     let kind = fieldText part "type"
-    name = "resetScope" && (kind = "tool" || kind = "toolCall" || kind = "tool-call" || kind = "")
+    let toolShape = kind = "tool" || kind = "toolCall" || kind = "tool-call" || kind = "tool_call" || kind = ""
+    // Legacy tool name OR any tool call carrying scope.kind=resetScope.
+    toolShape && (name = "resetScope" || scopeKindOf part = "resetScope")
 
 let private precedingScopeMessages (messages: obj array) : obj array option =
     let resets =

@@ -4,7 +4,7 @@
 
 ## AXIOM
 
-1. [使用者] 只有显式 resetScope 调用能清理旧上下文；真实 operator 输入与 reset 调用及结果必须保留。以 user role 运输的 `attribution: agent` 答复不等于真实操作员，旧 epoch 的代理答复属于可清理过程；模型自行决定经验与原文交接。
+1. [使用者] 只有显式 scope 重锚能清理旧上下文：优先任意工具上的 `scope.kind=resetScope` 注解（及其配对结果），过渡兼容旧独立工具名 `resetScope`；真实 operator 输入与该次 reset 调用及结果必须保留。以 user role 运输的 `attribution: agent` 答复不等于真实操作员，旧 epoch 的代理答复属于可清理过程；模型自行决定经验与原文交接。
 2. [使用者] 用户消息注入与工具结果注入是两条独立、明确的 API；OMP role/content 和 OpenCode info/parts/state.output 的真实载体不能混淆。
 
 ## LEMMA
@@ -37,6 +37,9 @@
 15. tests/015.test.mjs：冷重启后的历史 `resetScope` 只证明旧事件存在，未确证当前预算时必须持续通过强 agent steer 催重新 `resetScope`；不得把内存默认 0 当作已耗尽预算、发弱提示或改写工具尾巴。真正重置获得预算后仍按实际回合递减，只有真实 0 触发弱提醒。
 
 16. tests/016.test.mjs：可获得的 assistant 正文穿越 reset、旧 Scope thinking 退役、最新 reset 之后 thinking 保留；旧普通工具调用与返回配对裁剪，`assume/negotiate/askPreviousScope/askPrevious/advisor/resetScope` 关键工具调用与配对结果始终保留。独立 `OutboundViewStore` 负责真实 Provider archive/serialize/discardSealed 事实，**不**用已删除的 `startTemporaryFromFrozen` 在咨询期再次复制整段历史。
+
+17. tests/018.test.mjs：任意工具上的 `scope.kind=resetScope`（含 `arguments.scope` / `state.input.scope`）与旧独立 `resetScope` 工具名同为屏障；该次调用及配对结果保留，旧普通工具过程按最新屏障裁剪。
+
 
 ## 协商补充公理（2026-10-24）
 
