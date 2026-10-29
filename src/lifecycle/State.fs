@@ -714,6 +714,8 @@ type internal Ledger(workId: string) =
         barrier <- Some((Option.get previous).ToolCallId, id)
         completed <- false
         replaceTenure { Id = id; Origin = "Originator"; Milestone = "执行"; Substantive = false; Obligations = Map.empty }
+        advancePosition Program.Step.AwaitOperator (box "Operator")
+        settlePosition ()
         Seal.Continuation continuationId, finishActive "Reopened" None [ "continuationId", box continuationId ]
 
     member private _.BindDevOps(devopsId, target, trigger) =

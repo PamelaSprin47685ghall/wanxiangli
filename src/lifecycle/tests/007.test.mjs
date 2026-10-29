@@ -30,6 +30,9 @@ test('系统续办在结案后开立新任期且重放不重复开立', () => {
   assert.equal(manager.call(command, 'continuation-2').status, 'Observed')
   assert.equal(manager.call({ type: 'ContinueWork', continuationId: 'conflict-2' }, 'continuation-3').status, 'Conflict')
   manager.restored()
+  const reviewed = manager.review([{ key: 'conflict', value: 'resolve' }])
+  assert.equal(reviewed.kind, 'Reviewed')
+  assert.equal(reviewed.incumbencyId, reopened.result.incumbencyId)
 })
 
 test('SPEC[lifecycle-007] empty asks, relay, advance, launches, cleanup and reopen', () => {
