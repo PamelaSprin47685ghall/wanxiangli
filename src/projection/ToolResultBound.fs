@@ -32,14 +32,14 @@ type ToolResultBoundStore() =
     /// UTF-8 bytes of the scalar at index (handles surrogate pairs).
     /// Returns (codeUnits, bytes).
     let scalarAt (text: string) (index: int) : int * int =
-        let c = text[index]
+        let c = text.[index]
         let code = int c
 
         if code < 0x80 then
             1, 1
         elif code < 0x800 then
             1, 2
-        elif isHighSurrogate c && index + 1 < text.Length && isLowSurrogate text[index + 1] then
+        elif isHighSurrogate c && index + 1 < text.Length && isLowSurrogate text.[index + 1] then
             2, 4
         else
             1, 3
@@ -57,28 +57,29 @@ type ToolResultBoundStore() =
     let scalarStepBack (text: string) (start: int) : int =
         if
             start >= 2
-            && isLowSurrogate text[start - 1]
-            && isHighSurrogate text[start - 2]
+            && isLowSurrogate text.[start - 1]
+            && isHighSurrogate text.[start - 2]
         then
             start - 2
         else
             start - 1
 
-    let walkUtf8Tail (text: string) (maxBytes: int) (_acc: int) (start: int) : int =
-        let mutable cur = start
-        let mutable total = 0
-        let mutable running = true
+    let walkUtf8Tail (text: string) (maxBytes: int) : int =
+        let mutable start = text.Length
+        let mutable usedBytes = 0
+        let mutable withinBudget = true
 
-        while running && cur > 0 do
-            let prev = scalarStepBack text cur
-            let bytes = snd (scalarAt text prev)
-            if total + bytes > maxBytes then
-                running <- false
+        while start > 0 && withinBudget do
+            let previous = scalarStepBack text start
+            let bytes = snd (scalarAt text previous)
+
+            if usedBytes + bytes > maxBytes then
+                withinBudget <- false
             else
-                total <- total + bytes
-                cur <- prev
+                usedBytes <- usedBytes + bytes
+                start <- previous
 
-        cur
+        start
 
     let sliceFrom (text: string) (start: int) : string =
         if start >= text.Length then "" else text.Substring(start)
@@ -90,13 +91,13 @@ type ToolResultBoundStore() =
         elif byteCount text <= maxBytes then
             text
         else
-            sliceFrom text (walkUtf8Tail text maxBytes 0 text.Length)
+            sliceFrom text (walkUtf8Tail text maxBytes)
 
     /// Locate segment start (one past previous \n) and the newline index (-1 if none).
     let findLineBounds (text: string) (segEnd: int) : int * int =
         let mutable p = segEnd - 1
 
-        while p >= 0 && text[p] <> '\n' do
+        while p >= 0 && text.[p] <> '\n' do
             p <- p - 1
 
         p + 1, p
@@ -105,43 +106,29 @@ type ToolResultBoundStore() =
         let tail = utf8Tail (text.Substring(segStart, segEnd - segStart)) maxBytes
         if tail = "" then [] else [ tail ]
 
-    let collectTail
+    let rec collectTail
         (text: string)
         (maxLines: int)
         (maxBytes: int)
-        (_segments: string list)
-        (_accBytes: int)
-        (_count: int)
+        (segments: string list)
+        (accBytes: int)
+        (count: int)
         (segEnd: int)
         : string list =
-        let mutable curEnd = segEnd
-        let mutable count = 0
-        let mutable accBytes = 0
-        let mutable segments: string list = []
-        let mutable running = true
+        let segStart, newlineAt = findLineBounds text segEnd
+        let line = text.Substring(segStart, segEnd - segStart)
+        let lineBytes = byteCount line
+        let size = lineBytes + (if count = 0 then 0 else 1)
+        let overBudget = count >= maxLines || accBytes + size > maxBytes
 
-        while running do
-            let segStart, newlineAt = findLineBounds text curEnd
-            let line = text.Substring(segStart, curEnd - segStart)
-            let lineBytes = byteCount line
-            let size = lineBytes + (if count = 0 then 0 else 1)
-            let overBudget = count >= maxLines || accBytes + size > maxBytes
-
-            if overBudget && count = 0 then
-                segments <- overflowTail text segStart curEnd maxBytes
-                running <- false
-            elif overBudget then
-                running <- false
-            elif newlineAt < 0 then
-                segments <- line :: segments
-                running <- false
-            else
-                segments <- line :: segments
-                accBytes <- accBytes + size
-                count <- count + 1
-                curEnd <- newlineAt
-
-        segments
+        if overBudget && count = 0 then
+            overflowTail text segStart segEnd maxBytes
+        elif overBudget then
+            segments
+        elif newlineAt < 0 then
+            line :: segments
+        else
+            collectTail text maxLines maxBytes (line :: segments) (accBytes + size) (count + 1) newlineAt
 
     let takeTail (maxLines: int) (maxBytes: int) (text: string) : string =
         String.concat "\n" (collectTail text maxLines maxBytes [] 0 0 text.Length)

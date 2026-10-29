@@ -2,6 +2,12 @@
 
 > **产品面退役说明（WP0 / 2026-10-29）**：宿主不再把 `remainingScopeTurnsEstimate` 当作工具必填字段，也不再以 Stall／ResetDue 开顾问席。Scope 生命周期以 `scope-retention` + 共同法 «Scope» 的 retention 为准。本包及其测试仍描述**历史计费／顾问队列**能力，供冷日志与尚未拆除的 durable 路径阅读；**新文案与新 WHAT 不得再把估计字段写成现行入口。** `tests/*.test.mjs` 是 **PACKAGE-HISTORICAL** 契约（包内 durable／顾问队列），不是宿主产品验收；勿把 Stall／ResetDue 再挂回 todowrite schema。
 
+## 产品面边界（2026-10-29 收口）
+
+- **仍为产品路径**：`AdvisorFlow`／`AdvisorProcessQueue`／`advisorClaim|Finish|Pending|StageBegin|StageConfirm`（顾问席本身；宿主仅由 `scope-retention` 的 `advisorDue` 触发，问题 `RetentionExhausted`／`IdleSpin`），以及 `ScopeProgressPort` 的 epoch 载体（`reset`／`ensureEpoch`／`status().epoch`／`recordedEpoch`／journal 绑定／`clear`）。
+- **仅考古、无产品调用者**：`record`／`settle`／`settlePending`、`estimate`、`resetDue`、`trigger: ResetDue|Stall`、`durableProgress*`。宿主（OpenCode PluginHooks、OMP Adapter）已不再结算估计，也不再因 progress 健康度拒绝 Provider 回合。
+- 包不物理删除：历史测与冷日志仍引用其 ABI；若要拆出顾问席为独立包，需另行确认。
+
 独立 npm 入口：`wanxiangli/scope-progress`。本包管理（或曾管理）Scope 的计费回合和自动 Advisor 咨询状态，不知道具体 Host、会话消息格式、Provider SDK、Journal 的物理格式与文件位置。
 
 ## AXIOM

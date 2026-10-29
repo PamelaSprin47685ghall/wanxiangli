@@ -1,8 +1,17 @@
+// PACKAGE-HISTORICAL / PRODUCT-RETIRED (WP0, 2026-10-29) — read src/scope-progress/AGENTS.md «产品面边界».
+// Still product-live: AdvisorFlow / AdvisorProcessQueue / advisorClaim|Finish|Pending|StageBegin|StageConfirm
+//   (the Advisor seat opened by scope-retention advisorDue), and ScopeProgressPort epoch carriers
+//   (reset / ensureEpoch / status().epoch / recordedEpoch / bind|unbind / configureJournal / clear).
+// Historical only (no product caller may drive these): record / settle / settlePending, estimate,
+//   resetDue, trigger 'ResetDue'|'Stall', durableProgress*. Not a Scope lifecycle entry.
 export type ProgressReceipt = { ok: boolean; reason?: string; replayed?: boolean; minimum?: number }
 export type ProgressSettlement = { ok: boolean; reason?: string; charged?: boolean; estimate?: number; previous?: number | null; advisor?: boolean; trigger?: 'ResetDue' | 'Stall' | null; resetDue?: boolean }
 export interface ScopeProgressPort {
+  /** @deprecated PRODUCT-RETIRED estimate billing; historical only. */
   record(sessionId: string, epochId: string, providerRunId: string, toolCallId: string, estimate: number): ProgressReceipt
+  /** @deprecated PRODUCT-RETIRED estimate billing; historical only. */
   settle(sessionId: string, epochId: string, providerRunId: string): ProgressSettlement
+  /** @deprecated PRODUCT-RETIRED estimate billing; historical only. */
   settlePending(sessionId: string, epochId: string): ReadonlyArray<{providerRunId: string, result: ProgressSettlement}>
   reset(sessionId: string, epochId: string): void
   status(sessionId: string): { known: boolean; estimate?: number | null; resetDue: boolean; epoch?: string }
