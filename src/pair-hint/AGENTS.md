@@ -29,7 +29,7 @@
 10. tests/010.test.mjs：negotiate 与 askPreviousScope 首问的相同时序冻结、相同解锁见证（首次有效调用受理即解除），首问后 budget 恢复和旧工具结果提示字节冻结。
 11. tests/011.test.mjs：assume、negotiate、askPreviousScope/askPrevious、advisor 原始工具调用和成对结果历次 reset 保留；未配对伪结果与普通旧调用不得混进来。
 12. tests/012.test.mjs：KPI 枚举乘法因子是单一自治预算计算函数，原始预算乘因子后向上取整，缺失未知枚举拒绝。
-13. tests/013.test.mjs：`negotiate`、`askPreviousScope` 和 Advisor 工作者短命咨询共用唯一最近 transform 输入/输出视图，temp session 只保存来源和视角；旧我咨询只看最后一次 reset 以前的实际 input，不漏新 Scope；下一 transform 覆盖旧版本。receipt ID 同问题幂等，物理 steer 确认后仍保留原始询问身份，不重复付费。
+13. tests/013.test.mjs：`negotiate` 和 Advisor 工作者短命咨询共用唯一最近 transform 输出视图，temp session 只保存来源和视角，下一 transform 覆盖旧版本；`askPreviousScope` 旧我咨询只用旧 Scope 的等效视图（reset 时封存、旧 Scope 实际发出且已在其窗内的 provider 视图），不读最后一次 reset 以前的原始 Host 历史（它随历代 Scope 累积、可远超窗口），也不漏新 Scope。receipt ID 同问题幂等，物理 steer 确认后仍保留原始询问身份，不重复付费。
 
 14. tests/014.test.mjs：首次 reset 前每次请求独立 strong steer、绝不写用户/工具原文；首次 reset 后包括真人追加指令和任何 agent 载体消息都延续当前预算，不重新催 reset；旧 epoch 的 agent-attributed user 回复也不能伪装成永久保留的操作员消息；未完成首次 negotiate 与第二次起 askPreviousScope 义务只在强 steer 持续提示；冷历史虽含 reset 但本进程预算未恢复时必须像尚无预算那样持续强催真正重置，不能当已初始化并虚报 0。
 

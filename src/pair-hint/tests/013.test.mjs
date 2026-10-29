@@ -2,15 +2,17 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { PairHint } from '../../../dist/pair-hint/PairHint.js'
 
-test('SPEC[pair-hint-013] prior-scope readonly temporary owns only its source identity, not a frozen full transcript', () => {
+test('SPEC[pair-hint-013] prior-scope readonly temporary asks through the sealed equivalent view of the previous Scope', () => {
   const owner=PairHint()
   const session='scope-013', temp='scope-consultation-013'
-  const previous={system:['Actual previous system'],model:{providerID:'p',modelID:'m',variant:'high'}}
   const before={info:{sessionID:session,role:'user'},parts:[{type:'text',text:'original text'}]}
+  const previous={system:['Actual previous system'],model:{providerID:'p',modelID:'m',variant:'high'},messages:[before]}
   const reset={info:{role:'assistant'},parts:[{type:'toolCall',id:'r',name:'resetScope'}]}
   owner.rememberTransform(session,[before,reset,{role:'user',content:'SECRET_CURRENT_SCOPE'}],
     [{role:'user',content:'current summarized scope'}])
   assert.equal(owner.startTemporaryPrevious(temp,session,{system:[],model:null}).ok,false)
+  assert.equal(owner.startTemporaryPrevious(temp,session,{system:['s'],model:{providerID:'p',modelID:'m'}}).ok,false,
+    'no sealed equivalent view, no consultation')
   assert.equal(owner.startTemporaryPrevious(temp,session,previous).ok,true)
   assert.equal(owner.isTemporary(temp),true)
   assert.deepEqual(owner.modelForTemporary(temp),previous.model)
@@ -22,7 +24,7 @@ test('SPEC[pair-hint-013] prior-scope readonly temporary owns only its source id
   assert.deepEqual(messages[1],question)
   assert.equal(JSON.stringify(messages).includes('SECRET_CURRENT_SCOPE'),false)
   before.parts[0].text='changed only in caller'
-  assert.equal(messages[0].parts[0].text,'original text','latest-view snapshot cannot alias mutable caller data')
+  assert.equal(messages[0].parts[0].text,'original text','equivalent-view snapshot cannot alias mutable caller data')
   owner.recordToolViolation(temp)
   assert.equal(owner.toolViolationCount(temp),1)
   owner.finishTemporary(temp)
@@ -88,37 +90,35 @@ test('SPEC[pair-hint-013] live BTW resolves the latest delegator provider view w
   assert.equal(owner.projectMessages(temp,q),null)
 })
 
-test('SPEC[pair-hint-013] previous Scope uses the latest physical history at question time but cannot leak work after the last reset',()=>{
+test('SPEC[pair-hint-013] previous Scope is asked through its sealed equivalent view, never the raw Host history nor new-Scope work',()=>{
   const owner=PairHint(),sid='reanchored-prior-013',temp='ask-prior-live-013'
   const before={info:{role:'user'},parts:[{type:'text',text:'Original requirement'}]}
   const old={info:{role:'assistant'},parts:[{type:'text',text:'Old proof 112358'}]}
+  const rawEarlier={info:{role:'assistant'},parts:[{type:'text',text:'RAW_RETIRED_HISTORY_999'}]}
   const reset={info:{role:'assistant'},parts:[{type:'text',text:'Old summary'},{type:'tool',id:'reset-call',name:'resetScope'}]}
   const newUser={info:{role:'user'},parts:[{type:'text',text:'SECRET_NEW_SCOPE_271828'}]}
   const current={info:{role:'assistant'},parts:[{type:'text',text:'Current answer only'}]}
   owner.rememberSystem(sid,['Current system'])
   owner.rememberModel(sid,{providerID:'p',modelID:'new'})
-  owner.rememberMessages(sid,[before,old,reset,newUser,current])
-  const meta={system:['Previous real system'],model:{providerID:'p',modelID:'old'}}
+  owner.rememberMessages(sid,[rawEarlier,before,old,reset,newUser,current])
+  // The sealed provider view the old Scope actually sent (projected, within its window).
+  const meta={system:['Previous real system'],model:{providerID:'p',modelID:'old'},messages:[before,old]}
   assert.equal(owner.startTemporaryPrevious(temp,sid,meta).ok,true)
-  owner.rememberMessages(sid,[before,{...old,parts:[{type:'text',text:'Old proof updated before question 112358'}]},reset,newUser,current])
+  owner.rememberMessages(sid,[rawEarlier,before,{...old,parts:[{type:'text',text:'later raw edit'}]},reset,newUser,current])
   const question={info:{role:'user'},parts:[{type:'text',text:'What did you observe?'}]}
   const out=owner.projectMessages(temp,question)
-  assert.equal(out.length,4)
-  assert.equal(out[1].parts[0].text,'Old proof updated before question 112358')
-  assert.equal(out[2].parts[0].text,'Old summary')
-  assert.equal(out.some(x=>JSON.stringify(x).includes('SECRET_NEW_SCOPE_271828')),false)
-  assert.equal(out.some(x=>JSON.stringify(x).includes('Current answer only')),false)
+  assert.deepEqual(out,[before,old,question])
+  const wire=JSON.stringify(out)
+  assert.equal(wire.includes('RAW_RETIRED_HISTORY_999'),false,'raw Host history is not the previous Scope view')
+  assert.equal(wire.includes('later raw edit'),false,'equivalent view is the sealed one, not a later raw read')
+  assert.equal(wire.includes('SECRET_NEW_SCOPE_271828'),false)
+  assert.equal(wire.includes('Current answer only'),false)
   assert.deepEqual(owner.projectSystem(temp,[]),meta.system)
   assert.deepEqual(owner.modelForTemporary(temp),meta.model)
+  meta.messages[1].parts[0].text='caller mutation'
+  assert.equal(owner.projectMessages(temp,question)[1].parts[0].text,'Old proof 112358')
   owner.finishTemporary(temp)
-  const cannot=owner.startTemporaryPrevious(temp,sid,meta)
-  assert.equal(cannot.ok,true)
-  owner.finishTemporary(temp)
-  const bad='missing-reset-013'
-  owner.rememberMessages(bad,[before,old,newUser])
-  assert.equal(owner.startTemporaryPrevious(temp,bad,meta).ok,true,'registration stores identity, not a frozen source')
-  assert.equal(owner.projectMessages(temp,question),null,'the actual model request must fail closed without a real last-reset boundary')
-  owner.finishTemporary(temp)
+  assert.equal(owner.projectMessages(temp,question),null)
 })
 
 test('SPEC[pair-hint-013] one latest LLM transform input/output replaces all earlier versions and serves three consultation projections', () => {
@@ -136,18 +136,19 @@ test('SPEC[pair-hint-013] one latest LLM transform input/output replaces all ear
   const secondInput=[user('OLD_INPUT_314159'),reset,user('PRIVATE_NEW_SCOPE_271828')]
   const secondOutput=[user('OLD_OUTPUT_SUMMARY_ONLY'),user('PRIVATE_NEW_SCOPE_271828')]
   owner.rememberTransform(sid,secondInput,secondOutput)
-  assert.equal(owner.startTemporaryPrevious(prior,sid,{system:['verified prior system'],model}).ok,true)
+  const sealedPrior=[user('OLD_SEALED_VIEW_314159')]
+  assert.equal(owner.startTemporaryPrevious(prior,sid,{system:['verified prior system'],model,messages:sealedPrior}).ok,true)
   const q=user('What evidence?')
   assert.deepEqual(owner.projectMessages(live,q),[...secondOutput,q],
     'live worker must consult the latest transform output')
-  assert.deepEqual(owner.projectMessages(prior,q),[user('OLD_INPUT_314159'),q],
-    'previous scope must consult the latest transform input, not the purged output')
+  assert.deepEqual(owner.projectMessages(prior,q),[...sealedPrior,q],
+    'previous scope consults its sealed equivalent view, not the raw input nor the purged output')
   assert.equal(JSON.stringify(owner.projectMessages(prior,q)).includes('PRIVATE_NEW_SCOPE'),false)
   const thirdInput=[user('Third request without old reset boundary')]
   owner.rememberTransform(sid,thirdInput,thirdInput)
   assert.deepEqual(owner.projectMessages(live,q),[...thirdInput,q])
-  assert.equal(owner.projectMessages(prior,q),null,
-    'replacing latest view must NOT secretly keep an older full history in another dictionary')
+  assert.deepEqual(owner.projectMessages(prior,q),[...sealedPrior,q],
+    'a later work transform does not change the previous Scope equivalent view')
   owner.finishTemporary(live)
   owner.finishTemporary(prior)
   owner.forgetSession(sid)

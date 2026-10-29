@@ -807,15 +807,21 @@ let PairHint () : PairHintMessages =
     let startTemporaryPrevious (tempId: string) (sourceSessionId: string) (metadata: obj) : obj =
         let oldModel = if isNull metadata then null else metadata?model
         let oldSystem = if isNull metadata then null else metadata?system
-        // The latest transform may advance between temp creation and provider send;
-        // inspect its boundary only at the physical temporary provider request.
+        let oldMessages = if isNull metadata then null else metadata?messages
+        // The previous Scope is asked through its own equivalent view: the sealed
+        // provider view the old Scope actually sent (already projected, retained
+        // and within the window it was accepted under). The raw Host history before
+        // the last reset is not that view; it grows with every earlier Scope.
         if isNull oldModel || not (isArray oldSystem) then
             createObj [ "ok" ==> false; "reason" ==> "no verified old Scope system and model evidence" ]
+        elif not (isArray oldMessages) || (unbox<obj array> oldMessages).Length = 0 then
+            createObj [ "ok" ==> false; "reason" ==> "no verified old Scope equivalent provider view" ]
         else
             temporaryNegotiations[tempId] <-
                 createObj [ "previousDelegator", box sourceSessionId
                             "system", cloneWire oldSystem
-                            "model", cloneWire oldModel ]
+                            "model", cloneWire oldModel
+                            "messages", cloneWire oldMessages ]
             createObj [ "ok" ==> true ]
 
     let modelForTemporary (tempId: string) : obj =
@@ -853,10 +859,7 @@ let PairHint () : PairHintMessages =
     let projectMessages (tempId: string) (question: obj) : obj =
         let latest =
             match temporaryNegotiations.TryGetValue tempId with
-            | true, view when not (isNull view?previousDelegator) ->
-                let source = string view?previousDelegator
-                let old = latestPrevious source
-                if isNull old then None else Some(cloneWire old)
+            | true, view when not (isNull view?previousDelegator) -> Some(cloneWire view?messages)
             | true, view when not (isNull view?liveDelegator) ->
                 observedMessages (string view?liveDelegator) false
                 |> Option.map (fun output -> cloneWire(box output))

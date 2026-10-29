@@ -72,7 +72,7 @@ test('SPEC[pair-hint-018] nested arguments.scope.kind also counts (wire / host s
 })
 
 test('SPEC[pair-hint-018] state.input.scope.kind (OpenCode tool part shape) counts on wire barrier', () => {
-  // precedingScopeMessages / isResetWirePart path used by temporary previous projection
+  // precedingScopeMessages / isResetWirePart path behind latestPrevious
   const session = 'wire-018'
   const before = { info: { sessionID: session, role: 'user' }, parts: [{ type: 'text', text: 'old' }] }
   const reset = {
@@ -88,18 +88,9 @@ test('SPEC[pair-hint-018] state.input.scope.kind (OpenCode tool part shape) coun
   }
   const after = { role: 'user', content: 'SECRET_NEW' }
   owner.rememberTransform(session, [before, reset, after], [{ role: 'user', content: 'summarized' }])
-  owner.setHasPreviousScope(session, true)
-  const temp = 'wire-018-temp'
-  const started = owner.startTemporaryPrevious(temp, session, {
-    system: ['sys'],
-    model: { providerID: 'p', modelID: 'm' },
-  })
-  assert.equal(started.ok, true)
-  const question = { info: { role: 'user' }, parts: [{ type: 'text', text: 'q?' }] }
-  const messages = owner.projectMessages(temp, question)
+  const messages = owner.latestPrevious(session)
   assert.equal(JSON.stringify(messages).includes('SECRET_NEW'), false, 'new-scope content stays out')
-  assert.equal(messages.length >= 2, true)
-  owner.finishTemporary(temp)
+  assert.equal(messages.length >= 1, true)
   owner.clearSession(session)
 })
 
