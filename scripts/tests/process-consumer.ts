@@ -1,7 +1,14 @@
-import { ProcessSession, type ProcessOptions, type OutputSlice } from 'wanxiangli/runtime'
+import { ProcessSession, type ProcessOptions, type OutputSlice, type OutputReceiver } from 'wanxiangli/runtime'
 
 declare const options: ProcessOptions
 const run = new ProcessSession(options)
+const receive: OutputReceiver = (channel, bytes) => {
+  const source: 'stdout' | 'stderr' = channel
+  const raw: Uint8Array = bytes
+  void source
+  void raw
+}
+new ProcessSession(options, receive)
 const slice: OutputSlice = run.read('stdout', 0)
 const raw: Uint8Array = slice.bytes
 const text: string | null = slice.text

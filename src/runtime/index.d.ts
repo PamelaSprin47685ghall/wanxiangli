@@ -16,7 +16,7 @@ export class LargeGate implements LargeGateInstance {
 export const largeGate: LargeGateInstance
 
 export { Filesystem, type AnchorSpec, type GrepHit, type StagedMutation, type VisibleEntry, type VisibleEntriesResult, type Result as FilesystemResult } from './files/types.js'
-export { ProcessSession, type ProcessOptions, type ProcessState, type OutputSlice, type StartResult, type WriteResult, type SignalResult, type SignalName as ProcessSignalName, type Failure as ProcessFailure } from './process/types.js'
+export { ProcessSession, type ProcessOptions, type ProcessState, type OutputSlice, type OutputReceiver, type StartResult, type WriteResult, type SignalResult, type SignalName as ProcessSignalName, type Failure as ProcessFailure } from './process/types.js'
 export { Terminal, type TerminalOptions, type TerminalExit, type TerminalState, type PtyDriver, type OpenResult, type CloseResult as TerminalCloseResult, type ReadResult as TerminalReadResult, type SignalName as TerminalSignalName, type Failure as TerminalFailure } from './pty/types.js'
 export { OutputSpool, type SpoolOptions, type SpoolState, type SpoolResult, type Channel, type AppendResult, type DiscardResult, type ReadResult as SpoolReadResult, type TailResult, type Failure as SpoolFailure } from './spool/types.js'
 export { Time, type Deadline, type IDeadlineHandle, type ITimerPort, type IClockPort, type VirtualTimerPort, type VirtualClockPort } from './time/types.js'

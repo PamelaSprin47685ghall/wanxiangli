@@ -30,7 +30,9 @@ export type StreamDecodeResult =
   | { ok: false; error: CodecError }
 
 /** 共存裁决：`series` 段系列为准；`legacy` 旧式为准；`continuation` 段系列后接旧式行；`diverged` 不成立。 */
-export type Coexistence = 'series' | 'legacy' | 'continuation' | 'diverged'
+export type Coexistence =
+  | { readonly kind: 'series' | 'legacy' | 'diverged' }
+  | { readonly kind: 'continuation'; readonly copiedLines: number }
 
 export declare class WriterSegments {
   /** 四位段号的上界（9999）。 */
@@ -62,7 +64,8 @@ export declare class WriterSegments {
   decodeStream(label: string, text: string): StreamDecodeResult
   /**
    * 旧式文件字节与段系列（按序拼接）字节的共存裁决：旧式是段系列前缀（含相等）→ `series`；
-   * 段系列是旧式前缀 → `legacy`；双方都是完整规范 NDJSON 且 EventId 不相交 → `continuation`；否则 `diverged`。
+   * 段系列是旧式前缀 → `legacy`；完整规范行续接 → `continuation`，copiedLines 是已复制到段尾的旧式前缀行数。
+   * 已复制部分必须逐字节相同，剩余 ID 不得出现在段系列；其余为 `diverged`。
    */
   coexistence(legacyBytes: Uint8Array, seriesBytes: Uint8Array): Coexistence
 }

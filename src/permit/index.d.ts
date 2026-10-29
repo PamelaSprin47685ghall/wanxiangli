@@ -20,11 +20,14 @@ export interface ExecutionIdentity {
   readonly target: ModelTarget
 }
 
+/** int64 正整数；number 只接受安全整数，超出安全范围用 bigint。 */
+export type ExactInteger = number | bigint
+
 /** 本实例签发的冻结许可。只有签发它的实例认得它；同形的伪造对象不是许可。 */
 export interface ExecutionPermit {
-  readonly leaseId: number
-  readonly fence: number
-  readonly credit: number
+  readonly leaseId: ExactInteger
+  readonly fence: ExactInteger
+  readonly credit: ExactInteger
   readonly identity: ExecutionIdentity
 }
 
@@ -52,17 +55,17 @@ export declare class ExecutionPermits {
    * 签发许可。同一会话、同一身份、同一 credit 的重复签发交还原许可（任何状态）；
    * 否则签发新许可（新 leaseId 与 fence）并替代该会话的旧许可。credit 必须是正整数。
    */
-  issue(identity: ExecutionIdentity, credit: number): ExecutionPermit
+  issue(identity: ExecutionIdentity, credit: ExactInteger): ExecutionPermit
   /** 许可的 target；未知、伪造、被替代或 fence 不符的许可给出拒绝。 */
-  target(permit: ExecutionPermit, fence: number): PermitResult<ModelTarget>
+  target(permit: ExecutionPermit, fence: ExactInteger): PermitResult<ModelTarget>
   /** 观察到的精确身份与许可一致时 Pending → Committed；重复提交幂等；释放后提交冲突。 */
-  commit(permit: ExecutionPermit, fence: number, observed: ExecutionIdentity): PermitOutcome
+  commit(permit: ExecutionPermit, fence: ExactInteger, observed: ExecutionIdentity): PermitOutcome
   /** 提供方开始前释放：Pending → Released(BeforeProvider)。已提交的许可不能走这条路（Conflict）。 */
-  releaseBeforeProvider(permit: ExecutionPermit, fence: number, observed: ExecutionIdentity): PermitOutcome
+  releaseBeforeProvider(permit: ExecutionPermit, fence: ExactInteger, observed: ExecutionIdentity): PermitOutcome
   /** 物理执行完成：只释放该会话当前许可且物理消息一致者；另一种释放之后为 Conflict。 */
   releasePhysical(sessionId: string, physicalUserMessageId: string): PermitOutcome
   /** 许可当前状态。 */
-  lifecycle(permit: ExecutionPermit, fence: number): PermitResult<PermitState>
+  lifecycle(permit: ExecutionPermit, fence: ExactInteger): PermitResult<PermitState>
   /** 只读：该会话当前许可已提交且物理消息一致时交还它，否则 null。 */
   committed(sessionId: string, physicalUserMessageId: string): ExecutionPermit | null
 }
@@ -103,8 +106,8 @@ export declare const capacityTransitionCounters: CapacityTransitionCounters
  */
 export interface SessionLeaseHandlesSnapshot {
   readonly activeCount: number
-  readonly nextLeaseId: number
-  readonly nextFence: number
+  readonly nextLeaseId: ExactInteger
+  readonly nextFence: ExactInteger
 }
 
 /**
@@ -116,7 +119,7 @@ export declare class SessionLeaseHandles {
    * 获取或创建会话租约句柄。同会话同许可直接复用已有句柄；
    * 否则递增 nextLeaseId 与 nextFence、校验 permit.fence === nextFence（不一致抛出异常），调用 createHandle 缓存并返回。
    */
-  handleFor<T>(sessionId: string, permit: ExecutionPermit, createHandle: (leaseId: number, fence: number) => T): T
+  handleFor<T>(sessionId: string, permit: ExecutionPermit, createHandle: (leaseId: ExactInteger, fence: ExactInteger) => T): T
   /** 仅当会话存在且许可与已缓存者相同时返回句柄，否则返回 null。 */
   tryGetMatching<T>(sessionId: string, permit: ExecutionPermit): T | null
   /** 只读查询会话当前句柄。 */
@@ -127,10 +130,10 @@ export declare class SessionLeaseHandles {
   snapshot(): SessionLeaseHandlesSnapshot
   /** 清空会话句柄字典。 */
   clear(): void
-  readonly nextLeaseId: number
-  readonly nextFence: number
-  getNextLeaseId(): number
-  getNextFence(): number
+  readonly nextLeaseId: ExactInteger
+  readonly nextFence: ExactInteger
+  getNextLeaseId(): ExactInteger
+  getNextFence(): ExactInteger
 }
 
 /** 全局单例会话租约句柄管理器。 */

@@ -129,7 +129,7 @@ let private isPrefixOf (prefix: byte[]) (full: byte[]) =
         same
 
 /// 一种物理形态的 EventId 集合；字节不是完整规范 NDJSON（非 UTF-8、半行、非规范行、空内行）时 None。
-let private eventIdsOf (bytes: byte[]) : Set<string> option =
+let private streamLines (bytes: byte[]) : (string[] * string[]) option =
     let text: obj = codec?tryDecodeUtf8Text bytes
     let ok: obj = text?ok
     let decodedText: obj = text?text
@@ -137,18 +137,43 @@ let private eventIdsOf (bytes: byte[]) : Set<string> option =
     else
         match decodeStreamText "coexistence" (unbox<string> decodedText) with
         | Error _ -> None
-        | Ok events -> Some(events |> Array.map (fun (event: obj) -> let id: obj = event?id in unbox<string> id) |> Set.ofArray)
+        | Ok events ->
+            let ids =
+                events |> Array.map (fun (event: obj) ->
+                    let id: obj = event?id
+                    unbox<string> id)
+            if (Array.distinct ids).Length <> ids.Length then
+                None
+            else
+                Some((unbox<string> decodedText).Split('\n') |> Array.take ids.Length, ids)
+
+let private copiedPrefixLines (legacy: byte[]) (series: byte[]) : int option =
+    match streamLines legacy, streamLines series with
+    | Some(legacyLines, legacyIds), Some(seriesLines, seriesIds) ->
+        let seriesSet = Set.ofArray seriesIds
+        match Array.tryHead legacyIds |> Option.bind (fun id -> Array.tryFindIndex ((=) id) seriesIds) with
+        | None ->
+            if Set.isEmpty (Set.intersect (Set.ofArray legacyIds) seriesSet) then Some 0 else None
+        | Some firstCopied ->
+            let copied = seriesLines.Length - firstCopied
+            if copied > legacyLines.Length then
+                None
+            else
+                let same = Array.forall2 (=) (Array.take copied legacyLines) (Array.skip firstCopied seriesLines)
+                let remaining = legacyIds |> Array.skip copied |> Set.ofArray
+                if same && Set.isEmpty (Set.intersect remaining seriesSet) then Some copied else None
+    | _ -> None
 
 /// 旧式文件与段系列共存的字节裁决（durable-events-005）：
 /// 旧式是段系列（按序拼接）的字节前缀（含相等）→ 段系列为准；段系列是旧式的字节前缀 → 旧式为准；
-/// 双方都是完整规范 NDJSON 且 EventId 不相交 → 行续接（段系列后接旧式行）；其余为分歧。
-let private coexistenceOf (legacy: byte[]) (series: byte[]) : string =
-    if isPrefixOf legacy series then "series"
-    elif isPrefixOf series legacy then "legacy"
+/// 完整规范 NDJSON 可续接不相交的行，或跳过段系列后缀中精确复制的旧式前缀；其余为分歧。
+let private coexistenceOf (legacy: byte[]) (series: byte[]) : obj =
+    if isPrefixOf legacy series then createObj [ "kind" ==> "series" ]
+    elif isPrefixOf series legacy then createObj [ "kind" ==> "legacy" ]
     else
-        match eventIdsOf legacy, eventIdsOf series with
-        | Some legacyIds, Some seriesIds when Set.isEmpty (Set.intersect legacyIds seriesIds) -> "continuation"
-        | _ -> "diverged"
+        match copiedPrefixLines legacy series with
+        | Some copied -> createObj [ "kind" ==> "continuation"; "copiedLines" ==> copied ]
+        | None -> createObj [ "kind" ==> "diverged" ]
 
 let private segmentName (writerId: string) (ordinal: int) =
     writerId + "-" + (string ordinal).PadLeft(4, '0') + suffix
@@ -257,5 +282,5 @@ type WriterSegments() =
 
     /// 旧式文件与段系列共存时的字节裁决：`series` | `legacy` | `continuation` | `diverged`。
     /// series 是段系列按序拼接的字节。只看字节，不读写文件、不删除；按裁决执行物理收敛归调用方。
-    member _.coexistence(legacyBytes: obj, seriesBytes: obj) : string =
+    member _.coexistence(legacyBytes: obj, seriesBytes: obj) : obj =
         coexistenceOf (requireBytes "legacyBytes" legacyBytes) (requireBytes "seriesBytes" seriesBytes)
