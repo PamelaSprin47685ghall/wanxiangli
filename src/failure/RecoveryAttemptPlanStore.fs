@@ -48,7 +48,7 @@ type RecoveryAttemptPlanStore() =
         sessionId + separator + physicalUserMessageId
 
     let bind (provKey: string) (physicalUserMessageId: string) (bound: obj) : obj =
-        attemptPlans.[provKey] <-
+        attemptPlans[provKey] <-
             { Plan = bound
               PhysicalUserMessageId = physicalUserMessageId }
 
