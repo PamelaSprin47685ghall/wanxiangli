@@ -9,7 +9,7 @@
 
 export type RoleLabel =
   | 'manager' | 'orchestrator' | 'engineer' | 'coder' | 'inspector'
-  | 'browser' | 'inquiry' | 'devops' | 'distiller' | 'plan' | 'advisor'
+  | 'browser' | 'inquiry' | 'devops' | 'distiller' | 'plan'
 
 export type PersonaOriginLabel = 'ResolvedAtRoot' | 'InheritedFromOwner'
 
@@ -73,11 +73,11 @@ export interface BindInput {
 export interface RebindTarget { modelTarget: string; capacityFence: string }
 
 export declare class Identity {
-  /** 活跃角色（目录顺序）：orchestrator, manager, engineer, devops, plan, advisor。 */
+  /** 活跃角色（目录顺序）：orchestrator, manager, engineer, devops, plan。 */
   activeRoleLabels(): RoleLabel[]
   /** 已退役、只供历史解码的角色。 */
   historicalRoleLabels(): RoleLabel[]
-  /** Advisor 与 Distiller 是内部角色，不进入公开 fork / horizon 词汇。 */
+  /** Distiller 是内部角色，不进入公开 fork / horizon 词汇。 */
   isInternalRole(label: unknown): boolean
   legacyNames(): string[]
   isLegacyName(name: unknown): boolean

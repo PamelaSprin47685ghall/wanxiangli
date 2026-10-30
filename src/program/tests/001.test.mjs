@@ -27,7 +27,7 @@ test('SPEC[program-001] JsPlan expands to Read/Write/Ask', () => {
 })
 
 test('SPEC[program-001] Orchestrator Fork becomes Commission on the member surface', () => {
-  const surface = law.projectRole('Orchestrator', ['Fork', 'Join', 'Horizon', 'Advisor'])
+  const surface = law.projectRole('Orchestrator', ['Fork', 'Join', 'Horizon'])
   assert.ok(surface.capabilities.includes('Commission'))
   assert.ok(!surface.capabilities.includes('Fork'))
   assert.ok(surface.members.includes('commission'))
@@ -35,7 +35,7 @@ test('SPEC[program-001] Orchestrator Fork becomes Commission on the member surfa
 })
 
 test('SPEC[program-001] Manager read members hang under reviewOnly', () => {
-  const surface = law.projectRole('Manager', ['Read', 'Glob', 'Grep', 'Fork', 'Join', 'Horizon', 'Advisor', 'Resume'])
+  const surface = law.projectRole('Manager', ['Read', 'Glob', 'Grep', 'Fork', 'Join', 'Horizon', 'Resume'])
   assert.ok(surface.members.includes('reviewOnly.cat'))
   assert.ok(surface.members.includes('reviewOnly.ls'))
   assert.ok(!surface.members.includes('cat'))

@@ -106,8 +106,7 @@ test('removeLast does not decrement; streaks; projection; journal restore', () =
     kind: 'removeLast',
     replacement: '教训：第三次。',
   })
-  assert.equal(rm3.advisorDue, true)
-  assert.equal(scopeRetention.status(session).advisorDue, true)
+  assert.equal(rm3.removeStreak, 3)
 
   const proj = scopeRetention.projection(session, 'beat-prev')
   assert.equal(proj.retracted, true)

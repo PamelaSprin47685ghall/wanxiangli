@@ -10,7 +10,6 @@ type Persona =
     | Operator
     | Researcher
     | Analyst
-    | Auditor
     | Distiller
     | Curator
     | Planner
@@ -28,7 +27,6 @@ module Persona =
         | Persona.Operator -> "Operator"
         | Persona.Researcher -> "Researcher"
         | Persona.Analyst -> "Analyst"
-        | Persona.Auditor -> "Auditor"
         | Persona.Distiller -> "Distiller"
         | Persona.Curator -> "Curator"
         | Persona.Planner -> "Planner"
@@ -45,7 +43,6 @@ module Persona =
         | "Operator" -> Some Persona.Operator
         | "Researcher" -> Some Persona.Researcher
         | "Analyst" -> Some Persona.Analyst
-        | "Auditor" -> Some Persona.Auditor
         | "Distiller" -> Some Persona.Distiller
         | "Curator" -> Some Persona.Curator
         | "Planner" -> Some Persona.Planner
@@ -69,7 +66,6 @@ module PersonaCatalog =
         | Role.DevOps -> Persona.Operator
         | Role.Distiller -> Persona.Distiller
         | Role.Plan -> Persona.Planner
-        | Role.Advisor -> Persona.Auditor
 
     /// Bookkeeper 的目录人格（内部槽位，非活跃角色）。
     let bookkeeperPersona: Persona = Persona.Curator

@@ -536,7 +536,7 @@ let private neutralIsReset (part: NeutralCall) : bool =
 
 let private isAlwaysRetained (part: NeutralCall) : bool =
     match part.Tool with
-    | "resetScope" | "assume" | "negotiate" | "askPreviousScope" | "askPrevious" | "advisor" -> true
+    | "resetScope" | "assume" | "negotiate" | "askPreviousScope" | "askPrevious" -> true
     | _ -> part.ScopeKind = "resetScope"
 
 /// Thinking is the model's scratch reasoning for a scope that is now finished;

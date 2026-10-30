@@ -1,10 +1,10 @@
-// PACKAGE-HISTORICAL: scope-progress estimate/Advisor-queue package contract, not host product acceptance (see ../AGENTS.md «产品面边界»).
+// PACKAGE-HISTORICAL: scope-progress estimate package contract, not host product acceptance (see ../AGENTS.md «产品面边界»).
 // PRODUCT-RETIRED (2026-10-29): Stall / ResetDue / remainingScopeTurnsEstimate are NOT host product contracts.
-// These tests keep the scope-progress *package* historical durable/advisor-queue behavior.
+// These tests keep the scope-progress *package* historical estimate behavior.
 // New lifecycle voice: wanxiangli/scope-retention + common law «Scope». Do not re-wire todowrite schema to estimates.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { ScopeProgress } from '../../../dist/scope-progress/AdvisorFlow.js'
+import { ScopeProgress } from '../../../dist/scope-progress/Progress.js'
 
 test('SPEC[scope-progress-001] free rounds; min of all calls settles once regardless of arrival order', () => {
   const p=ScopeProgress()
@@ -15,64 +15,28 @@ test('SPEC[scope-progress-001] free rounds; min of all calls settles once regard
   assert.equal(p.record('s','e1','r1','a',5).replayed,true)
   assert.equal(p.record('s','e1','r1','a',4).ok,false,'same physical tool identity conflicts if changed')
   const result=p.settle('s','e1','r1')
-  assert.deepEqual([result.charged,result.estimate,result.advisor,result.resetDue],[true,5,false,false])
+  assert.deepEqual([result.charged,result.estimate,result.resetDue],[true,5,false])
   assert.equal(p.settle('s','e1','r1'),result,'one settled provider run is not charged again')
   assert.equal(p.record('s','e1','r1','new',0).ok,false)
 })
 
-test('SPEC[scope-progress-001] the Advisor trigger names the latched zero before the comparison',()=>{
-  const p=ScopeProgress()
-  const round=(run,value)=>{ p.record('s','e1',run,'call-'+run,value); return p.settle('s','e1',run) }
-  assert.equal(round('five',5).trigger,null)
-  assert.equal(round('shrink',4.9).trigger,null,'0.1 of shrinkage is enough')
-  assert.equal(round('hold',4.9).trigger,'Stall','an unchanged estimate is an escalation')
-  assert.equal(round('zero',0).trigger,null)
-  assert.equal(round('four',4).trigger,'ResetDue')
-  assert.equal(round('three',3).trigger,'ResetDue','a drop after the zero is still the unreset zero, not new work')
-  const p2=ScopeProgress()
-  p2.record('s','e1','a','c1',2); p2.settle('s','e1','a')
-  p2.record('s','e1','b','c2',6)
-  assert.equal(p2.settle('s','e1','b').trigger,'Stall')
-  const p3=ScopeProgress()
-  p3.record('s','e1','a','c1',4.5); p3.settle('s','e1','a')
-  p3.record('s','e1','b','c2',4.45)
-  assert.equal(p3.settle('s','e1','b').trigger,'Stall','a drop below the judged bar is not progress')
-  const p5=ScopeProgress()
-  p5.record('s','e1','a','c1',3.1); p5.settle('s','e1','a')
-  p5.record('s','e1','b','c2',3.02)
-  assert.equal(p5.settle('s','e1','b').trigger,null,'0.08 is accepted even though the promise was 0.1')
-  p5.record('s','e1','c','c3',2.95)
-  assert.equal(p5.settle('s','e1','c').trigger,'Stall','below 0.08 is a stall')
-  const p4=ScopeProgress()
-  p4.record('s','e1','a','c1',3.2); p4.settle('s','e1','a')
-  p4.record('s','e1','b','c2',3.1)
-  assert.equal(p4.settle('s','e1','b').trigger,null,'a promised 0.1 drop in unrepresentable decimals is not punished')
-})
-
-test('SPEC[scope-progress-001] comparison is only against preceding charged round; zero is latched until reset',()=>{
+test('SPEC[scope-progress-001] zero is latched as resetDue until a new Scope starts',()=>{
   const p=ScopeProgress()
   p.record('s','e1','first','c1',4)
-  assert.equal(p.settle('s','e1','first').advisor,false)
+  assert.equal(p.settle('s','e1','first').charged,true)
   assert.equal(p.settle('s','e1','free').charged,false)
-  p.record('s','e1','stable','c2',3.9)
-  assert.equal(p.settle('s','e1','stable').advisor,false,'0.1 of shrinkage keeps the work going')
-  p.record('s','e1','down','c3',2)
-  assert.equal(p.settle('s','e1','down').advisor,false)
-  p.record('s','e1','rise','c6',5)
-  assert.equal(p.settle('s','e1','rise').trigger,'Stall','a higher estimate asks for help')
   p.record('s','e1','zero','c4',0)
   const finished=p.settle('s','e1','zero')
   assert.equal(finished.resetDue,true)
-  assert.equal(finished.advisor,false)
   assert.equal(p.settle('s','e1','free-again').resetDue,true)
   p.record('s','e1','after-zero','c5',0)
-  assert.equal(p.settle('s','e1','after-zero').advisor,true)
+  assert.equal(p.settle('s','e1','after-zero').resetDue,true)
   p.reset('s','e2')
   assert.equal(p.status('s').resetDue,false)
   assert.equal(p.status('s').known,false)
   assert.equal(p.record('s','e1','late','c1',0).ok,false,'stale epoch')
   p.record('s','e2','first','c1',3)
-  assert.equal(p.settle('s','e2','first').advisor,false)
+  assert.equal(p.settle('s','e2','first').charged,true)
 })
 
 test('SPEC[scope-progress-001] concurrent ordering cannot affect the minimum or charge count',()=>{
@@ -81,7 +45,6 @@ test('SPEC[scope-progress-001] concurrent ordering cannot affect the minimum or 
   const r=p.settle('second','epoch','run')
   assert.equal(r.estimate,3)
   assert.equal(r.charged,true)
-  assert.equal(r.advisor,false)
   assert.equal(p.record('second','epoch','new','bad',-1).ok,false)
   p.clear('second')
   assert.equal(p.status('second').known,false)

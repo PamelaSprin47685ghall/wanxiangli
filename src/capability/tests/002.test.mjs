@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { Capability } from 'wanxiangli/capability'
 
 const capability = new Capability()
-const roles = ['manager', 'orchestrator', 'engineer', 'devops', 'plan', 'advisor']
+const roles = ['manager', 'orchestrator', 'engineer', 'devops', 'plan']
 const names = ['fork', 'resume', 'join', 'horizon', 'fission', 'bash-honeypot', 'review', 'fetch', 'deliver', 'todowrite-for-plan']
 
 test('SPEC[capability-004] one permission → tool-name map; programming-surface duties have no host name', () => {
@@ -12,7 +12,7 @@ test('SPEC[capability-004] one permission → tool-name map; programming-surface
   assert.deepEqual(capability.toolNames('Deliver'), [])
   assert.deepEqual(capability.toolNames('ReviewAssessment'), ['review'])
   assert.deepEqual(capability.toolNames('Review'), ['review'])
-  for (const p of ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Move', 'Remove', 'Exec', 'Pty', 'Ask', 'DevOpsConsultation', 'Advisor'])
+  for (const p of ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Move', 'Remove', 'Exec', 'Pty', 'Ask', 'DevOpsConsultation'])
     assert.deepEqual(capability.toolNames(p), [], p)
   assert.deepEqual(capability.toolNames('Telepathy'), [])
   assert.deepEqual(capability.toolNames(null), [])

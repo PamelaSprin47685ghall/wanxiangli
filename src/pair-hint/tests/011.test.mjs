@@ -9,8 +9,8 @@ const assistant = (...parts) => ({ kind: 'assistant', operator: false, parts })
 const result = id => ({ kind: 'result', operator: false, resultFor: id, resultField: 'content', parts: [] })
 const ids = slots => slots.map(s => s.index)
 
-test('SPEC[pair-hint-011] assume, negotiate, askPreviousScope and advisor calls and results survive every later reset', () => {
-  const names = ['assume', 'negotiate', 'askPreviousScope', 'advisor']
+test('SPEC[pair-hint-011] assume, negotiate and askPreviousScope calls and results survive every later reset', () => {
+  const names = ['assume', 'negotiate', 'askPreviousScope']
   const history = [user('goal')]
   for (const [i, name] of names.entries()) {
     history.push(assistant(call('must-' + i, name)), result('must-' + i))
@@ -57,14 +57,14 @@ test('SPEC[pair-hint-011] legacy askPrevious spelling remains retained and a for
 })
 
 test('SPEC[pair-hint-011] several reset cycles cannot expel retained original input or output', () => {
-  const messages = [user('first'), assistant(call('a', 'advisor')), result('a')]
+  const messages = [user('first'), assistant(call('a', 'assume')), result('a')]
   for (let i = 0; i < 5; i++) {
     messages.push(assistant(call('r' + i, 'resetScope')), result('r' + i),
       assistant(call('noise' + i, 'write')), result('noise' + i))
   }
   const selected = owner.planFilter(messages)
-  assert.ok(ids(selected).includes(1), 'advisor original input still exists')
-  assert.ok(ids(selected).includes(2), 'advisor original output still exists')
+  assert.ok(ids(selected).includes(1), 'assume original input still exists')
+  assert.ok(ids(selected).includes(2), 'assume original output still exists')
   assert.ok(ids(selected).includes(messages.length - 1), 'current scope work still survives after the latest reset')
   assert.ok(!ids(selected).includes(5), 'noise from earlier scope was purged')
 })

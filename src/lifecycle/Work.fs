@@ -180,7 +180,7 @@ module private Commands =
         | "OperatorMessage" ->
             fields [ "type"; "kind"; "messageId" ] [] command
             let kind = text (get command "kind")
-            require (kind = "Operator" || kind = "Advisor" || kind = "Agent") "Unknown operator kind"
+            require (kind = "Operator" || kind = "Agent") "Unknown operator kind"
             let messageId = identifier (get command "messageId")
             match ledger.TryMessage messageId, recallNote noted messageId with
             | Some result, _ -> Observe result

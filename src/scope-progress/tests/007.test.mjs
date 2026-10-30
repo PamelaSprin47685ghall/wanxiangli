@@ -1,6 +1,6 @@
-// PACKAGE-HISTORICAL: scope-progress estimate/Advisor-queue package contract, not host product acceptance (see ../AGENTS.md «产品面边界»).
+// PACKAGE-HISTORICAL: scope-progress estimate package contract, not host product acceptance (see ../AGENTS.md «产品面边界»).
 // PRODUCT-RETIRED (2026-10-29): Stall / ResetDue / remainingScopeTurnsEstimate are NOT host product contracts.
-// These tests keep the scope-progress *package* historical durable/advisor-queue behavior.
+// These tests keep the scope-progress *package* historical durable estimate behavior.
 // New lifecycle voice: wanxiangli/scope-retention + common law «Scope». Do not re-wire todowrite schema to estimates.
 import assert from 'node:assert/strict'
 import test from 'node:test'
@@ -24,7 +24,7 @@ const database = async action => {
   try { await action(use) } finally { rmSync(directory, { recursive: true, force: true }) }
 }
 
-test('SPEC[scope-progress-007] SQLite cold-open retains minimum, paid rounds, advisory comparison and zero latch', () => database(use => {
+test('SPEC[scope-progress-007] SQLite cold-open retains minimum, paid rounds and zero latch', () => database(use => {
   const r = (run, call, value) => use(j => durableProgressRecord(j, 's', 'scope1', run, call, value))
   const settle = run => use(j => durableProgressSettle(j, 's', 'scope1', run))
   const status = () => use(j => durableProgressStatus(j, 's', 'scope1'))
@@ -35,42 +35,27 @@ test('SPEC[scope-progress-007] SQLite cold-open retains minimum, paid rounds, ad
   assert.equal(r('round-a', 'earlier', 4).replayed, true)
   assert.equal(r('round-a', 'earlier', 8).status, 'Conflict')
   const first = settle('round-a')
-  assert.deepEqual([first.estimate, first.advisor, first.resetDue], [4, false, false])
+  assert.deepEqual([first.estimate, first.resetDue], [4, false])
   assert.equal(settle('round-a').replayed, true)
   assert.equal(r('round-a', 'after', 1).status, 'Conflict')
   assert.deepEqual([status().known, status().estimate, status().resetDue], [true, 4, false])
   assert.equal(r('round-b', 'only', 5).ok, true)
-  assert.equal(settle('round-b').advisor, true)
+  assert.equal(settle('round-b').estimate, 5)
   assert.equal(r('round-b2', 'tenth', 4.9).ok, true)
-  assert.deepEqual([settle('round-b2').advisor, settle('round-b2').charged], [false, true],
-    'the promised 0.1 of shrinkage is charged without escalating')
+  assert.equal(settle('round-b2').charged, true)
   assert.equal(r('round-b3', 'short', 4.85).ok, true)
-  assert.deepEqual([settle('round-b3').advisor, settle('round-b3').trigger], [true, 'Stall'],
-    'a drop below the judged bar escalates even though the number fell')
+  assert.equal(settle('round-b3').charged, true)
   assert.equal(r('round-c', 'low', 2).ok, true)
-  assert.equal(settle('round-c').advisor, false)
+  assert.equal(settle('round-c').estimate, 2)
   assert.equal(r('round-d', 'zero', 0).ok, true)
   assert.equal(settle('round-d').resetDue, true)
   assert.equal(status().resetDue, true)
   assert.equal(r('round-e', 'zero-again', 0).ok, true)
-  assert.equal(settle('round-e').advisor, true)
+  assert.equal(settle('round-e').resetDue, true)
   const fresh = use(j => durableProgressStatus(j, 's', 'scope2'))
   assert.deepEqual([fresh.known, fresh.resetDue], [false, false], 'actual new Scope has separate history')
   assert.equal(use(j => durableProgressRecord(j, 's', 'scope2', 'round-a', 'only', 5)).minimum, 5)
-  assert.equal(use(j => durableProgressSettle(j, 's', 'scope2', 'round-a')).advisor, false)
-}))
-
-test('SPEC[scope-progress-007] the durable Advisor trigger survives cold reopen and replay', () => database(use => {
-  const round = (run, value) => {
-    use(j => durableProgressRecord(j, 's', 'scope1', run, 'call-' + run, value))
-    return use(j => durableProgressSettle(j, 's', 'scope1', run))
-  }
-  assert.equal(round('five', 5).trigger ?? null, null)
-  assert.equal(round('zero', 0).trigger ?? null, null)
-  assert.equal(round('four', 4).trigger, 'ResetDue')
-  assert.equal(round('three', 3).trigger, 'ResetDue')
-  const replayed = use(j => durableProgressSettle(j, 's', 'scope1', 'three'))
-  assert.deepEqual([replayed.replayed, replayed.trigger], [true, 'ResetDue'])
+  assert.equal(use(j => durableProgressSettle(j, 's', 'scope2', 'round-a')).estimate, 5)
 }))
 
 test('SPEC[scope-progress-007] pending tool observations survive SIGKILL-like cold reopen without settling prematurely', () => database(use => {

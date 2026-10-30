@@ -9,7 +9,7 @@ export type PermissionLabel =
   | 'Fork' | 'Resume' | 'Join' | 'Horizon' | 'Fission' | 'Read' | 'Write' | 'Edit'
   | 'Glob' | 'Grep' | 'Move' | 'Remove' | 'Exec' | 'Pty' | 'ReviewAssessment' | 'Fetch'
   | 'Finality' | 'BashHoneypot' | 'JsPlan' | 'Ask' | 'Deliver' | 'Review'
-  | 'DevOpsConsultation' | 'Advisor'
+  | 'DevOpsConsultation'
 
 export interface ManagerFacts {
   hasActiveIncumbency: boolean

@@ -14,7 +14,7 @@
 
 1. [AXIOM 1] 身份证据（name、role、persona、catalogVersion、origin）在构造点一次证明；`ParticipantIdentityEvidence` 只能经 `resolveAtRoot`/`inheritFromOwner`/`rehydrate` 产生，plain 视图在消费点必须整体重验。
    - 推理：可绕过构造点的证据等于没有证据。
-2. [AXIOM 1] 活跃角色词汇闭合（六个）：orchestrator、manager、engineer、devops、plan、advisor（advisor 活跃但内部，不进公开 fork 词汇）。历史角色（coder 等）只供历史事件解码，活跃解析一律拒绝；内部槽位（bookkeeper）显式映射，不冒充角色。规范名必须全小写且不含连字符，否则按畸形名拒绝。
+2. [AXIOM 1] 活跃角色词汇闭合（五个）：orchestrator、manager、engineer、devops、plan。历史角色（coder 等）只供历史事件解码，活跃解析一律拒绝；内部槽位（bookkeeper）显式映射，不冒充角色。规范名必须全小写且不含连字符，否则按畸形名拒绝。
    - 推理：词汇开放会把已废弃的参与者悄悄复活。
 3. [AXIOM 2] 来源鉴别只认四类已验证来源：human-root（必须携带 participant 证明）、agent-owner-root（必须携带 owner/child 的 logical run 与 child 参与者）、host-internal、continuation（闭合词汇）。其余一律 `UnknownPromptOrigin`。
    - 推理：拒绝分支必须闭合，否则"未知"会退化成"默认"。
@@ -23,7 +23,7 @@
 
 ## SPEC
 
-1. [LEMMA 1, 2] 活跃解析接受且仅接受六个活跃角色；历史、内部槽位名、已退役槽位名、非字符串输入一律 None；历史解码接受 11 个角色；内部角色判定、历史名单与 persona 标签解码各有一个出口。
+1. [LEMMA 1, 2] 活跃解析接受且仅接受五个活跃角色；历史、内部槽位名、已退役槽位名、非字符串输入一律 None；历史解码接受 10 个角色；内部角色判定、历史名单与 persona 标签解码各有一个出口。
    - 证明：`tests/001.test.mjs` 的活跃/历史/畸形三组反例与正例、目录顺序与内部角色、历史名单与 persona 别名。
 2. [LEMMA 1] 根选定产出规范证据投影；legacy、malformed（大写或连字符）、unknown 名分别给出对应错误，无回退；错配类错误携带 expected/actual；bookkeeper 的 role 投影为 null；rehydrate 对每个字段错配（RoleMismatch、PersonaMismatch、UnsupportedPersonaCatalogVersion、OriginMismatch、OwnerRequired、LegacyParticipantName、BlankParticipantName）逐一拒绝；已退役的内部槽位名不再解析，根选定与继承都给出 unknown 名错误，不回退到任何活跃角色。
    - 证明：`tests/002.test.mjs` 的正控、round-trip、逐字段反例与已退役槽位名的 fail-closed 反例。

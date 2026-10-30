@@ -64,11 +64,10 @@ type private ScopeState(epoch: string) =
         | _ ->
             match rounds.TryGetValue runId with
             | false, _ ->
-                createObj [ "ok" ==> true; "charged" ==> false; "advisor" ==> false; "resetDue" ==> resetDue ]
+                createObj [ "ok" ==> true; "charged" ==> false; "resetDue" ==> resetDue ]
             | true, calls ->
                 let next = calls.Values |> Seq.min
                 let prior = previous
-                let trigger = advisorTrigger resetDue prior next
                 resetDue <- resetDue || next = 0
                 previous <- Some next
                 rounds.Remove runId |> ignore
@@ -77,8 +76,6 @@ type private ScopeState(epoch: string) =
                                 "charged" ==> true
                                 "estimate" ==> next
                                 "previous" ==> (prior |> Option.map box |> Option.defaultValue null)
-                                "advisor" ==> trigger.IsSome
-                                "trigger" ==> (trigger |> Option.map box |> Option.defaultValue null)
                                 "resetDue" ==> resetDue ]
                 settled[runId] <- outcome
                 outcome
@@ -176,7 +173,7 @@ let ScopeProgress () : ScopeProgressPort =
                 match withJournal sessionId (fun journal -> durableProgressSettle journal sessionId epochId providerRunId) with
                 | Some result -> result
                 | None -> state.Settle providerRunId
-            | None -> createObj [ "ok" ==> true; "charged" ==> false; "advisor" ==> false; "resetDue" ==> false ]
+            | None -> createObj [ "ok" ==> true; "charged" ==> false; "resetDue" ==> false ]
             | _ -> reject()
         member _.settlePending(sessionId, epochId) =
             match find sessionId with
@@ -197,14 +194,7 @@ let ScopeProgress () : ScopeProgressPort =
                                 if isNull result?ok || not (unbox<bool> result?ok) then
                                     failwith ("durable Scope settlement is unknown: " + string result?reason)
                                 createObj [ "providerRunId" ==> runId; "result" ==> result ])
-                        let due = durableProgressDue journal sessionId epochId
-                        if isNull due?ok || not (unbox<bool> due?ok) then
-                            failwith ("durable Advisor outbox is unknown: " + string due?reason)
-                        let already = HashSet<string>(runs)
-                        let previous: obj array = unbox due?due
-                        let historic =
-                            previous |> Array.filter (fun item -> not (already.Contains(string item?providerRunId)))
-                        Array.append fresh historic
+                        fresh
                     finally journal.close()
             | _ -> [||]
         member _.reset(sessionId, epochId) =

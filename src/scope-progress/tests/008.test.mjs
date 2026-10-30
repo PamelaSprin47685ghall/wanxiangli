@@ -1,6 +1,6 @@
-// PACKAGE-HISTORICAL: scope-progress estimate/Advisor-queue package contract, not host product acceptance (see ../AGENTS.md «产品面边界»).
+// PACKAGE-HISTORICAL: scope-progress estimate package contract, not host product acceptance (see ../AGENTS.md «产品面边界»).
 // PRODUCT-RETIRED (2026-10-29): Stall / ResetDue / remainingScopeTurnsEstimate are NOT host product contracts.
-// These tests keep the scope-progress *package* historical durable/advisor-queue behavior.
+// These tests keep the scope-progress *package* historical durable estimate behavior.
 // New lifecycle voice: wanxiangli/scope-retention + common law «Scope». Do not re-wire todowrite schema to estimates.
 import assert from 'node:assert/strict'
 import test from 'node:test'
@@ -40,14 +40,13 @@ test('SPEC[scope-progress-008] actual ScopeProgress actor reloads durable paid b
   assert.equal(afterCrash.record('session','scope-1','r1','fresh',4).ok,false)
   assert.equal(afterCrash.record('session','scope-1','r2','tool',4).ok,true)
   const second = afterCrash.settlePending('session','scope-1')
-  assert.equal(second[0].result.advisor,true)
+  assert.equal(second[0].result.estimate,4)
   assert.equal(second[0].providerRunId,'r2')
   const replayed = bind()
   replayed.ensureEpoch('session','scope-1')
   assert.equal(replayed.status('session').estimate,4)
-  assert.equal(replayed.settlePending('session','scope-1').length,1,
-    'a durably settled stalled round remains a recoverable Advisor outbox obligation')
-  assert.equal(replayed.settlePending('session','scope-1')[0].result.replayed,true)
+  assert.equal(replayed.settlePending('session','scope-1').length,0,
+    'an already settled round is not replayed')
   assert.equal(replayed.record('session','scope-1','r3','zero',0).ok,true)
   replayed.settlePending('session','scope-1')
   assert.equal(replayed.status('session').resetDue,true)
@@ -91,27 +90,6 @@ test('SPEC[scope-progress-008] disk corruption and unknown SQLite admission neve
   assert.throws(() => port.settlePending('s','scope'), /SQLite primary unavailable/)
 })
 
-test('SPEC[scope-progress-008] durable settlement outbox survives a crash before Advisor was dispatched', () => withDatabase(bind => {
-  const first = bind()
-  first.record('s','scope','before','a',3)
-  first.settlePending('s','scope')
-  first.record('s','scope','due','b',4)
-  const committed = first.settle('s','scope','due')
-  assert.deepEqual([committed.charged,committed.advisor,committed.replayed],[true,true,false])
-  // Simulate the process dying before it could invoke AdvisorFlow.trigger.
-  const reopened = bind()
-  reopened.ensureEpoch('s','scope')
-  const once = reopened.settlePending('s','scope')
-  assert.equal(once.length,1)
-  assert.equal(once[0].providerRunId,'due')
-  assert.equal(once[0].result.replayed,true)
-  assert.equal(once[0].result.advisor,true)
-  assert.equal(reopened.status('s').estimate,4)
-  const twice = reopened.settlePending('s','scope')
-  assert.equal(twice.length,1, 'one stable trigger identity is retried only through durable Claim dedupe')
-  assert.equal(twice[0].providerRunId,'due')
-}))
-
 test('SPEC[scope-progress-008] real SIGKILL after a durable tool report restores its paid minimum', () => withDatabase(bind => {
   const directory = mkdtempSync(join(tmpdir(), 'wxs-progress-sigkill-'))
   try {
@@ -127,25 +105,6 @@ test('SPEC[scope-progress-008] real SIGKILL after a durable tool report restores
     assert.equal(paid.length, 1)
     assert.equal(paid[0].result.estimate, 5)
     assert.equal(resumed.status('killed-session').estimate, 5)
-  } finally { rmSync(directory, {recursive:true,force:true}) }
-}))
-
-test('SPEC[scope-progress-008] real SIGKILL after settlement does not lose a stalled AdvisorDue', () => withDatabase(bind => {
-  const directory = mkdtempSync(join(tmpdir(), 'wxs-progress-sigkill-outbox-'))
-  try {
-    const path = join(directory, 'killed.sqlite')
-    const worker = join(dirname(fileURLToPath(import.meta.url)), 'support/progress-admission-kill-worker.mjs')
-    const dead = spawnSync(process.execPath, [worker, path, 'after-settle'], {encoding:'utf8'})
-    assert.equal(dead.signal, 'SIGKILL', dead.stderr)
-    const resumed = ScopeProgress()
-    resumed.configureJournal(() => new SqliteJournal(new DatabaseSync(path)))
-    resumed.ensureEpoch('killed-session','scope-1')
-    assert.deepEqual([resumed.status('killed-session').estimate, resumed.status('killed-session').resetDue], [6,false])
-    const due = resumed.settlePending('killed-session','scope-1')
-    assert.deepEqual(due.map(x => x.providerRunId), ['provider-2'])
-    assert.equal(due[0].result.advisor, true)
-    assert.equal(due[0].result.replayed, true)
-    assert.equal(resumed.record('killed-session','scope-1','provider-2','tool-2',5).ok, false)
   } finally { rmSync(directory, {recursive:true,force:true}) }
 }))
 

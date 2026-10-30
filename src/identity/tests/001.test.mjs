@@ -4,10 +4,10 @@ import { Identity } from 'wanxiangli/identity'
 
 const identity = new Identity()
 
-const activeRoles = ['orchestrator', 'manager', 'engineer', 'devops', 'plan', 'advisor']
+const activeRoles = ['orchestrator', 'manager', 'engineer', 'devops', 'plan']
 const historicalRoles = ['coder', 'inspector', 'browser', 'inquiry', 'distiller']
 
-test('WHAT[participant-identity-001] active parsing accepts exactly the six active roles', () => {
+test('WHAT[participant-identity-001] active parsing accepts exactly the five active roles', () => {
   for (const role of activeRoles) {
     assert.equal(identity.tryParseRole(role), role)
   }
@@ -26,7 +26,7 @@ test('WHAT[participant-identity-001] active parsing rejects historical, internal
   assert.equal(identity.tryParseRole(undefined), null)
 })
 
-test('WHAT[participant-identity-001] historical decoding accepts all eleven roles for journal replay only', () => {
+test('WHAT[participant-identity-001] historical decoding accepts all ten roles for journal replay only', () => {
   for (const role of [...activeRoles, ...historicalRoles]) {
     assert.equal(identity.tryParseHistoricalRole(role), role)
   }
@@ -44,8 +44,8 @@ test('WHAT[participant-identity-001] persona catalog maps every role to its V1 p
   assert.equal(identity.personaOfRole('engineer'), 'Engineer')
   assert.equal(identity.personaOfRole('devops'), 'Operator')
   assert.equal(identity.personaOfRole('plan'), 'Planner')
-  assert.equal(identity.personaOfRole('advisor'), 'Auditor')
   assert.equal(identity.bookkeeperPersona(), 'Curator')
+  assert.equal(identity.personaOfRole('advisor'), null)
   assert.equal(identity.personaOfRole('blogger'), null)
   assert.equal(identity.personaOfRole('chronicler'), null)
   assert.equal(identity.personaOfRole('predictor'), null)
@@ -57,9 +57,8 @@ test('WHAT[participant-identity-001] persona catalog maps every role to its V1 p
 test('WHAT[participant-identity-001] role catalog exposes ordered active, historical and internal vocabularies', () => {
   assert.deepEqual(identity.activeRoleLabels(), activeRoles)
   assert.deepEqual(identity.historicalRoleLabels(), historicalRoles)
-  assert.equal(identity.isInternalRole('advisor'), true)
   assert.equal(identity.isInternalRole('distiller'), true)
-  for (const role of ['orchestrator', 'manager', 'engineer', 'devops', 'plan', 'coder', 'bookkeeper', null, 7]) {
+  for (const role of ['orchestrator', 'manager', 'engineer', 'devops', 'plan', 'advisor', 'coder', 'bookkeeper', null, 7]) {
     assert.equal(identity.isInternalRole(role), false, String(role))
   }
 })
@@ -80,7 +79,7 @@ test('WHAT[participant-identity-001] legacy participant names are one closed lis
 test('WHAT[participant-identity-001] persona labels decode to canonical spelling only', () => {
   assert.equal(identity.tryParsePersona('Director'), 'Director')
   assert.equal(identity.tryParsePersona('DirectorV1'), 'Director')
-  assert.equal(identity.tryParsePersona('Auditor'), 'Auditor')
+  assert.equal(identity.tryParsePersona('Auditor'), null)
   assert.equal(identity.tryParsePersona('director'), null)
   assert.equal(identity.tryParsePersona(null), null)
 })
