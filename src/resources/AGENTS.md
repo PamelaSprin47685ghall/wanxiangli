@@ -41,16 +41,16 @@
 4. [本模块 LEMMA 2, 4] 解析、阶梯与全局偏好切换不绑定会话；协议字面量替换后逐字符保留。
     - 证明：`tests/005.test.mjs`。
 
-5. [总规则 SPEC 1] 单模块独立编译：`npm run build -- resources` 不编译其他子模块。
-    - 证明：构建脚本按 fsproj 逐模块编译；[TODO] 待 DevOps 运行确认。
+5. [根 AXIOM 3; 构建规则 LEMMA 1] 单模块独立编译：`npm run build -- resources` 不编译其他子模块。
+    - 检查范围：构建输入由本目录 fsproj 声明；本模块目前不在 `scripts/tests/build.test.mjs` 的隔离模块列表中。单独执行选定模块构建与移除兄弟源码后的隔离构建是两项检查，运行结果只引用对应候选的交付记录，不以长期保留的「待运行」或历史通过代替当前结果。
 
 6. [本模块 LEMMA 3] 包根上溯在文件系统不再给出不同父目录时终止，报 `package root not found`，不递归至栈溢出。
     - 证明：`tests/007.test.mjs`（无 package.json 的临时目录）。
 
 # 边界
 
-- 主仓 `resources/**` 的 334 个 provider 语义目录与 120 个 enforcer 规则目录仍归主仓各语义 owner；本库只拥有定位、成对、占位符与语言解析原语。
-- 包内样例资源 `resources/provider/library/resource-pair` 只用于自证包内定位与成对规则；`files` 白名单是否纳入 `resources/` 由 CUT-33 串行裁决。
+- 主仓 `resources/**` 的资源内容与必需路径归主仓各语义 owner；本库拥有定位、占位符与语言解析原语。资源数量不在规则中另记一份。
+- 包内样例资源 `resources/provider/library/resource-pair` 用于检查包内定位与成对规则；发行范围以 `package.json` 的 `files` 为准，不沿用旧施工编号作为当前裁决。
 - 语义路径校验拒绝绝对路径、盘符与 `..` 段；“禁止带后缀名”未机械强制（现无带后缀消费者），留待真实反例出现再收紧。
 
 # 发行完整性归属
@@ -58,9 +58,12 @@
 - 本模块只提供“全部声明语种齐备 + 占位符集合一致”的检查实现（`tests/006.test.mjs` 与 `tests/support/distribution.mjs`），它是模块自证，不是发行门禁的接线点。
 - 权威门禁应落在 wanxiangli 包的打包/发行检查，以及宿主侧的资源分发步骤（宿主 `resources/**` 的 provider 语义目录按各语义 owner 归属）。
 - 本模块不新增平台、不新增脚本、不新增层；门禁接线由发行流程所在层决定。
+- `Resources` 的创建不遍历资源，也不保证整套系统可启动；`readText` / `render` 在调用时检查所选语言，双语齐备与占位符集合一致属于发行检查。现有检查扫描提供的资源树，不能发现未列入输入、整个目录都缺失的必需资源。
+- 若宿主承诺启动前发现全部必需资源缺失，由宿主各语义 owner 提供必需路径与语言范围，现有启动组合层据此执行检查；在宿主启动路径验证缺项时的实际失败。未接线或未验证时须明确待办，不能用本库单测或发行树扫描宣称启动保证完成。该职责不放进资源库构造函数。
+- 本文的测试链接说明覆盖范围，不表示任意候选已通过；执行结果与历史范围按根规则引用交付记录。
 
 # 资源槽自治状态所有权 (InstalledResourceSlot)
 
-1. [状态自治] `InstalledResourceSlot` 独占持有已安装资源对象引用（`current: obj option`），彻底迁出宿主各模块中的进程内可变变量（`mutable installed` / `mutable instance`）。
+1. [状态自治] `InstalledResourceSlot` 独占持有已安装资源对象引用（`current: obj option`）。它可承接宿主的进程内可变引用；宿主是否已改用槽位、旧 `mutable installed` / `mutable instance` 是否退出，须由真实调用核对，不能由库中存在此对象推定完成。
 2. [严格判空] 未安装状态下调用 `require()` 触发严格 fail-closed，以模块初始化时绑定的精确 `missingErrorMessage` 抛出 `InvalidOperationException`，保证与原宿主异常语义 100% 逐字一致。
 3. [多槽隔离] 槽位实例私有维护自身状态，预置命名单例槽（`runtimeResourcesSlot`、`providerResourcesSlot`、`proseResourcesSlot`）与外部通过构造函数新建的测试实例完全隔离互不干扰。
