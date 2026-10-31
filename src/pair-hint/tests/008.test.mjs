@@ -99,7 +99,7 @@ test('SPEC[pair-hint-008] only the correct recipient’s prepared steer settles 
 
 
 test('SPEC[pair-hint-008] reusing the same delegator does not demand a second mandatory negotiate', () => {
-  const recipient='advisor-seat-reused'
+  const recipient='reused-seat'
   owner.bindDelegation(recipient, 'same-parent')
   const sent=owner.askNegotiation(recipient, 'Initial questions?')
   assert.equal(owner.prepareNegotiationReply(sent.receipt, 'Initial facts').ok, true)

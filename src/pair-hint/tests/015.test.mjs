@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { PairHint } from '../../../dist/pair-hint/PairHint.js'
-import { ScopeProgress } from '../../../dist/scope-progress/AdvisorFlow.js'
+import { ScopeProgress } from '../../../dist/scope-progress/Progress.js'
 
 const user=(key,time)=>({kind:'user',operator:true,key,timestamp:time,parts:[]})
 const call=(id,tool)=>({kind:'assistant',operator:false,parts:[{id,tool,terminalField:'output'}]})

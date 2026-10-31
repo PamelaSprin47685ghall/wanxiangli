@@ -62,5 +62,5 @@ test('SPEC[warm-start-4] fit drops whole entries from the tail until the measure
 test('SPEC[warm-start-5] only Engineer and DevOps receive snippets', () => {
   assert.equal(law.isDirectConsumer('engineer'), true)
   assert.equal(law.isDirectConsumer('devops'), true)
-  for (const role of ['manager', 'advisor', 'coder', 'inspector', 'Engineer', '']) assert.equal(law.isDirectConsumer(role), false)
+  for (const role of ['manager', 'coder', 'inspector', 'Engineer', '']) assert.equal(law.isDirectConsumer(role), false)
 })

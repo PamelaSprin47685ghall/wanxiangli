@@ -62,7 +62,7 @@ workerMemory 与 serviceMemory 记录编译返回及收尾时的 RSS、JS 堆与
 可选并行编译
 
 npm run build -- --parallel 使用 2 个编译进程；--jobs N 可选 1–4 个。
-不加选项仍为串行。指定模块同样支持，例如 npm run build -- association advisor --parallel。
+不加选项仍为串行。指定模块同样支持，例如 npm run build -- association assembly --parallel。
 实际进程数不超过失效模块数；全命中缓存不启动编译进程。并行度变化不使产物缓存失效。
 每个进程内顺序编译并复用 checker，每个项目仍清理缓存。
 保留第一个进程供后续命令复用；额外进程在本次构建后退出，避免空闲时多份内存常驻。
@@ -86,7 +86,7 @@ workerMemory 为各进程返回时快照的合计，并非同一瞬间的峰值�
 冷全量进程树 RSS MiB 847.5   1290.6   2039.8
 热全量进程树 RSS MiB 904.4   1447.2   1889.4
 冷全量先停止服务；热全量只保留第一个 checker，额外进程仍须初始化。
-单模块自动只用一个进程；五模块为 ablation、admission-queue、advisor、assembly、association。
+单模块自动只用一个进程；五模块为 ablation、admission-queue、assembly、association、attachment-lease。
 15 轮全部 49 个 JS 字节一致，无改动轮次保持 mtime 和使用记录，额外进程均已退出。
 这是单次测量，不承诺每台机器或每次构建都更快；小范围修改通常适合默认串行。
 采样的业务源码基线为 5daad07；同步 upstream 87de56a 后另验 49 个 JS 串并行一致，

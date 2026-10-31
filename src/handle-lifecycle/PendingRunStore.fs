@@ -101,8 +101,7 @@ type private PendingRunRecord =
       Role: string option
       Payload: obj
       mutable Subscription: obj option
-      mutable Finished: bool
-      mutable Phase: string }
+      mutable Finished: bool }
 
 let private collectCancelled (set: HashSet<string>) (list: ResizeArray<obj>) (agentId: string) (run: PendingRunRecord) : unit =
     match set.Contains agentId with
@@ -150,8 +149,7 @@ type PendingRunStore() as this =
               Role = rol
               Payload = pay
               Subscription = sub
-              Finished = false
-              Phase = "Pending" }
+              Finished = false }
 
         records[aid] <- record
         payloads[aid] <- pay
@@ -210,7 +208,6 @@ type PendingRunStore() as this =
             ])
         | true, current ->
             current.Finished <- true
-            current.Phase <- "Claimed"
             let s = match current.Subscription with Some sub -> sub | None -> (null: obj)
             freeze (createObj [
                 "claimed" ==> box true
@@ -267,7 +264,6 @@ type PendingRunStore() as this =
             ])
         | true, current ->
             current.Finished <- true
-            current.Phase <- "Cancelled"
             let s = match current.Subscription with Some sub -> sub | None -> (null: obj)
             let p = current.Payload
             records.Remove aid |> ignore
@@ -309,7 +305,6 @@ type PendingRunStore() as this =
         let list = ResizeArray<obj>()
         for KeyValue(agentId, run) in records do
             run.Finished <- true
-            run.Phase <- "Drained"
             let s = match run.Subscription with Some sub -> sub | None -> (null: obj)
             list.Add(freeze (createObj [
                 "agentId" ==> box agentId

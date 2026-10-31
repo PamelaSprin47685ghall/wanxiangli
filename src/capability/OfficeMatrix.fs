@@ -26,7 +26,6 @@ type Permission =
     | Deliver
     | Review
     | DevOpsConsultation
-    | Advisor
     | ResetScope
 
 /// Manager 的生命周期事实。门禁只读精确事实，不读阶段枚举。
@@ -44,7 +43,7 @@ module Permission =
           Permission.Read; Permission.Write; Permission.Edit; Permission.Glob; Permission.Grep
           Permission.Move; Permission.Remove; Permission.Exec; Permission.Pty; Permission.ReviewAssessment
           Permission.Fetch; Permission.Finality; Permission.BashHoneypot; Permission.JsPlan; Permission.Ask
-          Permission.Deliver; Permission.Review; Permission.DevOpsConsultation; Permission.Advisor; Permission.ResetScope ]
+          Permission.Deliver; Permission.Review; Permission.DevOpsConsultation; Permission.ResetScope ]
 
     let label (permission: Permission): string =
         match permission with
@@ -71,7 +70,6 @@ module Permission =
         | Permission.Deliver -> "Deliver"
         | Permission.Review -> "Review"
         | Permission.DevOpsConsultation -> "DevOpsConsultation"
-        | Permission.Advisor -> "Advisor"
         | Permission.ResetScope -> "ResetScope"
 
     /// 未知标签不是能力。
@@ -91,31 +89,30 @@ module OfficeMatrix =
     /// 收尾由 review 结案。Finality 不再对应生命周期 deliver 工具名。
     let private manager: Set<Permission> =
         set
-            [ Permission.Fork; Permission.Resume; Permission.Join; Permission.Horizon; Permission.Advisor
+            [ Permission.Fork; Permission.Resume; Permission.Join; Permission.Horizon
               Permission.ReviewAssessment; Permission.Finality; Permission.Read; Permission.Glob; Permission.Grep
               Permission.ResetScope ]
 
     let managerFinish: Set<Permission> = manager
 
     /// 矩阵认得的角色标签（现行角色）。其余标签（历史角色、内部槽位、未知名）失败关闭。
-    let roles: string list = [ "advisor"; "manager"; "orchestrator"; "engineer"; "devops"; "plan" ]
+    let roles: string list = [ "manager"; "orchestrator"; "engineer"; "devops"; "plan" ]
 
-    /// 角色标签 → 能力集合。advisor 是评审者而非行动者，故为空集。
+    /// 角色标签 → 能力集合。
     let permissions (roleLabel: string): Set<Permission> =
         match roleLabel with
-        | "advisor" -> Set.empty
         | "manager" -> manager
-        | "orchestrator" -> set [ Permission.Fork; Permission.Join; Permission.Horizon; Permission.Advisor; Permission.ResetScope ]
+        | "orchestrator" -> set [ Permission.Fork; Permission.Join; Permission.Horizon; Permission.ResetScope ]
         | "engineer" ->
             set
                 [ Permission.Read; Permission.Write; Permission.Edit; Permission.Glob; Permission.Grep
                   Permission.Move; Permission.Remove; Permission.BashHoneypot; Permission.Fetch
-                  Permission.Fission; Permission.Advisor; Permission.ResetScope ]
+                  Permission.Fission; Permission.ResetScope ]
         | "devops" ->
             set
                 [ Permission.Read; Permission.Write; Permission.Edit; Permission.Glob; Permission.Grep
                   Permission.Move; Permission.Remove; Permission.Exec; Permission.Join; Permission.Horizon
-                  Permission.Advisor; Permission.ResetScope ]
+                  Permission.ResetScope ]
         // devops 委派调查，ask 只提问用户；两者不是同一项能力。
         | "plan" ->
             set [ Permission.JsPlan; Permission.Ask; Permission.DevOpsConsultation; Permission.Review; Permission.Deliver; Permission.ResetScope ]
@@ -162,8 +159,7 @@ module ToolSurface =
         | Permission.Exec
         | Permission.Pty
         | Permission.Ask
-        | Permission.DevOpsConsultation
-        | Permission.Advisor -> []
+        | Permission.DevOpsConsultation -> []
 
     /// 名字 → 能力的唯一反查。两项能力共用一个名字时，取该角色持有的那一项；
     /// 目录顺序不是裁决。只属于一项能力的名字对所有角色都映射到它。
@@ -185,10 +181,7 @@ module ToolSurface =
     /// 但仍是"可见即可做"的一份事实：schema 投影、请求工具表与执行准入读同一个判定。
     let utilityToolNames: string list = [ "skill"; "assume" ]
 
-    /// 实用工具面只给可执行办公工作的角色；Advisor 只能使用
-    /// negotiate / askPreviousScope / scope.kind=resetScope 协议，不得通过 skill/assume 绕过无办公权能边界。
-    /// 矩阵之外的角色标签（含已退役的 distiller）一律拒绝。
+    /// 实用工具面只给可执行办公工作的角色；矩阵之外的角色标签（含已退役的 distiller）一律拒绝。
     let admitsUtility (roleLabel: string) (name: string) : bool =
-        roleLabel <> "advisor"
-        && List.contains name utilityToolNames
+        List.contains name utilityToolNames
         && List.contains roleLabel OfficeMatrix.roles

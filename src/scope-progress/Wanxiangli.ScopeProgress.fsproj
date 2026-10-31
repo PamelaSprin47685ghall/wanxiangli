@@ -7,23 +7,11 @@
   <ItemGroup>
     <Compile Include="DurableProgress.fs" />
     <Compile Include="Progress.fs" />
-    <Compile Include="Queue.fs" />
-    <Compile Include="DurableAdmission.fs" />
-    <Compile Include="AdvisorFlow.fs" />
     <PackageExport Include="DurableProgress.fs" Member="durableProgressRecord" />
     <PackageExport Include="DurableProgress.fs" Member="durableProgressSettle" />
     <PackageExport Include="DurableProgress.fs" Member="durableProgressStatus" />
     <PackageExport Include="DurableProgress.fs" Member="durableProgressPending" />
-    <PackageExport Include="DurableProgress.fs" Member="durableProgressDue" />
     <PackageExport Include="Progress.fs" Member="ScopeProgress" />
     <PackageExport Include="Progress.fs" Member="scopeProgress" />
-    <PackageExport Include="Queue.fs" Member="AdvisorProcessQueue" />
-    <PackageExport Include="Queue.fs" Member="advisorProcessQueue" />
-    <PackageExport Include="DurableAdmission.fs" Member="advisorClaim" />
-    <PackageExport Include="DurableAdmission.fs" Member="advisorFinish" />
-    <PackageExport Include="DurableAdmission.fs" Member="advisorPending" />
-    <PackageExport Include="DurableAdmission.fs" Member="advisorStageBegin" />
-    <PackageExport Include="DurableAdmission.fs" Member="advisorStageConfirm" />
-    <PackageExport Include="AdvisorFlow.fs" Member="AdvisorFlow" />
   </ItemGroup>
 </Project>

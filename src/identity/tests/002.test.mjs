@@ -23,7 +23,7 @@ test('WHAT[participant-identity-002] root resolution rejects legacy, malformed a
   assert.deepEqual(identity.resolveAtRoot('no-such-name'), { error: 'MalformedParticipantName', detail: 'no-such-name' })
   assert.deepEqual(identity.resolveAtRoot('Engineer'), { error: 'MalformedParticipantName', detail: 'Engineer' })
   assert.deepEqual(identity.resolveAtRoot('nosuchname'), { error: 'UnknownParticipantName', detail: 'nosuchname' })
-  assert.equal(identity.resolveAtRoot('advisor').evidence.persona, 'Auditor')
+  assert.deepEqual(identity.resolveAtRoot('advisor'), { error: 'UnknownParticipantName', detail: 'advisor' })
   assert.equal(identity.resolveAtRoot('').error, 'BlankParticipantName')
   assert.equal(identity.resolveAtRoot(null).error, 'BlankParticipantName')
   assert.equal(identity.resolveAtRoot(42).error, 'BlankParticipantName')

@@ -2,7 +2,7 @@
 
 层：内核。npm 入口 `wanxiangli/prefix`。对象 `Prefix` 是前缀世代、候选/提交、检查点窗口与同代追加律的无状态 owner。不得 import 任何宿主 SDK、Trace 或存储；持久化与写入由组合者（宿主 C）负责。
 
-来源：宿主仓 `proposals/extraction-kanban/cards/CUT-15.md`；现行需求 `requirements/prefix-stability/WHAT.md` [001][002][004][006][012][013]。
+来源：宿主仓的提取记录（历史在 git）；现行需求 `requirements/prefix-stability/WHAT.md` [001][002][004][006][012][013]。
 
 # AXIOM
 

@@ -5,12 +5,11 @@ import { Capability } from 'wanxiangli/capability'
 const capability = new Capability()
 
 const expected = {
-  manager: ['Advisor', 'Finality', 'Fork', 'Glob', 'Grep', 'Horizon', 'Join', 'Read', 'ResetScope', 'Resume', 'ReviewAssessment'],
-  orchestrator: ['Advisor', 'Fork', 'Horizon', 'Join', 'ResetScope'],
-  engineer: ['Advisor', 'BashHoneypot', 'Edit', 'Fetch', 'Fission', 'Glob', 'Grep', 'Move', 'Read', 'Remove', 'ResetScope', 'Write'],
-  devops: ['Advisor', 'Edit', 'Exec', 'Glob', 'Grep', 'Horizon', 'Join', 'Move', 'Read', 'Remove', 'ResetScope', 'Write'],
+  manager: ['Finality', 'Fork', 'Glob', 'Grep', 'Horizon', 'Join', 'Read', 'ResetScope', 'Resume', 'ReviewAssessment'],
+  orchestrator: ['Fork', 'Horizon', 'Join', 'ResetScope'],
+  engineer: ['BashHoneypot', 'Edit', 'Fetch', 'Fission', 'Glob', 'Grep', 'Move', 'Read', 'Remove', 'ResetScope', 'Write'],
+  devops: ['Edit', 'Exec', 'Glob', 'Grep', 'Horizon', 'Join', 'Move', 'Read', 'Remove', 'ResetScope', 'Write'],
   plan: ['Ask', 'Deliver', 'DevOpsConsultation', 'JsPlan', 'ResetScope', 'Review'],
-  advisor: [],
 }
 
 test('SPEC[capability-001] the office matrix is the single role × permission fact', () => {
@@ -20,7 +19,7 @@ test('SPEC[capability-001] the office matrix is the single role × permission fa
       assert.equal(capability.isAllowed(role, label), permissions.includes(label), `${role} ${label}`)
     }
   }
-  assert.equal(capability.permissionLabels().length, 25)
+  assert.equal(capability.permissionLabels().length, 24)
 })
 
 test('SPEC[capability-002] roles outside the matrix fail closed', () => {

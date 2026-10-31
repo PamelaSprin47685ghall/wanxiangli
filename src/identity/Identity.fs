@@ -29,7 +29,7 @@ type Identity() =
     /// 已退役、只供历史解码的角色标签。
     member _.historicalRoleLabels(): string array = Roles.historical |> List.map Roles.roleLabel |> List.toArray
 
-    /// 内部角色判定（Advisor、Distiller）；非角色标签返回 false。
+    /// 内部角色判定（Distiller）；非角色标签返回 false。
     member _.isInternalRole(label: obj): bool =
         Wire.isString label
         && (match Roles.tryParseHistoricalRole(unbox<string> label) with
@@ -43,12 +43,12 @@ type Identity() =
     member _.isLegacyName(name: obj): bool =
         Wire.isString name && ParticipantIdentity.isLegacyName((unbox<string> name).ToLowerInvariant())
 
-    /// 活跃角色解析（participant-identity-010）：仅六个活跃角色；历史角色、
+    /// 活跃角色解析（participant-identity-010）：仅五个活跃角色；历史角色、
     /// 内部槽位名与非字符串输入一律 null。
     member _.tryParseRole(label: obj): obj =
         if Wire.isString label then labelOrNull (Roles.tryParseRole(unbox<string> label)) else null
 
-    /// 历史角色解码：活跃 + 历史 11 个角色，供历史事件/日志解码边界。
+    /// 历史角色解码：活跃 + 历史 10 个角色，供历史事件/日志解码边界。
     member _.tryParseHistoricalRole(label: obj): obj =
         if Wire.isString label then labelOrNull (Roles.tryParseHistoricalRole(unbox<string> label)) else null
 

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { Capability } from 'wanxiangli/capability'
 
 const capability = new Capability()
-const active = ['manager', 'orchestrator', 'engineer', 'devops', 'plan', 'advisor']
+const active = ['manager', 'orchestrator', 'engineer', 'devops', 'plan']
 
 test('SPEC[capability-005] utility tools are not office permissions', () => {
   assert.deepEqual(capability.utilityToolNames(), ['skill', 'assume'])
@@ -13,16 +13,13 @@ test('SPEC[capability-005] utility tools are not office permissions', () => {
   }
 })
 
-test('SPEC[capability-005] active working roles hold utilities; Advisor holds only negotiation protocol tools', () => {
-  for (const role of active.filter(role => role !== 'advisor')) for (const name of ['skill', 'assume'])
+test('SPEC[capability-005] active working roles hold utilities', () => {
+  for (const role of active) for (const name of ['skill', 'assume'])
     assert.equal(capability.admitsUtility(role, name), true, `${role} ${name}`)
-  for (const utility of ['skill', 'assume']) {
-    assert.equal(capability.admitsUtility('advisor', utility), false, `advisor must not use ${utility}`)
-  }
 })
 
 test('SPEC[capability-005] roles outside the matrix fail closed, including the retired distiller', () => {
-  for (const role of ['distiller', 'coder', 'inspector', 'browser', 'inquiry', 'bookkeeper', 'Engineer', '', null, undefined, 7, {}])
+  for (const role of ['advisor', 'distiller', 'coder', 'inspector', 'browser', 'inquiry', 'bookkeeper', 'Engineer', '', null, undefined, 7, {}])
     for (const name of ['skill', 'assume'])
       assert.equal(capability.admitsUtility(role, name), false, `${String(role)} ${name}`)
 })

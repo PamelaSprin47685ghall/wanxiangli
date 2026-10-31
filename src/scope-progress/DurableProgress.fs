@@ -20,24 +20,7 @@ let private valid (value: string) = not (String.IsNullOrWhiteSpace value) && not
 let private field (value: string) = string value.Length + ":" + value
 let private streamFor session epoch = "scope-progress:" + field session + ":" + field epoch
 
-/// The model is told a tenth of a turn. Judgment uses a smaller bar so a report
-/// that honours the promise is never punished by decimal rounding.
-[<Literal>]
-let DocumentedDrop = 0.1
-
-[<Literal>]
-let JudgedDrop = 0.08
-
 let validEstimate (estimate: float) = not (Double.IsNaN estimate) && not (Double.IsInfinity estimate) && estimate >= 0.0
-
-let private shrunk (prior: float) (estimate: float) = prior - estimate >= JudgedDrop
-
-let advisorTrigger (resetDueBefore: bool) (prior: float option) (estimate: float) : string option =
-    if resetDueBefore then Some "ResetDue"
-    else
-        match prior with
-        | Some old when not (shrunk old estimate) -> Some "Stall"
-        | _ -> None
 
 type private Reading =
     { Revision: int
@@ -86,27 +69,13 @@ let private reading (journal: ProgressJournal) session epoch =
             if settled.ContainsKey runId || (round.Values |> Seq.min) <> estimate then
                 failwith "Scope progress journal contains conflicting provider settlements"
             let prior = previous
-            let trigger = advisorTrigger resetDue prior estimate
             let settledResetDue = resetDue || estimate = 0
-            // Older rules escalated on an unchanged ("Equal") or higher
-            // ("Increase") estimate. Those frames stay readable as committed
-            // history, but replay reports the current rule so they cannot fire again.
-            let retired =
-                unbox<bool> item?advisor
-                && (not (isNull item?trigger))
-                && (match string item?trigger with
-                    | "Equal" -> (match prior with Some earlier -> earlier = estimate | None -> false)
-                    | "Increase" -> (match prior with Some earlier -> estimate >= earlier | None -> false)
-                    | _ -> false)
-            if (not retired && unbox<bool> item?advisor <> trigger.IsSome)
-               || unbox<bool> item?resetDue <> settledResetDue
+            if unbox<bool> item?resetDue <> settledResetDue
                || (if isNull item?previous then None else Some(unbox<float> item?previous)) <> prior then
                 failwith "Scope progress settlement history is internally inconsistent"
             settled[runId] <-
                 createObj [ "estimate" ==> estimate
                             "previous" ==> (prior |> Option.map box |> Option.defaultValue null)
-                            "advisor" ==> trigger.IsSome
-                            "trigger" ==> (trigger |> Option.map box |> Option.defaultValue null)
                             "resetDue" ==> settledResetDue ]
             previous <- Some estimate
             resetDue <- settledResetDue
@@ -122,8 +91,6 @@ let private resultOf (item: obj) replayed =
                 "replayed" ==> replayed
                 "estimate" ==> item?estimate
                 "previous" ==> item?previous
-                "advisor" ==> item?advisor
-                "trigger" ==> item?trigger
                 "resetDue" ==> item?resetDue ]
 
 let private append (journal: ProgressJournal) (session: string) (epoch: string) (revision: int) (request: string) (body: string) =
@@ -203,18 +170,15 @@ let durableProgressSettle
                     match observed.Calls.TryGetValue runId with
                     | false, _ ->
                         createObj [ "ok" ==> true; "charged" ==> false
-                                    "advisor" ==> false; "resetDue" ==> observed.ResetDue ]
+                                    "resetDue" ==> observed.ResetDue ]
                     | true, calls ->
                         let estimate = calls.Values |> Seq.min
                         let prior = observed.Previous
-                        let trigger = advisorTrigger observed.ResetDue prior estimate
                         let resetDue = observed.ResetDue || estimate = 0
                         let body = serialize(createObj [
                             "kind" ==> "Settled"; "run" ==> runId
                             "estimate" ==> estimate
                             "previous" ==> (prior |> Option.map box |> Option.defaultValue null)
-                            "advisor" ==> trigger.IsSome
-                            "trigger" ==> (trigger |> Option.map box |> Option.defaultValue null)
                             "resetDue" ==> resetDue ])
                         let answer = append journal session epoch observed.Revision ("settle:" + field runId) body
                         let status = string answer?status
@@ -246,20 +210,3 @@ let durableProgressPending (journal: ProgressJournal) (session: string) (epoch: 
             |> Seq.toArray
         createObj [ "ok" ==> true; "pending" ==> runs ]
     with ex -> error "Unknown" ("Pending Provider rounds cannot be recovered: " + ex.Message)
-
-let durableProgressDue (journal: ProgressJournal) (session: string) (epoch: string) : obj =
-    try
-        let current = reading journal session epoch
-        let due =
-            current.Order
-            |> Seq.choose (fun runId ->
-                match current.Settled.TryGetValue runId with
-                | true, item when unbox<bool> item?advisor ->
-                    Some(createObj [
-                        "providerRunId" ==> runId
-                        "result" ==> resultOf item true ])
-                | _ -> None)
-            |> Seq.toArray
-        createObj [ "ok" ==> true; "due" ==> due ]
-    with ex ->
-        error "Unknown" ("Settled Advisor obligations cannot be recovered: " + ex.Message)

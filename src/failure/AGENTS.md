@@ -62,7 +62,7 @@
 独占持有：
 - private `pendingAttemptPlans: Dictionary<string, obj>`: keyed by `sessionId + "\u001F" + physicalUserMessageId`
 - private `attemptPlans: Dictionary<string, BoundPlanEntry>`: keyed by `sessionId + "\u001F" + providerRun`
-- private `manualChatInterventions: Dictionary<string, obj * string>`: keyed by `sessionId + "\u001F" + physicalUserMessageId`
+- private `manualChatInterventions: Dictionary<string, obj>`: keyed by `sessionId + "\u001F" + physicalUserMessageId`; the key already owns the session identity
 
 公开能力：
 - `FreezePending(sessionId, physicalUserMessageId, planSessionId, planPhysicalUserMessageId, plan, isEqual?)`: 准入判定。若身份不匹配返回 IdentityMismatch；若已存在相同 plan 返回 ReplayedExisting；若冲突返回 PlanConflict；若无则存入并返回 Admitted。

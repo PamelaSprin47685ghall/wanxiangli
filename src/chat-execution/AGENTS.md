@@ -24,7 +24,8 @@
 
 # SPEC
 
-1. [LEMMA 1, 2] 证明：`tests/001.test.mjs`。与 vibe-fs 旧 ChatExecutionFactFold 逐项对照见 vibe-fs `evidence/CUT-12/`。
-2. [LEMMA 3, 4] 证明：`tests/001.test.mjs`。
-3. [LEMMA 5] 证明：`tests/002.test.mjs`；与 vibe-fs 旧 `ChatExecutionRecovery.decide` 逐项对照见 vibe-fs `evidence/CUT-12/`。
-4. [LEMMA 6] 证明：`tests/flight.test.mjs`。
+1. 正常消息：调用方按值确认同一次承接事实后，执行从 Accepted 进入 ProviderStarted。同一 provider run 的重放返回既有启动；换 run 或终态之后启动被拒绝，不会覆盖既有终态。
+2. 终态：一次执行只赋值一次。已到达 provider 的执行可以是 Completed、Cancelled、Rejected 或 Failed；未到达 provider 的执行只能是 Cancelled、Rejected 或 Failed。精确重放返回既有值，不同结果报告冲突。
+3. 重启恢复：只处理键与证据都指向本次执行的观察。已终结的执行只处理物理资源：持有则释放，未知交人工；提交状态不明的交人工；已提交的忽略；未提交的按 provider 观察继续或补记。绝不凭猜结算未知结果。
+4. 在途执行由 (runtimeId, sessionId, physicalUserMessageId) 唯一持有；同一执行的并发重入共享前一次在途任务。
+5. quiescence gate 是进程内会话空闲许可：provider attempt 期间的 idle 才能被消费；新用户消息、撤销或新的 provider attempt 使旧许可失效；工具执行期间的 idle 不可消费。

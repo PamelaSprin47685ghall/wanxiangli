@@ -87,8 +87,7 @@ type private SessionState(epoch: string) =
             [ "known" ==> remaining.IsSome
               "epoch" ==> epoch
               "remaining" ==> (remaining |> Option.map box |> Option.defaultValue null)
-              "removeStreak" ==> removeStreak
-              "advisorDue" ==> (removeStreak >= 3 || remaining = Some 0) ]
+              "removeStreak" ==> removeStreak ]
 
     member this.SeedBudget(budget: int) =
         remaining <- Some(max 0 budget)
@@ -277,8 +276,7 @@ type private SessionState(epoch: string) =
                                 "remaining" ==> (remaining |> Option.map box |> Option.defaultValue null)
                                 "beatId" ==> targetBeat
                                 "replacement" ==> body
-                                "removeStreak" ==> removeStreak
-                                "advisorDue" ==> (removeStreak >= 3) ]
+                                "removeStreak" ==> removeStreak ]
 
                 receipt
 
@@ -429,7 +427,7 @@ let ScopeRetention () : ScopeRetentionPort =
                     state.Apply toolName providerRunId toolCallId beatId annotation (persist sessionId epochId state)
         member _.status(sessionId) =
             match find sessionId with
-            | None -> createObj [ "known" ==> false; "remaining" ==> null; "removeStreak" ==> 0; "advisorDue" ==> false ]
+            | None -> createObj [ "known" ==> false; "remaining" ==> null; "removeStreak" ==> 0 ]
             | Some state -> state.Status()
         member _.projection(sessionId, beatId) =
             match find sessionId with
