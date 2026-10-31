@@ -191,3 +191,36 @@ test('SPEC[recovery-store-006] 全局单例 recoveryAttemptPlanStore 可用性�
   assert.equal(instance2.TryPending('s', 'p'), null)
   assert.equal(recoveryAttemptPlanStore.TryPending('s', 'p'), null)
 })
+
+
+test('SPEC[recovery-store-008] ClearSession 用 session 加分隔符作前缀，不误伤前缀相同的会话', () => {
+  const store = new RecoveryAttemptPlanStore()
+  const req1 = { id: 'req-1' }
+  const req10 = { id: 'req-10' }
+  const req2 = { id: 'req-2' }
+
+  store.PublishManualIntervention('ses-1', 'phys-1', req1)
+  store.PublishManualIntervention('ses-10', 'phys-1', req10)
+  store.PublishManualIntervention('ses-2', 'phys-1', req2)
+
+  store.ClearSession('ses-1')
+
+  const remaining = store.ManualInterventions()
+  assert.equal(remaining.length, 2)
+  assert.ok(remaining.includes(req10))
+  assert.ok(remaining.includes(req2))
+  assert.ok(!remaining.includes(req1))
+})
+
+test('SPEC[recovery-store-009] ClearAttemptPlansFor 只清计划，不清 manual 干预', () => {
+  const store = new RecoveryAttemptPlanStore()
+  const req = { id: 'req' }
+
+  store.FreezePending('ses-1', 'phys-1', 'ses-1', 'phys-1', { id: 'plan' })
+  store.PublishManualIntervention('ses-1', 'phys-1', req)
+
+  store.ClearAttemptPlansFor('ses-1')
+
+  assert.equal(store.TryPending('ses-1', 'phys-1'), null)
+  assert.deepEqual(store.ManualInterventions(), [req])
+})
