@@ -61,6 +61,22 @@ type private PendingKind =
     | AwaitingNegotiation
     | AwaitingPreviousScope
 
+type private NegotiationReceipt =
+    { Recipient: string
+      Generation: int
+      Questions: string
+      Prepared: bool }
+
+type private AskStage =
+    | Asked
+    | Prepared
+    | Confirmed
+
+type private AskReceipt =
+    { Owner: string
+      Questions: string
+      Stage: AskStage }
+
 type private ScopeSession() =
     let mutable budget = 0
     let mutable budgetKnown = false
@@ -119,10 +135,6 @@ type private ScopeSession() =
             promptTime <- nextTime
             if pending = NoPending && budgetKnown && hasReset then initialized <- true
         if hasReset then hasPreviousScope <- true
-
-    member _.MarkInitialized(value: bool) =
-        if pending = NoPending then
-            initialized <- value && budgetKnown
 
     /// Once displayed, a terminal result is immutable within its prefix epoch.
     member _.TerminalTail(identity: string, proposed: string, remember: bool) =
@@ -735,11 +747,8 @@ let private cloneWire (_value: obj) : obj = jsNative
 let PairHint () : PairHintMessages =
     let sessions = Dictionary<string, ScopeSession>()
     let bindings = Dictionary<string, string * int>()
-    let questionsByReceipt = Dictionary<string, string * string * int * string>()
-    let previousScopeQuestions = Dictionary<string, string * string>()
-    let preparedReplies = HashSet<string>()
-    let preparedPreviousReplies = HashSet<string>()
-    let confirmedPreviousReplies = HashSet<string>()
+    let negotiations = Dictionary<string, NegotiationReceipt>()
+    let asks = Dictionary<string, AskReceipt>()
     let mutable nextGeneration = 0
     let mutable nextReceipt = 0
     let mutable nextAskReceipt = 0
@@ -879,29 +888,24 @@ let PairHint () : PairHintMessages =
 
     let discardForRecipient (recipient: string) =
         let abandoned =
-            questionsByReceipt
+            negotiations
             |> Seq.choose (fun item ->
-                let (owner, _, _, _) = item.Value
-                if owner = recipient then Some item.Key else None)
+                if item.Value.Recipient = recipient then Some item.Key else None)
             |> Seq.toArray
         for receipt in abandoned do
-            questionsByReceipt.Remove receipt |> ignore
-            preparedReplies.Remove receipt |> ignore
+            negotiations.Remove receipt |> ignore
 
     let forgetSession (sessionId: string) =
         sessions.Remove sessionId |> ignore
         bindings.Remove sessionId |> ignore
         discardForRecipient sessionId
         let abandonedAsks =
-            previousScopeQuestions
+            asks
             |> Seq.choose (fun item ->
-                let (owner, _) = item.Value
-                if owner = sessionId then Some item.Key else None)
+                if item.Value.Owner = sessionId then Some item.Key else None)
             |> Seq.toArray
         for r in abandonedAsks do
-            previousScopeQuestions.Remove r |> ignore
-            preparedPreviousReplies.Remove r |> ignore
-            confirmedPreviousReplies.Remove r |> ignore
+            asks.Remove r |> ignore
         latestViews.Remove sessionId |> ignore
         temporaryNegotiations.Remove sessionId |> ignore
         temporaryToolViolations.Remove sessionId |> ignore
@@ -923,7 +927,7 @@ let PairHint () : PairHintMessages =
         | true, (delegator, generation) ->
             nextReceipt <- nextReceipt + 1
             let receipt = recipient + ":" + string generation + ":" + string nextReceipt
-            questionsByReceipt[receipt] <- recipient, delegator, generation, questions
+            negotiations[receipt] <- { Recipient = recipient; Generation = generation; Questions = questions; Prepared = false }
             // 受理即完成：首次协商被受理即解除 pending，时序继续；答复 steer 只是迟到的内容，不再门控 resetScope。
             let scope = current recipient
             let first = scope.NegotiationRequired
@@ -931,30 +935,29 @@ let PairHint () : PairHintMessages =
             createObj [ "ok" ==> true; "receipt" ==> receipt; "delegator" ==> delegator; "questions" ==> questions; "first" ==> first ]
 
     let prepare (receipt: string) (answer: string) (language: string) : obj =
-        match questionsByReceipt.TryGetValue receipt with
+        match negotiations.TryGetValue receipt with
         | false, _ -> createObj [ "ok" ==> false; "reason" ==> (if isChinese language then "未知或已结算的协商" else "unknown or settled negotiation") ]
-        | true, (recipient, delegator, generation, _) ->
-            match bindings.TryGetValue recipient with
-            | true, (_, activeGeneration) when activeGeneration = generation && not (String.IsNullOrWhiteSpace answer) ->
-                preparedReplies.Add receipt |> ignore
-                createObj [ "ok" ==> true; "recipient" ==> recipient; "steer" ==> ((if isChinese language then "委托者已回答 negotiate(questions)：\n" else "Delegator answered negotiate(questions):\n") + answer); "first" ==> (current recipient).NegotiationRequired ]
+        | true, record ->
+            match bindings.TryGetValue record.Recipient with
+            | true, (_, activeGeneration) when activeGeneration = record.Generation && not (String.IsNullOrWhiteSpace answer) ->
+                negotiations[receipt] <- { record with Prepared = true }
+                createObj [ "ok" ==> true; "recipient" ==> record.Recipient; "steer" ==> ((if isChinese language then "委托者已回答 negotiate(questions)：\n" else "Delegator answered negotiate(questions):\n") + answer); "first" ==> (current record.Recipient).NegotiationRequired ]
             | _ -> createObj [ "ok" ==> false; "reason" ==> (if isChinese language then "委托代际已过期或答复为空" else "stale delegation or empty reply") ]
 
     let complete (receipt: string) =
-        match questionsByReceipt.TryGetValue receipt with
+        match negotiations.TryGetValue receipt with
         | false, _ -> false
-        | true, (recipient, delegator, generation, _) ->
-            match bindings.TryGetValue recipient with
-            | true, (_, activeGeneration) when activeGeneration = generation && preparedReplies.Contains receipt ->
-                questionsByReceipt.Remove receipt |> ignore
-                preparedReplies.Remove receipt |> ignore
-                if (current recipient).NegotiationRequired then (current recipient).NegotiationReplyAdmitted()
+        | true, record ->
+            match bindings.TryGetValue record.Recipient with
+            | true, (_, activeGeneration) when activeGeneration = record.Generation && record.Prepared ->
+                negotiations.Remove receipt |> ignore
+                if (current record.Recipient).NegotiationRequired then (current record.Recipient).NegotiationReplyAdmitted()
                 true
             | _ -> false
 
     let confirm (receipt: string) (recipient: string) =
-        match questionsByReceipt.TryGetValue receipt with
-        | true, (owner, _, _, _) when owner = recipient && preparedReplies.Contains receipt -> complete receipt
+        match negotiations.TryGetValue receipt with
+        | true, record when record.Recipient = recipient && record.Prepared -> complete receipt
         | _ -> false
 
     let askPreviousScope (sessionId: string) (questions: string) (providedReceipt: string option) : obj =
@@ -972,30 +975,29 @@ let PairHint () : PairHintMessages =
                 | _ ->
                     nextAskReceipt <- nextAskReceipt + 1
                     sessionId + ":ask:" + string nextAskReceipt
-            match previousScopeQuestions.TryGetValue receipt with
-            | true, (owner, sameQuestions) when owner = sessionId && sameQuestions = questions ->
+            match asks.TryGetValue receipt with
+            | true, record when record.Owner = sessionId && record.Questions = questions ->
                 createObj [ "ok" ==> true; "receipt" ==> receipt; "replayed" ==> true; "first" ==> false ]
             | true, _ ->
                 createObj [ "ok" ==> false; "reason" ==> "receipt already belongs to different questions" ]
             | false, _ ->
-                previousScopeQuestions[receipt] <- sessionId, questions
+                asks[receipt] <- { Owner = sessionId; Questions = questions; Stage = Asked }
                 let first = scope.PreviousScopePending
                 if first then scope.AskPreviousScopeAdmitted()
                 createObj [ "ok" ==> true; "receipt" ==> receipt; "first" ==> first ]
 
     let preparePreviousScopeReply (receipt: string) (sessionId: string) (answer: string) (language: string) : obj =
-        match previousScopeQuestions.TryGetValue receipt with
-        | true, (owner, _) when owner = sessionId && not (String.IsNullOrWhiteSpace answer) && not (confirmedPreviousReplies.Contains receipt) ->
-            preparedPreviousReplies.Add receipt |> ignore
+        match asks.TryGetValue receipt with
+        | true, record when record.Owner = sessionId && not (String.IsNullOrWhiteSpace answer) && record.Stage <> Confirmed ->
+            asks[receipt] <- { record with Stage = Prepared }
             let origin = if isChinese language then "前一 Scope 的答复：\n" else "Previous Scope answered askPreviousScope(questions):\n"
             createObj [ "ok" ==> true; "recipient" ==> sessionId; "steer" ==> (origin + answer) ]
         | _ -> createObj [ "ok" ==> false; "reason" ==> "stale scope inquiry or empty answer" ]
 
     let confirmPreviousScopeSteer (receipt: string) (sessionId: string) : bool =
-        match previousScopeQuestions.TryGetValue receipt with
-        | true, (owner, _) when owner = sessionId && preparedPreviousReplies.Contains receipt && not (confirmedPreviousReplies.Contains receipt) ->
-            preparedPreviousReplies.Remove receipt |> ignore
-            confirmedPreviousReplies.Add receipt |> ignore
+        match asks.TryGetValue receipt with
+        | true, record when record.Owner = sessionId && record.Stage = Prepared ->
+            asks[receipt] <- { record with Stage = Confirmed }
             true
         | _ -> false
 
