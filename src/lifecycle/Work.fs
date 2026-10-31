@@ -93,9 +93,6 @@ module private Commands =
     let private emptyLedger (ledger: Ledger) updates =
         Map.isEmpty (View.applyUpdates ledger.Obligations updates)
 
-    let private effectOf program value =
-        Program.step (Program.continueWith program value)
-
     let private decideReview (workId: string) (ledger: Ledger) (command: obj) =
         fields [ "type"; "office"; "providerRunId"; "toolCallId"; "updates" ] [ "blockers"; "digest" ] command
         let office = text (get command "office")
@@ -117,49 +114,19 @@ module private Commands =
                     match ledger.Position with
                     | Some current -> current
                     | None -> Program.originator milestone
-                if Program.step program = Program.Step.AwaitOperator then Refuse "Work is complete"
+                let wait = Program.step program
+                if Program.expects Program.Step.AwaitOperator wait then Refuse "Work is complete"
                 elif ledger.HasOpenQuestion then Refuse "Awaiting operator answer"
                 else
                     let tenure = tenureOf workId ledger
                     if ledger.HasBlockingPending then Refuse "Effect pending"
                     elif ledger.HasUnknownQuestion && empty then Refuse "Question delivery is unknown"
-                    elif Program.step program = Program.Step.AwaitEmptyReview && not empty then Refuse "Ready accepts only an empty review"
+                    elif Program.expects Program.Step.AwaitEmptyReview wait && not empty then Refuse "Ready accepts only an empty review"
                     elif milestone = "收尾" && empty && not (List.isEmpty blockers) then Observe(blocked ledger blockers)
                     else
-                        match Program.step program with
-                        // 未知询问上的实账 review 就是「我需要干什么」的答复：写 Reviewed，
-                        // 由 Ledger 消费 Ask 后按普通评审推进。空账 review 已在上面拒绝。
-                        | Program.Step.Ask _ ->
-                            Write(prependOpening workId office ledger [ Fact.Reviewed(tenure, run, call, claimed) ])
-                        | Program.Step.AwaitReview ->
-                            match effectOf program (box empty) with
-                            | Program.Step.Ask text ->
-                                let questionId = Identities.ask workId tenure call
-                                Write(prependOpening workId office ledger [ Fact.QuestionRequested(questionId, tenure, run, call, text, claimed) ])
-                            | Program.Step.Commit ->
-                                Write(prependOpening workId office ledger [ Fact.Reviewed(tenure, run, call, claimed) ])
-                            | Program.Step.Relay(same, _) ->
-                                let retirementId = Identities.relay workId tenure call
-                                let successorId = Identities.successor retirementId
-                                Write [ Fact.IncumbencyRetired(retirementId, tenure, "Relayed", run, call, claimed)
-                                        Fact.ContextBarrier(Identities.barrier workId call, run, call, successorId)
-                                        Fact.IncumbencyOpened(successorId, "Successor", same, None)
-                                        Fact.PromptObliged(Identities.successorPrompt retirementId, "Successor", same, Program.successorPrompt same, successorId) ]
-                            | Program.Step.Advance(next, text) ->
-                                Write [ Fact.MilestoneAdvanced(tenure, milestone, next, run, call, claimed)
-                                        Fact.PromptObliged(Identities.advancePrompt tenure next, "Advance", next, text, tenure) ]
-                            | Program.Step.Complete ->
-                                let retirementId = Identities.complete workId tenure call
-                                Write [ Fact.IncumbencyRetired(retirementId, tenure, "Completed", run, call, claimed)
-                                        Fact.StopObliged(Identities.stop workId tenure, tenure) ]
-                            | _ -> fail "Review program diverged"
-                        | Program.Step.AwaitEmptyReview ->
-                            match effectOf program (box true) with
-                            | Program.Step.Launch ->
-                                let operationId = Identities.launch workId run call digest
-                                Write [ Fact.DeliveryRequested(operationId, tenure, run, call, digest, claimed) ]
-                            | _ -> fail "Launch program diverged"
-                        | _ -> fail "Review is not waiting"
+                        let context = Program.reviewContext workId tenure run call claimed digest
+                        let facts, _ = Program.review context program empty
+                        Write(prependOpening workId office ledger facts)
 
     let private recallNote (noted: Dictionary<string, obj>) messageId =
         if noted.ContainsKey messageId then Some noted[messageId] else None
@@ -187,11 +154,10 @@ module private Commands =
             | None, Some result -> Observe result
             | None, None ->
                 match ledger.Position with
-                | Some program when Program.step program = Program.Step.AwaitOperator ->
-                    match effectOf program (box kind) with
-                    | Program.Step.Reopen -> Write [ Fact.IncumbencyOpened(Identities.reopen workId messageId, "Originator", "执行", Some messageId) ]
-                    | Program.Step.AwaitOperator -> Observe(ignored messageId ledger)
-                    | _ -> fail "Completion program diverged"
+                | Some program when Program.expects Program.Step.AwaitOperator (Program.step program) ->
+                    match Program.complete workId messageId kind program with
+                    | Program.Reopened facts, _ -> Write facts
+                    | Program.Ignored, _ -> Observe(ignored messageId ledger)
                 | _ -> Refuse "Operator message is only accepted after completion"
         | "Confirm" ->
             fields [ "type"; "effectId"; "outcome" ] [ "execSessionId"; "reason" ] command

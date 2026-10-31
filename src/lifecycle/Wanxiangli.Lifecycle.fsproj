@@ -3,9 +3,10 @@
     <TargetFramework>netstandard2.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="Wire.fs" />
+        <Compile Include="Wire.fs" />
+    <Compile Include="Facts.fs" />
     <Compile Include="Program.fs" />
-    <Compile Include="State.fs" />
+    <Compile Include="Ledger.fs" />
     <Compile Include="WorkspaceLifecycle.fs" />
     <Compile Include="PlanAskGate.fs" />
     <Compile Include="Work.fs" />

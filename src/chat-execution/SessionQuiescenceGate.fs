@@ -15,11 +15,10 @@ type QuiescencePermitToken(owner: obj, sessionId: string, serial: int64) =
 
 [<RequireQualifiedAccess>]
 type private Activity =
-    | Unknown
     | ProviderAttempt of attemptSerial: int64
     | Idle of attemptSerial: int64
     | IdleConsumed of attemptSerial: int64
-    | Revoked of attemptSerial: int64
+    | Revoked
 
 let private okResult () : obj =
     createObj [ "ok" ==> true; "reason" ==> null ]
@@ -67,7 +66,7 @@ type SessionQuiescenceGate() as this =
             Ok(struct (key, Activity.IdleConsumed serial))
         | Some(struct (_, serial, Some(Activity.IdleConsumed current), _)) when current = serial ->
             Error "AlreadyConsumed"
-        | Some(struct (_, _, Some(Activity.Revoked _), _)) -> Error "Revoked"
+        | Some(struct (_, _, Some Activity.Revoked, _)) -> Error "Revoked"
         | Some(struct (_, serial, Some(Activity.ProviderAttempt current), _))
         | Some(struct (_, serial, Some(Activity.Idle current), _))
         | Some(struct (_, serial, Some(Activity.IdleConsumed current), _)) when current > serial ->
@@ -79,7 +78,7 @@ type SessionQuiescenceGate() as this =
         | None -> Error "WrongOwner"
         | Some(struct (key, serial, Some(Activity.IdleConsumed current), _)) when current = serial ->
             Ok(struct (key, Activity.Idle serial))
-        | Some(struct (_, _, Some(Activity.Revoked _), _)) -> Error "Revoked"
+        | Some(struct (_, _, Some Activity.Revoked, _)) -> Error "Revoked"
         | Some(struct (_, serial, Some(Activity.ProviderAttempt current), _))
         | Some(struct (_, serial, Some(Activity.Idle current), _))
         | Some(struct (_, serial, Some(Activity.IdleConsumed current), _)) when current > serial ->
@@ -119,7 +118,7 @@ type SessionQuiescenceGate() as this =
                 currentPermits.Remove sessionId |> ignore
                 physicalMessages <- Map.add sessionId (Set.add physicalUserMessageId seen) physicalMessages
                 serials <- Map.add sessionId serial serials
-                activities <- Map.add sessionId (Activity.Revoked serial) activities)
+                activities <- Map.add sessionId Activity.Revoked activities)
 
     member _.ObserveIdle(sessionId: string) : obj =
         lock gate (fun () ->
@@ -174,7 +173,7 @@ type SessionQuiescenceGate() as this =
             let serial = nextSerial sessionId
             currentPermits.Remove sessionId |> ignore
             serials <- Map.add sessionId serial serials
-            activities <- Map.add sessionId (Activity.Revoked serial) activities)
+            activities <- Map.add sessionId Activity.Revoked activities)
 
     member _.LivePermitCount: int = lock gate (fun () -> currentPermits.Count)
 
