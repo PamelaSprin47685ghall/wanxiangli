@@ -40,7 +40,7 @@
 
 ## 边界
 
-- **分居降级（明示范围缩减）**：主仓 time-capability-008 的物理/虚拟/契约 fsproj 级分居，在本仓单 bundle 形态下降级为导出面对分组——`nodeTimerPort` / `nodeClockPort` / `timerTask` / `raceExit` 为生产构造器，`virtualTimerPort` / `virtualClockPort` 标注验证专用（见 `index.d.ts`）。编译级分居由主仓切换时保留主仓分片结构承担。此项缩减已登记在主仓 `proposals/extraction-kanban/evidence/CUT-21/README.md`，升级方案（拆独立验证模块）需协调者另行授权。
-- `SessionStartedAt` 单次采样与持久化属主仓会话层（CUT-21 卡 C 项）；本库只提供稳定时基（`tests/007.test.mjs` 覆盖纯时基语义）。
-- 硬期限的执行语义（分段等待、超时强杀）归主仓进程面（CUT-02 已释放面）；本库只提供 `Deadline` 纯计算与 `MaxTimerWaitMs` 上界。
+- **分居降级（明示范围缩减）**：主仓 time-capability-008 的物理/虚拟/契约 fsproj 级分居，在本仓单 bundle 形态下降级为导出面对分组——`nodeTimerPort` / `nodeClockPort` / `timerTask` / `raceExit` 为生产构造器，`virtualTimerPort` / `virtualClockPort` 标注验证专用（见 `index.d.ts`）。编译级分居由主仓切换时保留主仓分片结构承担。此项缩减登记在本文《边界》，升级方案（拆独立验证模块）需另行授权。
+- `SessionStartedAt` 单次采样与持久化属主仓会话层；本库只提供稳定时基（`tests/007.test.mjs` 覆盖纯时基语义）。
+- 硬期限的执行语义（分段等待、超时强杀）归主仓进程面；本库只提供 `Deadline` 纯计算与 `MaxTimerWaitMs` 上界。
 - `ITimerPort.Delay` 毫秒为 JS 安全整数域内非负值；非法预算的拒绝归调用方（进程面）所有，不在本层发明。

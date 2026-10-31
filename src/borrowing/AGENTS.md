@@ -21,7 +21,7 @@
 # SPEC
 
 1. [LEMMA 1] 取新 token、接过旧 token、退休在途 token、精确 credit 查询。
-    - 证明：`tests/001.test.mjs`；宿主旧实现对新适配器差分见主仓 `proposals/extraction-kanban/evidence/CUT-10/`。
+    - 证明：`tests/001.test.mjs`。
 2. [LEMMA 2, 3] 借用、step 排队/复用/有界、release 取消等待者。
     - 证明：`tests/001.test.mjs`。
 3. [LEMMA 4] 所有者收回与 fence 推进。
