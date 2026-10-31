@@ -21,9 +21,9 @@
    - tryTake(scope)：原子取出并消费；
    - clearAll()：清空全部暂存代理。
 5. [AXIOM 1, 2] SyncDelegateBatchStore：
-   - 纯 Key 结算协议：库内仅维系纯数据键（ownerScope, role, delegateSession, callId）与阶段，不持宿主 TCS/IDisposable；
+   - 纯 Key 结算协议：库内仅维系纯数据键（ownerScope, role, delegateSession, callId）与批次事实（providerRun、callOrder、received、orderedInvocations），不持宿主 TCS/IDisposable；
    - 双向调用索引：callsByOwnerScope 与 callsByDelegate 在单锁内原子一致变更；
-   - 批次状态机：Pending → Ready → Active → Closed 显式受控；
+   - 批次阶段由内容派生：orderedInvocations 非空即已准入可派发（single 或凑齐），空即收集中；关闭 = 从库移除，不设挂名关闭态；
    - cancelScope / clearAll 返回结构化纯 Key Settlement 列表，供宿主解耦释放资源。
 
 # SPEC

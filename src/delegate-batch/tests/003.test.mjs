@@ -39,7 +39,7 @@ test('SPEC[sync-batch-1] 专属代理单飞互斥：同一代理在途调用排�
   assert.equal(store.activeCallsCount, 1)
 })
 
-test('SPEC[sync-batch-2] 批次状态机演化：Pending -> Ready -> Active -> Closed', () => {
+test('SPEC[sync-batch-2] 批次从未齐收集到凑齐放行：未齐 beginCall 拒绝，凑齐即放行，释放清槽位', () => {
   const store = new SyncDelegateBatchStore()
 
   const batchDef = {
