@@ -103,7 +103,10 @@ type OutboundViewStore() =
 
     member _.recordMessagesFor(sessionId: string, messages: obj) : unit =
         recordFor sessionId messages (fun st ->
-            st.Pending <- if st.Pending.Messages.IsSome then emptyPending () else st.Pending
+            // 未封印时的重复记录只覆盖自己；已封印后到达的重复记录才清待定（防旧纪元视图重放）。
+            st.Pending <-
+                if st.Sealed.IsSome && st.Pending.Messages.IsSome then emptyPending ()
+                else st.Pending
             st.Pending.Messages <- Some(cloneDeep messages)
             trySealSession sessionId st)
 
@@ -113,7 +116,9 @@ type OutboundViewStore() =
 
     member _.recordSystem(sessionId: string, system: obj) : unit =
         recordFor sessionId system (fun st ->
-            st.Pending <- if st.Pending.System.IsSome then emptyPending () else st.Pending
+            st.Pending <-
+                if st.Sealed.IsSome && st.Pending.System.IsSome then emptyPending ()
+                else st.Pending
             let rawArr = copyArray system
             let strArr =
                 rawArr
@@ -125,7 +130,9 @@ type OutboundViewStore() =
 
     member _.recordModel(sessionId: string, model: obj) : unit =
         recordFor sessionId model (fun st ->
-            st.Pending <- if st.Pending.Model.IsSome then emptyPending () else st.Pending
+            st.Pending <-
+                if st.Sealed.IsSome && st.Pending.Model.IsSome then emptyPending ()
+                else st.Pending
             let providerId =
                 if not (isNull model?providerID) then string model?providerID
                 elif not (isNull model?provider) then string model?provider
