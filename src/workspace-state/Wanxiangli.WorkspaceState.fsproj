@@ -5,6 +5,7 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- 运行时只消费 wanxiangli/git-porcelain 公开产物，不编译其源码。 -->
+    <Compile Include="RuntimePathStore.fs" />
     <Compile Include="WorkspaceState.fs" />
     <PackageExport Include="WorkspaceState.fs" Member="primaryDirectory" />
     <PackageExport Include="WorkspaceState.fs" Member="primaryDirectorySync" />

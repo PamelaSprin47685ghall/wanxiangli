@@ -6,11 +6,10 @@ import childProcess from 'node:child_process'
 import { syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { primaryDirectory, primaryDirectorySync, checkStateDirectory, initializeStateDirectory } from '../../../dist/workspace-state/WorkspaceState.js'
-import { runtimePathStore } from 'wanxiangli/git-porcelain'
 
 function fixture(t) {
   const directory = fs.realpathSync(fs.mkdtempSync(path.join(tmpdir(), 'wanxiangli-workspace-state-')))
-  t.after(() => { runtimePathStore.clear(); fs.rmSync(directory, { recursive: true, force: true }) })
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }))
   return directory
 }
 function git(directory, ...args) {
@@ -95,7 +94,7 @@ test('bare、直接和经符号链接进入 .git 的 workspace 均拒绝', async
 })
 
 test('专用 argv/env 一致；只有明确 128 notgit 回退，其他原错误保留', async t => {
-  const directory = fixture(t)
+  let directory = fixture(t)
   let failure = Object.assign(new Error('notgit'), { code: 128, status: 128, stderr: 'fatal: not a git repository (or any parent)' })
   const inspect = (executable, args, options) => {
     assert.equal(executable, 'git')
@@ -116,7 +115,7 @@ test('专用 argv/env 一致；只有明确 128 notgit 回退，其他原错误�
       Object.assign(new Error('notgit wrong status'), { code: 1, status: 1, stderr: 'fatal: not a git repository' }),
       Object.assign(new Error('missing executable'), { code: 'ENOENT', path: 'git' }),
     ]) {
-      runtimePathStore.clear()
+      directory = fixture(t)
       failure = cause
       await rejected(directory, error => error === cause)
     }
@@ -130,27 +129,40 @@ test('成功但无法识别的 Git 输出不回退', async t => {
   finally { restore() }
 })
 
-test('异步只用现有缓存，失败可再查，同步不等待缓存中的 Promise', async t => {
+test('异步共用查询，失败可再查，同步不等待缓存中的 Promise', async t => {
   const directory = fixture(t)
-  const output = `worktree ${directory}\0\0`
+  let output = `worktree ${directory}\0\0`
   let callback
   let asyncCount = 0
   let syncCount = 0
   const restore = mockQueries((_executable, _args, _options, complete) => { asyncCount++; callback = complete }, () => { syncCount++; return output })
   try {
     const first = primaryDirectory(directory)
-    assert.equal(runtimePathStore.has(directory), true)
+    const shared = primaryDirectory(`${directory}/`)
+    const normalized = primaryDirectory(`${directory}/../${path.basename(directory)}//`)
+    assert.equal(asyncCount, 1)
     assert.equal(primaryDirectorySync(directory), directory)
     assert.equal(syncCount, 1)
     const cause = Object.assign(new Error('temporary'), { code: 'EIO' })
     callback(cause, '', '')
     await assert.rejects(first, error => error === cause)
-    assert.equal(runtimePathStore.has(directory), false)
+    await assert.rejects(shared, error => error === cause)
+    await assert.rejects(normalized, error => error === cause)
     const second = primaryDirectory(directory)
     callback(null, output, '')
     assert.equal(await second, directory)
     assert.equal(await primaryDirectory(directory), directory)
     assert.equal(asyncCount, 2)
+    const other = fixture(t)
+    output = `worktree ${other}\0\0`
+    assert.equal(primaryDirectorySync(directory), other)
+    assert.equal(await primaryDirectory(directory), directory)
+    assert.equal(asyncCount, 2)
+    assert.equal(syncCount, 2)
+    const separate = primaryDirectory(other)
+    assert.equal(asyncCount, 3)
+    callback(null, output, '')
+    assert.equal(await separate, other)
   } finally { restore() }
 })
 

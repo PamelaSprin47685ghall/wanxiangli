@@ -1,9 +1,9 @@
 /**
- * wanxiangli/segments — writer 段文件的命名与分组律（CUT-19，durable-events-005/014）。
+ * wanxiangli/segments — 分段日志格式与物理写入。
  *
- * 纯计算：名字的律，以及调用方读出的字节上的成帧与共存裁决（CUT-19-a）。
- * 不读目录、不读写文件、不删除、不加锁、不 fsync、不 rename；一切物理读写与按裁决执行的收敛归调用方。
- * 逐行规范解码来自 wanxiangli/events。
+ * WriterSegments 只计算名字、成帧与共存裁决；逐行解码来自 wanxiangli/events。
+ * SegmentedWriter 拥有追加目标并完成滚段、追加和落盘；锁、业务结算与整理由调用方负责。
+ * 纯规则无需创建 writer，但本入口同时加载 Node 文件依赖，面向 Node/Bun。
  */
 import type { CodecError, EventOutput } from 'wanxiangli/events'
 
@@ -68,4 +68,24 @@ export declare class WriterSegments {
    * 已复制部分必须逐字节相同，剩余 ID 不得出现在段系列；其余为 `diverged`。
    */
   coexistence(legacyBytes: Uint8Array, seriesBytes: Uint8Array): Coexistence
+}
+
+export type FaultPhase = 'before-append' | 'append' | 'open' | 'fsync' | 'close'
+export interface Fault {
+  readonly phase: FaultPhase
+  readonly cause: unknown
+}
+export type AppendResult =
+  | { ok: true; completion: 'no-append' | 'durable' }
+  | { ok: false; kind: 'before-append' | 'after-append'; primary: Fault; cleanupFailures: Fault[] }
+export interface SegmentedWriterOptions {
+  readonly directory: () => string
+  readonly writerId: string
+  readonly segmentCap: number
+}
+export declare class SegmentedWriter {
+  constructor(options: SegmentedWriterOptions)
+  readonly writerId: string
+  filePath(): string
+  append(text: string): AppendResult
 }

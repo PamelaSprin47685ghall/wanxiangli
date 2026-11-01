@@ -1,4 +1,9 @@
-import { SegmentedWriter } from 'wanxiangli/segmented-writer'
+import { SegmentedWriter, WriterSegments } from 'wanxiangli/segments'
+
+const segments = new WriterSegments()
+const name: string = segments.segmentFileName('owner', 0)
+const series: string[] = segments.seriesOf('owner', [name])
+void series
 
 const writer = new SegmentedWriter({ directory: () => '/caller/events', writerId: 'owner', segmentCap: 4096 })
 const identity: string = writer.writerId

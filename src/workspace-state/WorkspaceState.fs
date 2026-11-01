@@ -17,14 +17,10 @@ let private execFile: obj = jsNative
 [<Import("execFileSync", "node:child_process")>]
 let private execFileSync: obj = jsNative
 
-type private PathStore =
-    abstract getOrCompute: workspace: string * compute: (string -> obj) -> obj
-
 type private Porcelain =
     abstract primaryWorktree: listing: string -> obj
 
-[<Import("runtimePathStore", "wanxiangli/git-porcelain")>]
-let private store: PathStore = jsNative
+let private store = Wanxiangli.WorkspacePathCache.RuntimePathStore()
 
 [<Import("GitPorcelain", "wanxiangli/git-porcelain")>]
 let private createPorcelain: unit -> Porcelain = jsNative

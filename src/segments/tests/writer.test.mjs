@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { tmpdir } from 'node:os'
-import { SegmentedWriter } from '../../../dist/segmented-writer/SegmentedWriter.js'
+import { SegmentedWriter } from 'wanxiangli/segments'
 
 const durable = { ok: true, completion: 'durable' }
 const empty = { ok: true, completion: 'no-append' }

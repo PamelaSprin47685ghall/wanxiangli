@@ -1,30 +1,16 @@
-namespace Wanxiangli.SegmentedWriter
+namespace Wanxiangli.Segments
 
 open Fable.Core
 open Fable.Core.JsInterop
 
 module private Writers =
-    type Segments =
-        abstract maxOrdinal: int
-        abstract writerIdFault: writerId: string -> string
-        abstract segmentFileName: writerId: string * ordinal: int -> string
-        abstract legacyFileName: writerId: string -> string
-        abstract parseSegmentFileName: name: string -> obj
-        abstract seriesOf: writerId: string * names: string array -> string array
-
     type State =
         { Directory: obj
           WriterId: string
           Cap: int
           mutable CurrentFile: string }
 
-    [<Import("WriterSegments", "wanxiangli/segments")>]
-    let private segmentsClass: obj = jsNative
-
-    [<Emit("new $0()")>]
-    let private construct (_class: obj) : Segments = jsNative
-
-    let private segments = construct segmentsClass
+    let private segments = Wanxiangli.Segments.WriterSegments.WriterSegments()
 
     [<Import("default", "node:fs")>]
     let private fs: obj = jsNative
@@ -49,7 +35,7 @@ module private Writers =
         let cap: int = options?segmentCap
         if cap <= 0 then invalidArg "segmentCap" "segment cap must be positive"
         let writer: string = options?writerId
-        match segments.writerIdFault writer with
+        match segments.writerIdFault writer |> unbox<string> with
         | null -> ()
         | "required" -> invalidArg "writerId" "WriterId is required"
         | "pathSegment" -> invalidArg "writerId" "WriterId must be one path segment"

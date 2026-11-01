@@ -34,7 +34,7 @@ function succeed(result) {
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
 }
 
-for (const name of ['lifecycle', 'eventstore', 'runtime', 'trace', 'session', 'delivery', 'degeneration', 'ablation', 'routing', 'projection', 'authority', 'permit', 'capacity', 'admission-queue', 'dispatch', 'borrowing', 'run-witness', 'git-porcelain', 'failure', 'attachment-lease', 'warm-start', 'handle-lifecycle', 'failure-budget', 'delegate-batch', 'fission-group', 'ordinal', 'bayes', 'llm-text', 'bounded-map', 'response-text', 'returned-material', 'keyed-serial', 'file-lock', 'result-mailbox', 'task-scope']) {
+for (const name of ['lifecycle', 'eventstore', 'runtime', 'trace', 'session', 'delivery', 'degeneration', 'ablation', 'routing', 'projection', 'authority', 'permit', 'capacity', 'admission-queue', 'dispatch', 'borrowing', 'run-witness', 'git-porcelain', 'failure', 'attachment-lease', 'warm-start', 'handle-lifecycle', 'failure-budget', 'delegate-batch', 'fission-group', 'ordinal', 'bayes', 'llm-text', 'bounded-map', 'returned-material', 'keyed-serial', 'file-lock', 'result-mailbox', 'task-scope']) {
   test(`SPEC[build-001] ${name} compiles and runs its own tests without any sibling source`, { timeout: 90000 }, t => {
     const directory = fixture(t, [name])
     assert.deepEqual(readdirSync(path.join(directory, 'src')), [name])
@@ -205,20 +205,20 @@ test('file-baseline compiles with only public casebook-maintenance artifacts and
   assert.match(readFileSync(path.join(directory, 'dist/file-baseline/FileBaseline.js'), 'utf8'), /from ["']wanxiangli\/casebook-maintenance["']/)
 })
 
-test('segmented-writer compiles with only public segments/events artifacts and its own source', { timeout: 90000 }, t => {
-  const directory = fixture(t, ['segmented-writer'])
-  for (const dependency of ['segments', 'events']) {
-    cpSync(path.join(root, 'dist', dependency), path.join(directory, 'dist', dependency), { recursive: true })
-  }
-  const dependency = path.join(directory, 'dist/segments/WriterSegments.js')
+test('segments compiles its rules and writer with only public events artifacts', { timeout: 90000 }, t => {
+  const directory = fixture(t, ['segments'])
+  cpSync(path.join(root, 'dist/events'), path.join(directory, 'dist/events'), { recursive: true })
+  const dependency = path.join(directory, 'dist/events/CanonicalEventCodec.js')
   const before = readFileSync(dependency, 'utf8')
-  const built = run(directory, ['scripts/build.mjs', 'segmented-writer'])
+  const built = run(directory, ['scripts/build.mjs', 'segments'])
   succeed(built)
   assert.doesNotMatch(built.stdout + built.stderr, /Warning:|Error:/)
-  assert.deepEqual(readdirSync(path.join(directory, 'src')), ['segmented-writer'])
+  assert.deepEqual(readdirSync(path.join(directory, 'src')), ['segments'])
   assert.equal(readFileSync(dependency, 'utf8'), before)
-  succeed(run(directory, ['--test', path.join(directory, 'src/segmented-writer/tests/001.test.mjs')]))
-  assert.match(readFileSync(path.join(directory, 'dist/segmented-writer/SegmentedWriter.js'), 'utf8'), /from ["']wanxiangli\/segments["']/)
+  const tests = readdirSync(path.join(directory, 'src/segments/tests'))
+    .filter(file => file.endsWith('.test.mjs')).map(file => path.join(directory, 'src/segments/tests', file))
+  succeed(run(directory, ['--test', ...tests]))
+  assert.doesNotMatch(readFileSync(path.join(directory, 'dist/segments/SegmentedWriter.js'), 'utf8'), /from ["']wanxiangli\/segments["']/)
 })
 
 function snapshot(directory) {

@@ -46,14 +46,3 @@ export interface GitPorcelainMessages {
 }
 
 export declare function GitPorcelain(): GitPorcelainMessages
-
-export declare class RuntimePathStore {
-  constructor()
-  normalizeKey(workspace: string): string
-  has(workspace: string): boolean
-  invalidate(workspace: string, expected?: unknown): boolean
-  clear(): void
-  getOrCompute<T = unknown>(workspace: string, compute: (normalizedKey: string) => T): T
-}
-
-export declare const runtimePathStore: RuntimePathStore

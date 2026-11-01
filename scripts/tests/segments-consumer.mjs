@@ -2,7 +2,13 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { tmpdir } from 'node:os'
-import { SegmentedWriter } from 'wanxiangli/segmented-writer'
+import { SegmentedWriter, WriterSegments } from 'wanxiangli/segments'
+
+const segments = new WriterSegments()
+assert.equal(segments.segmentFileName('consumer', 0), 'consumer-0000.ndjson')
+assert.deepEqual(segments.groupWriterFiles(['consumer-0001.ndjson', 'consumer-0000.ndjson']), [
+  { writerId: 'consumer', fileNames: ['consumer-0000.ndjson', 'consumer-0001.ndjson'] },
+])
 
 const root = fs.mkdtempSync(path.join(tmpdir(), 'wanxiangli-segmented-writer-consumer-'))
 try {
@@ -25,4 +31,4 @@ try {
   assert.deepEqual(fs.readFileSync(first), Buffer.from('α\n'))
   assert.ok(directoryCalls > 0)
 } finally { fs.rmSync(root, { recursive: true, force: true }) }
-console.log('segmented-writer consumer passed')
+console.log('segments consumer passed')

@@ -9,28 +9,28 @@ open Fable.Core.JsInterop
 let private codecClass: obj = jsNative
 
 [<Emit("new $0()")>]
-let private construct (cls: obj) : obj = jsNative
+let private construct (_cls: obj) : obj = jsNative
 
 let private codec: obj = construct codecClass
 
 [<Emit("$0 instanceof Uint8Array")>]
-let private isBytes (value: obj) : bool = jsNative
+let private isBytes (_value: obj) : bool = jsNative
 
 [<Emit("typeof $0 === 'string'")>]
-let private isString (value: obj) : bool = jsNative
+let private isString (_value: obj) : bool = jsNative
 
 [<Emit("Number.isInteger($0)")>]
-let private isInteger (value: obj) : bool = jsNative
+let private isInteger (_value: obj) : bool = jsNative
 
 [<Emit("Array.isArray($0)")>]
-let private isArray (value: obj) : bool = jsNative
+let private isArray (_value: obj) : bool = jsNative
 
 [<Emit("$0 !== null && typeof $0 === 'object' && !Array.isArray($0)")>]
-let private isPlainObject (value: obj) : bool = jsNative
+let private isPlainObject (_value: obj) : bool = jsNative
 
 /// 码元序（与 Array.prototype.sort 的默认序一致），不随区域设置变化。
 [<Emit("[...$0].sort()")>]
-let private sortedCopy (names: string array) : string array = jsNative
+let private sortedCopy (_names: string array) : string array = jsNative
 
 let private suffix = ".ndjson"
 let private maxOrdinal = 9999
