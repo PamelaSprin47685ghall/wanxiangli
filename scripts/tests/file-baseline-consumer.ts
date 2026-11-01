@@ -1,9 +1,11 @@
 import { FileBaseline, FileDiff, type MaintenanceSummary, type TruncatedDiff } from 'wanxiangli/file-baseline'
 import {
   CasebookSettlementOwner, BookkeeperStaging, BookkeeperLedger, BookkeeperTransaction, CasebookState, normalizeObservations, sameObservations,
+  CasebookService, CasebookIndex, SessionDraftStore, archiveCase, finalizeCaptured, cleanupCasebookDraft,
   type CasebookEdit, type CasebookEditFailure, type SettlementOutcomeTag,
   type CasebookCase, type CasebookFact, type CasebookObservation, type CasebookVisible,
   type BookkeeperTransactionEffects, type BookkeeperTransactionRequest,
+  type CasebookServiceStore, type CasebookFinalized, type CasebookFetched,
 } from 'wanxiangli/casebook'
 
 const diff = new FileDiff()
@@ -84,6 +86,30 @@ const service = new FileBaseline({
     write: async (_bytes: Uint8Array) => ({ ok: true as const, value: 'payload-reference' }),
   },
 })
+const drafts = new SessionDraftStore()
+const index = new CasebookIndex()
+type AppendFailure = { readonly eventId: object; readonly cause: Error }
+const caseStore: CasebookServiceStore<AppendFailure> = {
+  current: () => ({ ok: true, value: current }),
+  appendCaptured: async value => { void value.identity; return { ok: true } },
+  appendRefreshed: async change => { void change.maintenanceFileState; return { ok: true } },
+  appendAccessed: async identity => { void identity; return { ok: false, error: { eventId: {}, cause: new Error('unknown') } } },
+}
+const caseService = new CasebookService(drafts, index, caseStore, service,
+  async request => ({ ok: true, value: { question: request.question, answer: request.answer } }), () => observations, () => true)
+void caseService.finalizeDraft('one').then((value: CasebookFinalized<AppendFailure>) => {
+  if (value.kind === 'persistence-failed') { const cause: Error = value.failure.cause; void cause }
+})
+void caseService.fetch('shelfmark', failure => { const original: Error = failure.cause; void original }).then((value: CasebookFetched) => {
+  if ('answer' in value) { const answer: string = value.answer; void answer }
+})
+void archiveCase(caseStore, record)
+void finalizeCaptured(caseStore, index, record)
+cleanupCasebookDraft(drafts, () => [], 'one')
+// @ts-expect-error The current state stays in its existing owner, not in the service.
+void caseService.Cases
+// @ts-expect-error Store errors cannot discard the original failure shape.
+void new CasebookService<AppendFailure>(drafts, index, { ...caseStore, appendAccessed: async () => ({ ok: false, error: 'flattened' }) }, service, async request => ({ ok: true, value: { question: request.question, answer: request.answer } }), () => [], () => true)
 void service.capture(['file']).then(result => {
   if (result.ok) { const baseline: string = result.value; return baseline }
   const failure: string = result.error

@@ -119,6 +119,110 @@ export declare function normalizeObservations(items: readonly CasebookObservatio
 /** 比较归一后的身份集合，不作 JSON 深比较。 */
 export declare function sameObservations(left: readonly CasebookObservation[], right: readonly CasebookObservation[]): boolean
 
+export type CasebookResult<T, Error = string> =
+  | { readonly ok: true; readonly value: T }
+  | { readonly ok: false; readonly error: Error }
+
+export type CasebookAppendResult<Failure> =
+  | { readonly ok: true; readonly value?: unknown }
+  | { readonly ok: false; readonly error: Failure }
+
+export interface CasebookRefresh {
+  readonly identity: string
+  readonly q: string
+  readonly a: string
+  readonly maintenanceFileState: string
+  readonly relatedPaths: readonly string[]
+  readonly observations: readonly CasebookObservation[]
+}
+
+/** Current remains owned by its integrator. Append errors retain their original identity. */
+export interface CasebookServiceStore<Failure = unknown> {
+  current(): CasebookResult<CasebookState>
+  appendCaptured(value: CasebookCase): Promise<CasebookAppendResult<Failure>>
+  appendRefreshed(value: CasebookRefresh): Promise<CasebookAppendResult<Failure>>
+  appendAccessed(identity: string): Promise<CasebookAppendResult<Failure>>
+}
+
+export interface CasebookServiceBaseline {
+  capture(paths: readonly string[]): Promise<CasebookResult<string>>
+  compare(paths: readonly string[], baseline: string): Promise<CasebookResult<{
+    readonly refresh: boolean
+    readonly targetState: string
+    readonly diffSummary: string
+  }>>
+}
+
+export interface CasebookServiceRequest {
+  readonly kind: 'finalize' | 'refresh'
+  readonly identity: string
+  readonly question: string
+  readonly answer: string
+  readonly observations: readonly CasebookObservation[]
+  readonly transcript: string
+}
+
+export type CasebookMutationFailure<Failure = unknown> =
+  | { readonly kind: 'already-finalized' | 'case-missing'; readonly identity: string }
+  | { readonly kind: 'preparation-rejected'; readonly reason: string }
+  | { readonly kind: 'append-failure'; readonly failure: Failure }
+
+export type CasebookFinalized<Failure = unknown> =
+  | { readonly kind: 'finalized' | 'nothing-to-finalize'; readonly identity: string }
+  | { readonly kind: 'not-committed' | 'unknown' | 'phase-conflict'; readonly identity: string; readonly reason: string }
+  | { readonly kind: 'persistence-failed'; readonly identity: string; readonly failure: Failure }
+
+export type CasebookFetched =
+  | { readonly kind: 'unavailable' | 'missing' }
+  | { readonly kind: 'fresh' | 'refreshed' | 'stale'; readonly answer: string }
+
+/** Saves and maintains cases through the existing owners; stores only each call's in-flight values. */
+export declare class CasebookService<Failure = unknown> {
+  constructor(
+    drafts: SessionDraftStore,
+    index: CasebookIndex,
+    store: CasebookServiceStore<Failure>,
+    baseline: CasebookServiceBaseline,
+    runBookkeeper: (request: CasebookServiceRequest) => Promise<CasebookResult<{ readonly question: string; readonly answer: string }>>,
+    drain: (identity: string) => readonly CasebookObservation[],
+    isEnabled: () => boolean,
+  )
+  cleanup(identity: string): void
+  finalizeDraft(identity: string): Promise<CasebookFinalized<Failure>>
+  refresh(identity: string): Promise<CasebookResult<boolean, CasebookMutationFailure<Failure>>>
+  touch(identity: string): Promise<CasebookResult<void, CasebookMutationFailure<Failure>>>
+  /** The caller checks feature availability before joining its rendered-result flight. Touch checks it again. */
+  fetch(shelfmark: string, notifyAppendFailure: (failure: Failure) => void): Promise<CasebookFetched>
+  /** Archive without an existence check or index refresh. */
+  archiveCase(value: CasebookCase): Promise<CasebookResult<void, CasebookMutationFailure<Failure>>>
+  /** Check for an existing identity, then archive; leaves index refresh to the caller. */
+  finalizeCase(value: CasebookCase): Promise<CasebookResult<void, CasebookMutationFailure<Failure>>>
+  /** Finalize an already captured case and refresh the shared index. */
+  finalizeCaptured(value: CasebookCase): Promise<CasebookFinalized<Failure>>
+  refreshWithDiff(change: Pick<CasebookRefresh, 'identity' | 'q' | 'a' | 'maintenanceFileState'>): Promise<CasebookResult<void, CasebookMutationFailure<Failure>>>
+}
+
+/** Clears the existing draft and drains observations; has no store or workspace dependency. */
+export declare function cleanupCasebookDraft(
+  drafts: SessionDraftStore,
+  drain: (identity: string) => readonly CasebookObservation[],
+  identity: string,
+): void
+
+/** Store-only operations share the service implementation without requiring workspace/session effects. */
+export declare function archiveCase<Failure>(
+  store: CasebookServiceStore<Failure>, value: CasebookCase,
+): Promise<CasebookResult<void, CasebookMutationFailure<Failure>>>
+export declare function finalizeCase<Failure>(
+  store: CasebookServiceStore<Failure>, value: CasebookCase,
+): Promise<CasebookResult<void, CasebookMutationFailure<Failure>>>
+export declare function finalizeCaptured<Failure>(
+  store: CasebookServiceStore<Failure>, index: CasebookIndex, value: CasebookCase,
+): Promise<CasebookFinalized<Failure>>
+export declare function refreshWithDiff<Failure>(
+  store: CasebookServiceStore<Failure>, change: Pick<CasebookRefresh, 'identity' | 'q' | 'a' | 'maintenanceFileState'>,
+): Promise<CasebookResult<void, CasebookMutationFailure<Failure>>>
+
 /** Fable 5 Result 的实际产物形状：tag 0 成功、tag 1 失败，fields 为 case 字段。 */
 export type FableResult<T> =
   | { readonly tag: 0; readonly fields: [T] }

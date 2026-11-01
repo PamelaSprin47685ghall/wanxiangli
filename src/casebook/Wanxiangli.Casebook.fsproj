@@ -27,6 +27,12 @@
     <PackageExport Include="CasebookIndexLaw.fs" Member="casebookIndex" />
     <PackageExport Include="CasebookIndexLaw.fs" Member="CasebookIndexLaw" />
     <PackageExport Include="CasebookIndexLaw.fs" Member="CasebookState" />
+    <PackageExport Include="CasebookIndexLaw.fs" Member="CasebookService" />
+    <PackageExport Include="CasebookIndexLaw.fs" Member="cleanupCasebookDraft" />
+    <PackageExport Include="CasebookIndexLaw.fs" Member="archiveCase" />
+    <PackageExport Include="CasebookIndexLaw.fs" Member="finalizeCase" />
+    <PackageExport Include="CasebookIndexLaw.fs" Member="finalizeCaptured" />
+    <PackageExport Include="CasebookIndexLaw.fs" Member="refreshWithDiff" />
     <PackageExport Include="CasebookIndexLaw.fs" Member="normalizeObservations" />
     <PackageExport Include="CasebookIndexLaw.fs" Member="sameObservations" />
   </ItemGroup>

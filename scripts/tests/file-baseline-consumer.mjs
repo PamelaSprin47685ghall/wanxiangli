@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto'
 import { FileBaseline, FileDiff } from 'wanxiangli/file-baseline'
 import {
   CasebookSettlementOwner, BookkeeperStaging, BookkeeperLedger, BookkeeperTransaction, CasebookState, CasebookIndexLaw,
+  CasebookService, CasebookIndex, SessionDraftStore,
   normalizeObservations, sameObservations,
 } from 'wanxiangli/casebook'
 
@@ -118,6 +119,44 @@ try {
   assert.equal(unchanged.value.diffSummary, '')
   fs.writeFileSync(resolvePath('subject.txt'), 'later edit')
   assert.deepEqual(Buffer.from(stored.get(nextState['subject.txt'].payloadRef)), target)
+
+  const drafts = new SessionDraftStore()
+  const caseIndex = new CasebookIndex()
+  let cases = new CasebookState()
+  let transactions = 0
+  const caseService = new CasebookService(drafts, caseIndex, {
+    current() { return { ok: true, value: cases } },
+    async appendCaptured(value) { cases = cases.apply({ kind: 'captured', case: value }); return { ok: true } },
+    async appendRefreshed(value) { cases = cases.apply({ kind: 'refreshed', ...value }); return { ok: true } },
+    async appendAccessed(identity) { cases = cases.apply({ kind: 'accessed', identity }); return { ok: true } },
+  }, service, request => {
+    const txId = 'service-' + (++transactions)
+    let done
+    return transaction.run({ txId, ownerId: request.identity, question: request.question, answer: request.answer }, {
+      async open() { return { ok: true, value: txId } },
+      subscribe(_child, complete) { done = complete; return () => {} },
+      prepare() { return { ok: true, value: { agent: 'agent', text: request.transcript } } },
+      async send() {
+        const edit = staging.edit(txId, key => key).fields[0]
+        edit.api.bookkeeper.setAnswer(request.kind === 'finalize' ? 'saved answer' : 'maintained answer')
+        assert.equal(edit.commit().tag, 0)
+        done({ ok: true })
+        return { ok: true }
+      },
+      async abort() {},
+    })
+  }, () => [{ kind: 'file-read', path: 'subject.txt', contentHash: 'observed' }], () => true)
+  drafts.setQ('case', 'saved question')
+  drafts.setA('case', 'draft answer')
+  assert.deepEqual(await caseService.finalizeDraft('case'), { kind: 'finalized', identity: 'case' })
+  const savedCompletion = cases.visible(0).cases[0].completionFileState
+  const caseShelfmark = caseIndex.tryGet().cases[0].shelfmark
+  assert.deepEqual(await caseService.fetch(caseShelfmark, () => assert.fail('unexpected append failure')), { kind: 'fresh', answer: 'saved answer' })
+  fs.writeFileSync(resolvePath('subject.txt'), 'new related content')
+  assert.deepEqual(await caseService.fetch(caseShelfmark, () => assert.fail('unexpected append failure')), { kind: 'refreshed', answer: 'maintained answer' })
+  assert.equal(transactions, 2)
+  assert.equal(cases.visible(0).cases[0].completionFileState, savedCompletion)
+  assert.notEqual(cases.visible(0).cases[0].maintenanceFileState, savedCompletion)
 
   const readError = 'consumer payload read failure'
   const failed = new FileBaseline({ resolvePath, payloads: { ...payloads, read: async () => ({ ok: false, error: readError }) } })

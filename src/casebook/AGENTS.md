@@ -34,6 +34,18 @@ Bookkeeper 修改一对问答时，`BookkeeperStaging.edit` 为这次调用取�
 
 创建返回 Error 时只撤销暂存。创建或发送 Promise 拒绝，以及订阅、prepare、dispose 同步抛错仍直接传播，不补通用 finally；原来可能留下的暂存或附着不会在迁移时悄悄改变。特别是 Dispose 抛错时，后续 removeCompletion、暂存清理与退场均不执行。接口和这些协作分支分别在 `index.d.ts` 与 `tests/transaction.test.mjs` 就近维护。
 
+## 案例保存、取用和维护
+
+工作结束时，`CasebookService.finalizeDraft` 从既有草稿 owner 消费问答、取走观察，交给 Bookkeeper 整理，再捕获完成基线、追加案例并刷新公开索引。禁用、无草稿或无最终回答时只清理。先消费、后检查的次序不变；已有案例不重复整理，追加前仍检查一次。后续失败不把草稿放回，也不重试追加。
+
+取用案例时，服务从现有 Current 解析 shelfmark。相关文件未变便交还原答案并记录访问；有变化则用一次捕获所得的 diff 和目标基线维护案例，再读取更新后的答案。维护失败或更新后找不到案例时，交还带 stale 分类的原答案。完成基线不随维护改变；维护期间不会再次捕获文件来替换第一次目标。
+
+Current、草稿、观察和索引各有原 owner；服务只保存一次调用途中的值。存储协作者只提供 Current 和三种追加，基线协作者只提供 capture/compare，会话适配只提供一次 Bookkeeper 请求。存储编解码、工作区启用、语言、通知和工具呈现留调用方。原追加失败对象完整透传；索引在 Capture 之后失败仍返回 unknown，不能说案例没有追加。
+
+`touch` 在实际访问时重新检查启用，并把其流程异常转成 preparation-rejected；维护异常仍拒绝 Promise。普通追加失败可交给原通知 owner，通知抛错继续传播，不加一层通用 catch。取用入口的启用与空 shelfmark 检查留工具；同一 flight 仍共享首个调用者的通知和最终呈现字符串，服务不另建 flight。
+
+仅依赖存储的 `archiveCase`、`finalizeCase`、`finalizeCaptured`、`refreshWithDiff` 与服务使用同一实现，不要求虚构工作区或会话能力。`cleanupCasebookDraft` 只清草稿、取走观察，不需要存储。相关差分在 `tests/service.test.mjs`，接口在 `index.d.ts`。
+
 # AXIOM
 
 1. [使用者] 模型在索引里看到的每个 shelfmark，原样回传给 fetch 时必须找回同一个 Case；索引只给模型 `{shelfmark, question}`，不泄漏会话身份。

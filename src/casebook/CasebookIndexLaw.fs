@@ -2,6 +2,8 @@ module Wanxiangli.Casebook.CasebookIndexLaw
 
 open Fable.Core
 open Fable.Core.JsInterop
+open System.Threading.Tasks
+open Wanxiangli.Casebook.SessionDraftStore
 
 [<Emit("typeof $0 === 'string'")>]
 let private isString (value: obj) : bool = jsNative
@@ -443,3 +445,344 @@ let rec private stateFrom (counter: int64) (cases: Map<string, StoredCase>) : St
 let private stateConstructor (_create: unit -> StateView) : obj = jsNative
 
 let CasebookState = stateConstructor (fun () -> stateFrom 0L Map.empty)
+
+type private ServiceStore =
+    abstract current: unit -> obj
+    abstract appendCaptured: case: obj -> Task<obj>
+    abstract appendRefreshed: change: obj -> Task<obj>
+    abstract appendAccessed: identity: string -> Task<obj>
+
+type private ServiceBaseline =
+    abstract capture: paths: string array -> Task<obj>
+    abstract compare: paths: string array * baseline: string -> Task<obj>
+
+type private MutationError =
+    | AlreadyFinalized of string
+    | CaseMissing of string
+    | PreparationRejected of string
+    | AppendFailure of obj
+
+let private nativeResult<'T, 'Error> (value: obj) : Result<'T, 'Error> =
+    if unbox<bool> (field value "ok") then Ok(unbox (field value "value"))
+    else Error(unbox (field value "error"))
+
+let private mutationErrorToJs error =
+    match error with
+    | AlreadyFinalized identity -> createObj [ "kind" ==> "already-finalized"; "identity" ==> identity ]
+    | CaseMissing identity -> createObj [ "kind" ==> "case-missing"; "identity" ==> identity ]
+    | PreparationRejected reason -> createObj [ "kind" ==> "preparation-rejected"; "reason" ==> reason ]
+    | AppendFailure failure -> createObj [ "kind" ==> "append-failure"; "failure" ==> failure ]
+
+let private mutationToJs result =
+    match result with
+    | Ok value -> createObj [ "ok" ==> true; "value" ==> value ]
+    | Error error -> createObj [ "ok" ==> false; "error" ==> mutationErrorToJs error ]
+
+let private settled kind identity = createObj [ "kind" ==> kind; "identity" ==> identity ]
+let private settledReason kind identity reason =
+    createObj [ "kind" ==> kind; "identity" ==> identity; "reason" ==> reason ]
+
+let private alreadyFinalized identity = "case already finalized for scope " + identity
+
+let private readPaths (observations: obj array) =
+    observations
+    |> Array.choose (fun observation ->
+        if unbox<string> (field observation "kind") = "file-read" then Some(unbox<string> (field observation "path"))
+        else None)
+    |> Array.distinct
+    |> Array.sort
+
+let private refreshChange identity question answer maintenance paths observations =
+    createObj
+        [ "identity" ==> identity; "q" ==> question; "a" ==> answer
+          "maintenanceFileState" ==> maintenance; "relatedPaths" ==> paths; "observations" ==> observations ]
+
+let private transactionRequest kind identity question answer observations transcript =
+    createObj
+        [ "kind" ==> kind; "identity" ==> identity; "question" ==> question; "answer" ==> answer
+          "observations" ==> observations; "transcript" ==> transcript ]
+
+let cleanupCasebookDraft (drafts: SessionDraftStore) (drain: string -> obj array) identity =
+    drafts.clear identity
+    drain identity |> ignore
+
+let private serviceCurrent (store: ServiceStore) : Result<StateView, string> =
+    nativeResult (store.current ())
+
+let private serviceLookup store capacity identity =
+    task {
+        return
+            serviceCurrent store
+            |> Result.map (fun state ->
+                let values = unbox<obj array> (field (state.visible capacity) "cases")
+                values |> Array.tryFind (fun value -> unbox<string> (field value "identity") = identity))
+    }
+
+let private refreshServiceIndex store (index: CasebookIndex) =
+    task {
+        match serviceCurrent store with
+        | Error reason -> return invalidOp reason
+        | Ok state ->
+            let values = unbox<obj array> (field (state.visible 256) "cases")
+            let entries =
+                values
+                |> Array.map (fun value ->
+                    createObj [ "sessionId" ==> field value "identity"; "question" ==> field value "q" ])
+            return index.freeze entries
+    }
+
+let private appendResult operation =
+    task {
+        let! result = operation
+        return nativeResult<obj, obj> result |> Result.map ignore |> Result.mapError AppendFailure
+    }
+
+let private appendCase (store: ServiceStore) (case: obj) =
+    task {
+        let canonical =
+            createObj
+                [ "identity" ==> field case "identity"; "sourceTrace" ==> field case "sourceTrace"
+                  "q" ==> field case "q"; "a" ==> field case "a"
+                  "relatedPaths" ==> field case "relatedPaths"
+                  "completionFileState" ==> field case "completionFileState"
+                  "maintenanceFileState" ==> field case "maintenanceFileState"
+                  "accessOrder" ==> field case "accessOrder"
+                  "observations" ==> normalizeObservations (unbox (field case "observations")) ]
+        return! appendResult (store.appendCaptured canonical)
+    }
+
+let private appendIfMissing store (case: obj) =
+    task {
+        let identity: string = unbox (field case "identity")
+        let! existing = serviceLookup store 0 identity
+        match existing with
+        | Error reason -> return Error(PreparationRejected reason)
+        | Ok(Some _) -> return Error(AlreadyFinalized identity)
+        | Ok None -> return! appendCase store case
+    }
+
+let private publishCaptured store (index: CasebookIndex) (case: obj) =
+    task {
+        let identity: string = unbox (field case "identity")
+        let! result = appendIfMissing store case
+        match result with
+        | Error(AlreadyFinalized existing) -> return settledReason "phase-conflict" identity (alreadyFinalized existing)
+        | Error(CaseMissing missing) -> return settledReason "not-committed" identity ("case " + missing + " not found")
+        | Error(PreparationRejected reason) -> return settledReason "not-committed" identity reason
+        | Error(AppendFailure failure) ->
+            return createObj [ "kind" ==> "persistence-failed"; "identity" ==> identity; "failure" ==> failure ]
+        | Ok () ->
+            index.invalidate ()
+            try
+                let! _ = refreshServiceIndex store index
+                return settled "finalized" identity
+            with ex -> return settledReason "unknown" identity ex.Message
+    }
+
+let archiveCase (store: obj) (case: obj) : Task<obj> =
+    task { let! result = appendCase (unbox store) case in return mutationToJs result }
+
+let finalizeCase (store: obj) (case: obj) : Task<obj> =
+    task { let! result = appendIfMissing (unbox store) case in return mutationToJs result }
+
+let finalizeCaptured (store: obj) (index: CasebookIndex) (case: obj) : Task<obj> =
+    publishCaptured (unbox store) index case
+
+let refreshWithDiff (store: obj) (change: obj) : Task<obj> =
+    task {
+        let store: ServiceStore = unbox store
+        let identity: string = unbox (field change "identity")
+        let! existing = serviceLookup store 0 identity
+        match existing with
+        | Error reason -> return mutationToJs (Error(PreparationRejected reason))
+        | Ok None -> return mutationToJs (Error(CaseMissing identity))
+        | Ok(Some case) ->
+            let updated =
+                refreshChange identity (field change "q") (field change "a") (field change "maintenanceFileState")
+                    (field case "relatedPaths") (field case "observations")
+            let! result = appendResult (store.appendRefreshed updated)
+            return mutationToJs result
+    }
+
+[<AttachMembers>]
+type CasebookService
+    (drafts: SessionDraftStore,
+     index: CasebookIndex,
+     store: obj,
+     baseline: obj,
+     runBookkeeper: obj -> Task<obj>,
+     drain: string -> obj array,
+     isEnabled: unit -> bool) =
+
+    let store: ServiceStore = unbox store
+    let baseline: ServiceBaseline = unbox baseline
+
+    let lookup capacity identity = serviceLookup store capacity identity
+    let refreshIndex () = refreshServiceIndex store index
+
+    let freezeFinalized identity question answer observations =
+        task {
+            let paths = readPaths observations
+            let! frozen = baseline.capture paths
+            match nativeResult<string, string> frozen with
+            | Error reason -> return settledReason "not-committed" identity ("freeze baseline failed: " + reason)
+            | Ok reference ->
+                let case =
+                    createObj
+                        [ "identity" ==> identity; "sourceTrace" ==> identity
+                          "q" ==> question; "a" ==> answer; "relatedPaths" ==> paths
+                          "completionFileState" ==> reference; "maintenanceFileState" ==> reference
+                          "accessOrder" ==> 0L; "observations" ==> observations ]
+                return! publishCaptured store index case
+        }
+
+    let publishDraft identity draft answer =
+        task {
+            try
+                let observations = drain identity
+                let question = drafts.lastQuestion draft
+                let transcript = drafts.transcript draft
+                let! existing = lookup 0 identity
+                match existing with
+                | Error reason ->
+                    return settledReason "not-committed" identity ("cannot confirm case scope " + identity + ": " + reason)
+                | Ok(Some case) ->
+                    return settledReason "phase-conflict" identity (alreadyFinalized (unbox (field case "identity")))
+                | Ok None ->
+                    let! written = runBookkeeper (transactionRequest "finalize" identity question answer observations transcript)
+                    match nativeResult<obj, string> written with
+                    | Error reason -> return settledReason "not-committed" identity reason
+                    | Ok value ->
+                        return! freezeFinalized identity (field value "question") (field value "answer") observations
+            with ex ->
+                drain identity |> ignore
+                return settledReason "unknown" identity ex.Message
+        }
+
+    let refreshPresent identity (case: obj) =
+        task {
+            let observations: obj array = unbox (field case "observations")
+            let related: string array = unbox (field case "relatedPaths")
+            let paths = if Array.isEmpty related then readPaths observations else related
+            let! compared = baseline.compare (paths, unbox (field case "maintenanceFileState"))
+            match nativeResult<obj, string> compared with
+            | Error reason -> return Error(PreparationRejected reason)
+            | Ok captured when not (unbox<bool> (field captured "refresh")) -> return Ok false
+            | Ok captured ->
+                let request =
+                    transactionRequest "refresh" identity (field case "q") (field case "a") observations (field captured "diffSummary")
+                let! written = runBookkeeper request
+                match nativeResult<obj, string> written with
+                | Error reason -> return Error(PreparationRejected reason)
+                | Ok value ->
+                    let change =
+                        refreshChange (field case "identity") (field value "question") (field value "answer")
+                            (field captured "targetState") paths observations
+                    let! appended = appendResult (store.appendRefreshed change)
+                    match appended with
+                    | Error error -> return Error error
+                    | Ok () ->
+                        index.invalidate ()
+                        let! _ = refreshIndex ()
+                        return Ok true
+        }
+
+    let maintain identity =
+        task {
+            let! existing = lookup 256 identity
+            match existing with
+            | Error reason -> return Error(PreparationRejected reason)
+            | Ok None -> return Ok false
+            | Ok(Some case) -> return! refreshPresent identity case
+        }
+
+    let recordAccess identity =
+        task {
+            if not (isEnabled ()) then return Ok ()
+            else
+                try
+                    let! appended = appendResult (store.appendAccessed identity)
+                    match appended with
+                    | Error error -> return Error error
+                    | Ok () ->
+                        index.invalidate ()
+                        let! _ = refreshIndex ()
+                        return Ok ()
+                with ex -> return Error(PreparationRejected ex.Message)
+        }
+
+    let notifyFailure notify = function
+        | Error(AppendFailure failure) -> notify failure
+        | _ -> ()
+
+    let touchThen notify kind identity answer =
+        task {
+            let! result = recordAccess identity
+            notifyFailure notify result
+            return createObj [ "kind" ==> kind; "answer" ==> answer ]
+        }
+
+    let fetchPresent notify (case: obj) =
+        task {
+            let identity: string = unbox (field case "identity")
+            let answer: string = unbox (field case "a")
+            let! changed = maintain identity
+            match changed with
+            | Error error ->
+                notifyFailure notify (Error error)
+                return createObj [ "kind" ==> "stale"; "answer" ==> answer ]
+            | Ok false -> return! touchThen notify "fresh" identity answer
+            | Ok true ->
+                let! latest = lookup 256 identity
+                match latest with
+                | Ok(Some updated) -> return! touchThen notify "refreshed" identity (unbox<string> (field updated "a"))
+                | _ -> return createObj [ "kind" ==> "stale"; "answer" ==> answer ]
+        }
+
+    member _.cleanup(identity: string) =
+        cleanupCasebookDraft drafts drain identity
+
+    member this.finalizeDraft(identity: string) : Task<obj> =
+        task {
+            if not (isEnabled ()) then
+                this.cleanup identity
+                return settled "nothing-to-finalize" identity
+            else
+                match drafts.tryTake identity with
+                | None ->
+                    drain identity |> ignore
+                    return settled "nothing-to-finalize" identity
+                | Some draft ->
+                    match drafts.lastAnswer draft with
+                    | None ->
+                        drain identity |> ignore
+                        return settled "nothing-to-finalize" identity
+                    | Some answer -> return! publishDraft identity draft answer
+        }
+
+    member _.archiveCase(case: obj) : Task<obj> =
+        archiveCase store case
+
+    member _.finalizeCase(case: obj) : Task<obj> =
+        finalizeCase store case
+
+    member _.finalizeCaptured(case: obj) : Task<obj> = finalizeCaptured store index case
+
+    member _.refreshWithDiff(change: obj) : Task<obj> =
+        refreshWithDiff store change
+
+    member _.refresh(identity: string) : Task<obj> =
+        task { let! result = maintain identity in return mutationToJs result }
+
+    member _.touch(identity: string) : Task<obj> =
+        task { let! result = recordAccess identity in return mutationToJs result }
+
+    member _.fetch(shelfmark: string, notifyAppendFailure: obj -> unit) : Task<obj> =
+        task {
+            match serviceCurrent store with
+            | Error _ -> return createObj [ "kind" ==> "unavailable" ]
+            | Ok state ->
+                let case = state.resolve (256, shelfmark)
+                if isNull case then return createObj [ "kind" ==> "missing" ]
+                else return! fetchPresent notifyAppendFailure case
+        }
