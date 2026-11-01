@@ -4,7 +4,7 @@ import path from 'node:path'
 import { tmpdir } from 'node:os'
 import { createHash } from 'node:crypto'
 import { FileBaseline, FileDiff } from 'wanxiangli/file-baseline'
-import { CasebookSettlementOwner } from 'wanxiangli/casebook'
+import { CasebookSettlementOwner, BookkeeperStaging } from 'wanxiangli/casebook'
 
 const diff = new FileDiff()
 assert.equal(diff.fileDiff('unchanged', 'same\n', 'same\n'), '')
@@ -18,6 +18,20 @@ assert.equal(owner.Observe('event', 'SemanticCut', { message: 'another object' }
 assert.deepEqual(reported, [incident])
 assert.equal(owner.Redeliver('event', incident), 'CaseUnavailableKnown')
 assert.throws(() => new CasebookSettlementOwner(() => {}).Redeliver('event', incident), /original settled owner/)
+
+const staging = new BookkeeperStaging()
+staging.beginTransaction('edit', 'old question', 'old answer')
+const created = staging.edit('edit', key => key)
+assert.equal(created.tag, 0)
+const edit = created.fields[0]
+const program = Function('api', `return new (${edit.runtimeBaseClass})(api)`)(edit.api)
+assert.equal(program.question([['begin', 'end', 'question']]).text('begin', 'end'), 'question')
+program.setQuestion('new question')
+program.setAnswer('new answer')
+assert.equal(program.question().text(), 'old question')
+assert.deepEqual(staging.snapshot('edit').fields[0], ['old question', 'old answer'])
+assert.equal(edit.commit().tag, 0)
+assert.deepEqual(staging.take('edit').fields[0], ['new question', 'new answer'])
 
 const directory = fs.mkdtempSync(path.join(tmpdir(), 'wanxiangli-file-baseline-consumer-'))
 try {

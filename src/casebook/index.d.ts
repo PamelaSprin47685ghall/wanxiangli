@@ -74,12 +74,30 @@ export type FableResult<T> =
   | { readonly tag: 0; readonly fields: [T] }
   | { readonly tag: 1; readonly fields: [string] }
 
+export type CasebookEditFailure = 'set-question-once' | 'set-question-string' | 'set-answer-once' | 'set-answer-string'
+export type CasebookSetResult = { readonly ok: true } | { readonly ok: false; readonly code: 'PROGRAM_FAILED'; readonly reason: string }
+export interface CasebookEdit {
+  readonly api: {
+    readonly bookkeeper: {
+      question(): string
+      answer(): string
+      setQuestion(value: unknown): CasebookSetResult
+      setAnswer(value: unknown): CasebookSetResult
+    }
+  }
+  readonly runtimeBaseClass: string
+  /** Applies this invocation's accepted patches to the current transaction slot, including no changes. */
+  commit(): FableResult<void>
+}
+
 /** 一笔 Bookkeeper 事务的进程内暂存 Case；语义迁移自主仓原 BookkeeperStaging 模块。 */
 export declare class BookkeeperStaging {
   /** 开始暂存事务；同一 txId 重开直接覆盖，touched 归 false。 */
   beginTransaction(txId: string, question: string, answer: string): void
   /** 读取事务的 question/answer，不删除；缺失事务返回逐字错误。 */
   snapshot(txId: string): FableResult<[string, string]>
+  /** Captures the current Q/A; failure prose is requested only when a setter refuses a call. */
+  edit(txId: string, renderFailure: (key: CasebookEditFailure) => string): FableResult<CasebookEdit>
   /** 应用可选补丁；null/undefined 保留旧值。进入有效槽位即记为 touched。 */
   apply(txId: string, question?: string | null, answer?: string | null): FableResult<void>
   /** 取出并删除事务；本次 completion 未写入过则拒绝且不删除。 */

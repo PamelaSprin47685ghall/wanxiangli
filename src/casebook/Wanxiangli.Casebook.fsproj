@@ -5,6 +5,7 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="CasebookEdit.fs" />
     <Compile Include="BookkeeperStaging.fs" />
     <Compile Include="SessionDraftStore.fs" />
     <Compile Include="FetchFlightRegistry.fs" />

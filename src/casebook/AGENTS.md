@@ -4,6 +4,16 @@
 
 `CasebookSettlementOwner` 拥有自己的 conflicts 字典，按 eventId 认领冲突。首次 StorageInvalid 通知并返回 LogScopeFailure；首次语义冲突通知并返回 CaseUnavailable，重复返回 CaseUnavailableKnown；Unscoped 不认领。通知异常被吞掉，不改变结果或已有认领；Redeliver 仅接受原 owner 已认领的同一对象引用。各实例互相隔离，不读取索引或基线。相关用例在 `tests/settlement.test.mjs`，与文件差异计算分开维护。
 
+## 单次案例编辑
+
+Bookkeeper 修改一对问答时，`BookkeeperStaging.edit` 为这次调用取得原始快照，返回独立的 `CasebookEdit`。它私有保存本次 question/answer 补丁与成功设置次数；模型读到的始终是开始时的快照。事务槽仍由 staging 拥有，ProgramSession 仍负责运行和结算。
+
+编辑的 `api` 提供读取与两个 setter，`runtimeBaseClass` 提供原有锚点视图。每个字段只能成功设置一次；首次非法类型不消耗设置次数，重复调用先报重复错误。失败文案在失败发生时才向调用方索取。模型捕获错误后仍可继续程序，不额外把整次编辑标坏。
+
+调用方只在程序成功且返回值解析成功后调用 `commit`。它把两项补丁一起应用到 txId 当前的事务槽；未改字段保留当前值，零 setter 仍标记 touched。原事务被同名重开时，旧编辑按原语义提交到新槽；重复 commit 不增加一次性限制。失败或未提交的调用不改事务；缺失槽继续返回原错误。编辑不启动程序、不读资源、不增加互斥锁或事务代际。
+
+锚点仍按声明顺序在原文中向后定位，保留 RegExp、UTF-16 位置、偏移递归与裁剪、零宽匹配和原错误文字。本能力不承担文件系统锚点规则。接口以 `index.d.ts` 为准。
+
 # AXIOM
 
 1. [使用者] 模型在索引里看到的每个 shelfmark，原样回传给 fetch 时必须找回同一个 Case；索引只给模型 `{shelfmark, question}`，不泄漏会话身份。

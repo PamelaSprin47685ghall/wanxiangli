@@ -1,5 +1,5 @@
 import { FileBaseline, FileDiff, type MaintenanceSummary, type TruncatedDiff } from 'wanxiangli/file-baseline'
-import { CasebookSettlementOwner, type SettlementOutcomeTag } from 'wanxiangli/casebook'
+import { CasebookSettlementOwner, BookkeeperStaging, type CasebookEdit, type CasebookEditFailure, type SettlementOutcomeTag } from 'wanxiangli/casebook'
 
 const diff = new FileDiff()
 const summary: MaintenanceSummary = diff.summarize([diff.fileDiff('file', null, 'text')])
@@ -10,6 +10,23 @@ const incident = { message: 'case conflict' }
 const settled: SettlementOutcomeTag = owner.Observe('event', 'SemanticCut', incident)
 const redelivered: 'CaseUnavailableKnown' = owner.Redeliver('event', incident)
 void settled; void redelivered
+const staging = new BookkeeperStaging()
+staging.beginTransaction('edit', 'question', 'answer')
+const created = staging.edit('edit', (key: CasebookEditFailure): string => key)
+if (created.tag === 0) {
+  const edit: CasebookEdit = created.fields[0]
+  const original: string = edit.api.bookkeeper.question()
+  const runtime: string = edit.runtimeBaseClass
+  edit.api.bookkeeper.setQuestion(original)
+  edit.api.bookkeeper.setAnswer(null)
+  const result = edit.commit()
+  if (result.tag === 1) { const error: string = result.fields[0]; void error }
+  void runtime
+  // @ts-expect-error 补丁缓冲由编辑自己持有。
+  edit.questionPatch = 'outside'
+}
+// @ts-expect-error 错误文案按失败键懒取，不能传预先求值的字符串。
+staging.edit('edit', 'error text')
 // @ts-expect-error 文件状态只接受字符串或 null。
 void diff.fileDiff('file', undefined, 'text')
 // @ts-expect-error 结算消息形状由实例固定。
