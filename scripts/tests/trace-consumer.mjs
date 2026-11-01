@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { Trace } from 'wanxiangli/trace'
+import { Trace, TraceHistory, materializeTraceItems, inspectTraceItems } from 'wanxiangli/trace'
 
 const [runtime, mode, database, checkpointJson] = process.argv.slice(2)
 const id = 'installed-trace'
@@ -7,9 +7,42 @@ const source = Uint8Array.from([...new TextEncoder().encode('\ufeff用户原件\
 const observed = { type: 'MessageObserved', messageId: 'user', role: 'user', origin: 'human', runId: null }
 const confirmed = { type: 'PartConfirmed', messageId: 'user', partId: 'original', index: 0, kind: 'binary', bytes: source }
 const finished = { type: 'MessageFinished', messageId: 'user', partCount: 1 }
-assert.deepEqual(Object.keys(await import('wanxiangli/trace')), ['Trace'])
+assert.deepEqual(Object.keys(await import('wanxiangli/trace')), ['Trace', 'TraceHistory', 'inspectTraceItems', 'materializeTraceItems'])
 
-if (mode === 'isolated') {
+if (mode === 'history') {
+  const metadata = { origin: 'consumer' }
+  const first = new TraceHistory('installed-history').appendPart({
+    sequence: 1n, role: 'user', kind: 'text', toolName: null,
+    bodyRef: 'original', bodyDigest: 'external-digest', descriptor: 'body reference', metadata,
+  })
+  assert.equal(first.ok, true)
+  const opened = first.value.appendOpening({ assignment: '保存原文', requirements: ['固定区间'] })
+  assert.equal(opened.ok, true)
+  const range = opened.value.rangeFrom(0n)
+  const fork = opened.value.appendPart({
+    sequence: 2n, role: 'assistant', kind: 'reasoning', toolName: null,
+    bodyRef: 'later', bodyDigest: 'later-digest', descriptor: 'later reference', metadata: null,
+  })
+  assert.equal(fork.ok, true)
+  const text = '\uFEFF原文\0' + '你😀'.repeat(80000)
+  const reader = async reference => {
+    assert.equal(reference, 'original')
+    return { ok: true, value: text }
+  }
+  const current = await opened.value.materialize(range, reader)
+  const later = await fork.value.materialize(range, reader)
+  assert.equal(current.ok, true)
+  assert.deepEqual(later, current)
+  assert.equal(current.value[0].part.text, text)
+  assert.equal(current.value[0].metadata, metadata)
+  assert.deepEqual(materializeTraceItems(range, current.value), current.value)
+  assert.equal(inspectTraceItems('installed-inspect', null, range, current.value).materializedCount, 1)
+  const ended = fork.value.appendTerminal({ providerRun: 'run', bodyRef: 'end', bodyDigest: 'end-digest' })
+  assert.equal(ended.ok, true)
+  assert.equal(ended.value.terminalFor('run').frontier, 3n)
+  assert.equal(opened.value.entries().length, 1)
+  console.log(JSON.stringify({ runtime, history: true }))
+} else if (mode === 'isolated') {
   const trace = new Trace(id)
   for (const observation of [observed, confirmed, finished]) trace.capture(observation)
   const restored = new Trace(id, trace.records())

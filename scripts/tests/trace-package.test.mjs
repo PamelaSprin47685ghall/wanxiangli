@@ -17,6 +17,26 @@ const succeed = result => {
   return result.stdout
 }
 
+test('installed TraceHistory preserves fixed materialization on Node and Bun', { timeout: 90000 }, async t => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'wanxiangli-trace-history-package-'))
+  t.after(() => rmSync(directory, { recursive: true, force: true }))
+  const packed = packedPackage(succeed(spawnSync('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', directory], { cwd: root, env, encoding: 'utf8', timeout: 30000 })))
+  const consumer = path.join(directory, 'consumer')
+  mkdirSync(consumer)
+  writeFileSync(path.join(consumer, 'package.json'), JSON.stringify({ name: 'trace-history-consumer', private: true, type: 'module' }))
+  succeed(spawnSync('npm', ['install', '--ignore-scripts', '--omit=dev', '--no-audit', '--no-fund', path.join(directory, packed.filename)], { cwd: consumer, env, encoding: 'utf8', timeout: 30000 }))
+  for (const file of ['trace-consumer.mjs', 'trace-consumer.ts']) copyFileSync(path.join(root, 'scripts/tests', file), path.join(consumer, file))
+  succeed(spawnSync(process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), '--noEmit', '--strict', '--target', 'es2022', '--module', 'nodenext', 'trace-consumer.ts'], { cwd: consumer, env, encoding: 'utf8', timeout: 30000 }))
+  const runtimes = [['node', process.execPath]]
+  if (spawnSync('bun', ['--version'], { encoding: 'utf8', env }).status === 0) runtimes.push(['bun', 'bun'])
+  else t.diagnostic('Bun is absent; its TraceHistory consumer is not verified.')
+  for (const [runtime, executable] of runtimes) {
+    const reply = succeed(spawnSync(executable, [path.join(consumer, 'trace-consumer.mjs'), runtime, 'history'], { cwd: tmpdir(), env, encoding: 'utf8', timeout: 15000 }))
+    assert.equal(JSON.parse(reply.trim()).history, true)
+    t.diagnostic(`${runtime}: TraceHistory fixed range and semantic payload passed`)
+  }
+})
+
 test('SPEC[build-005] installed trace preserves bytes after SIGKILL and also works with all other libraries removed', { timeout: 90000, skip: process.platform === 'win32' }, async t => {
   const directory = mkdtempSync(path.join(tmpdir(), 'wanxiangli-trace-package-'))
   t.after(() => rmSync(directory, { recursive: true, force: true }))

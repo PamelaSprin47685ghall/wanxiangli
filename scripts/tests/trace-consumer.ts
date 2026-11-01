@@ -1,4 +1,4 @@
-import { Trace, type Observation, type Cut } from 'wanxiangli/trace'
+import { Trace, TraceHistory, materializeTraceItems, inspectTraceItems, type Observation, type Cut, type HistoryItem } from 'wanxiangli/trace'
 
 const trace = new Trace('typed-trace')
 const before: Cut = trace.head()
@@ -26,3 +26,21 @@ trace.capture({ type: 'MessageObserved', messageId: 's', role: 'system', origin:
 trace.capture({ type: 'RunFinished', runId: 'r', outcome: 'Unknown' })
 // @ts-expect-error 游标值不能替代绑定轨迹与摘要的边界。
 trace.read(0, trace.head())
+
+const history = new TraceHistory('typed-history')
+const appended = history.appendPart({ sequence: 1n, role: 'assistant', kind: 'tool_call', toolName: 'read', bodyRef: 'ref', bodyDigest: 'digest', descriptor: 'reference' }, () => ({ host: 'opaque' }))
+if (appended.ok) {
+  const fixed = appended.value.rangeFrom(0n)
+  const result = await appended.value.materialize(fixed, async () => ({ ok: true, value: '{}' }))
+  if (result.ok) {
+    const items: HistoryItem[] = materializeTraceItems(fixed, result.value)
+    const count: number = inspectTraceItems('typed-items', null, fixed, items).materializedCount
+    void count
+  }
+}
+// @ts-expect-error 语义游标不以 number 传递。
+history.rangeFrom(1)
+// @ts-expect-error 读取失败必须走明确的结果分支。
+history.read([], async () => 'body')
+// @ts-expect-error raw Trace 的 cut 不是语义区间。
+history.slice(trace.head())
