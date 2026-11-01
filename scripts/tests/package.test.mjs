@@ -19,6 +19,31 @@ function succeed(result) {
   return result.stdout
 }
 
+test('installed DispatchAttempt sends and confirms through the public entry', { timeout: 90000 }, async t => {
+  const temporary = mkdtempSync(path.join(tmpdir(), 'wanxiangli-dispatch-package-'))
+  t.after(() => rmSync(temporary, { recursive: true, force: true }))
+  const packed = packedPackage(succeed(spawnSync(npm, ['pack', '--ignore-scripts', '--json', '--pack-destination', temporary], { cwd: root, env: cleanEnvironment, encoding: 'utf8', timeout: 30000 })))
+  assert.ok(packed.files.some(file => file.path === 'dist/dispatch/Dispatch.js'))
+  assert.ok(packed.files.some(file => file.path === 'src/dispatch/index.d.ts'))
+  const consumer = path.join(temporary, 'consumer')
+  mkdirSync(consumer)
+  writeFileSync(path.join(consumer, 'package.json'), JSON.stringify({ name: 'dispatch-consumer', private: true, type: 'module' }))
+  succeed(spawnSync(npm, ['install', '--ignore-scripts', '--omit=dev', '--no-audit', '--no-fund', path.join(temporary, packed.filename)], { cwd: consumer, env: cleanEnvironment, encoding: 'utf8', timeout: 30000 }))
+  for (const file of ['dispatch-attempt-consumer.mjs', 'dispatch-attempt-consumer.ts']) {
+    copyFileSync(path.join(root, 'scripts/tests', file), path.join(consumer, file))
+  }
+  succeed(spawnSync(process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), '--noEmit', '--strict', '--target', 'es2022', '--module', 'nodenext', 'dispatch-attempt-consumer.ts'], { cwd: consumer, env: cleanEnvironment, encoding: 'utf8', timeout: 30000 }))
+  const runtimes = [['node', process.execPath]]
+  if (spawnSync('bun', ['--version'], { env: cleanEnvironment, encoding: 'utf8' }).status === 0) runtimes.push(['bun', 'bun'])
+  else t.diagnostic('Bun is absent; its dispatch consumer was not run.')
+  for (const [name, executable] of runtimes) {
+    await t.test(name, () => {
+      const output = succeed(spawnSync(executable, [path.join(consumer, 'dispatch-attempt-consumer.mjs')], { cwd: tmpdir(), env: cleanEnvironment, encoding: 'utf8', timeout: 10000 }))
+      assert.deepEqual(JSON.parse(output), { dispatchAttempt: true })
+    })
+  }
+})
+
 test('installed AttachmentSessions creates, reuses, and retires through the public entry', { timeout: 90000 }, async t => {
   const temporary = mkdtempSync(path.join(tmpdir(), 'wanxiangli-attachment-package-'))
   t.after(() => rmSync(temporary, { recursive: true, force: true }))

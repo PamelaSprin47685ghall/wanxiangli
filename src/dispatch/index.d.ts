@@ -145,3 +145,63 @@ export declare class PromptPhysicalAcceptance {
 }
 
 export declare const promptPhysicalAcceptance: PromptPhysicalAcceptance
+
+export type DispatchResult<T> =
+  | { readonly ok: true; readonly value: T }
+  | { readonly ok: false; readonly error: string }
+export type DispatchSendOutcome =
+  | { readonly kind: 'AdmittedWithReceipt'; readonly receipt: string }
+  | { readonly kind: 'AdmittedWithPhysicalMessage'; readonly physicalUserMessageId: string }
+  | { readonly kind: 'Retryable' | 'Fatal' | 'AcceptanceUnknown'; readonly reason: string }
+export type DispatchLateVerdict =
+  | { readonly kind: 'OwnedSettled' }
+  | { readonly kind: 'Refused' | 'OutcomeUnknown'; readonly reason: string }
+export type DispatchSendObservation =
+  | { readonly kind: 'Sending'; readonly key: string }
+  | { readonly kind: 'Answered'; readonly key: string; readonly outcome: DispatchSendOutcome }
+export interface DispatchAcceptanceObserver {
+  notify(physicalUserMessageId: string): void
+  own(registration: IDisposableHandle): void
+  readonly budget?: number | null
+}
+export interface DispatchAttemptSpec {
+  readonly key: string
+  readonly mode: 'await' | 'detached'
+  readonly observer?: DispatchAcceptanceObserver | null
+  readonly observed?: ((observation: DispatchSendObservation) => void) | null
+  readonly onFailure?: ((verdict: DispatchLateVerdict) => void | Promise<void>) | null
+}
+export type DispatchAbandonRequest =
+  | { readonly kind: 'send-failed'; readonly reason: string }
+  | { readonly kind: 'superseded' }
+export interface DispatchAttemptEffects {
+  subscribe(): IDisposableHandle
+  /** Must invoke the transport synchronously before returning its Promise. */
+  send(late: ((verdict: DispatchLateVerdict) => Promise<void>) | null): Promise<DispatchSendOutcome>
+  submitted(receipt: string): Promise<DispatchResult<void>>
+  acceptPhysical(physicalUserMessageId: string): Promise<DispatchResult<void>>
+  /** Keeps the caller's existing cancellation then durable append operation. */
+  abandon(request: DispatchAbandonRequest): Promise<DispatchResult<void>>
+  diagnostic(event: { readonly kind: 'outcome-unknown' | 'abandon-uncommitted' | 'observer-failed'; readonly reason: string }): void
+}
+export type DispatchAdmission<Failure> =
+  | { readonly kind: 'allowed' }
+  | { readonly kind: 'failed'; readonly reason: string }
+  | { readonly kind: 'rejected'; readonly failure: Failure }
+export interface DispatchContinuationEffects<Failure> extends DispatchAttemptEffects {
+  /** Synchronous; an allowed answer is followed immediately by send. */
+  admit(): DispatchAdmission<Failure>
+}
+export type DispatchInitialOutcome =
+  | { readonly kind: 'Sent'; readonly key: string }
+  | { readonly kind: 'Failed'; readonly reason: string }
+export type DispatchAttemptOutcome<Failure> = DispatchInitialOutcome
+  | { readonly kind: 'NotSent'; readonly reason: string }
+  | { readonly kind: 'AdmissionRejected'; readonly failure: Failure }
+
+/** Reentrant cooperation over the supplied acceptance owner; each call retains its own subscriptions. */
+export declare class DispatchAttempt {
+  constructor(acceptance: PromptPhysicalAcceptance)
+  sendInitial(spec: DispatchAttemptSpec, effects: DispatchAttemptEffects): Promise<DispatchInitialOutcome>
+  sendContinuation<Failure>(spec: DispatchAttemptSpec, effects: DispatchContinuationEffects<Failure>): Promise<DispatchAttemptOutcome<Failure>>
+}
