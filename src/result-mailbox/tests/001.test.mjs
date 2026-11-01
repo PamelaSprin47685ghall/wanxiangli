@@ -121,16 +121,18 @@ test('三种同轮竞态都先交回已到达的结果', async () => {
 })
 
 test('跨微任务到达且在 completion 结算前的结果仍优先', async () => {
-  for (const depth of [1, 2]) {
+  for (const depth of [1, 2, 3]) {
     const mailbox = new ResultMailbox()
     mailbox.start()
     const interrupt = deferred()
     const join = mailbox.beginJoin(1, interrupt.promise)
     interrupt.resolve('input')
-    const publish = () => mailbox.publish(depth)
-    if (depth === 1) queueMicrotask(publish)
-    else queueMicrotask(() => queueMicrotask(publish))
+    const publication = (async () => {
+      for (let step = 0; step < depth; step++) await Promise.resolve()
+      mailbox.publish(depth)
+    })()
     assert.deepEqual(await join.completion, items([depth]))
+    await publication
   }
 })
 

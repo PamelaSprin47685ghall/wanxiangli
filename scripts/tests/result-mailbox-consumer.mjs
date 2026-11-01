@@ -33,4 +33,15 @@ mailbox.publish(value)
 assert.equal((await afterFailure.completion).items[0], value)
 assert.deepEqual(mailbox.beginJoin(8, Promise.reject(new Error('ignored idle interrupt'))), { kind: 'ready', result: { kind: 'empty' } })
 await new Promise(resolve => setImmediate(resolve))
+
+mailbox.start()
+const racingInterrupt = Promise.withResolvers()
+const racing = mailbox.beginJoin(8, racingInterrupt.promise)
+racingInterrupt.resolve(reason)
+const publication = (async () => {
+  for (let step = 0; step < 3; step++) await Promise.resolve()
+  mailbox.publish(value)
+})()
+assert.equal((await racing.completion).items[0], value)
+await publication
 console.log('result-mailbox consumer passed')

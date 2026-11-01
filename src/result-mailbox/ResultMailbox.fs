@@ -56,6 +56,9 @@ module private Mailboxes =
     [<Emit("Promise.race([$0.then(() => ({kind: 'empty'})), $1.then(reason => ({kind: 'interrupted', reason}))])")>]
     let private race (_signal: Task<unit>) (_interrupt: obj) : Task<obj> = jsNative
 
+    [<Emit("$0.finally($1)")>]
+    let private withCleanup (_race: Task<obj>) (_cleanup: unit -> unit) : Task<obj> = jsNative
+
     let private drainState (mailbox: State) maxCount =
         let values = ResizeArray<obj>()
         let mutable count = 0
@@ -87,13 +90,10 @@ module private Mailboxes =
 
     let private completion (mailbox: State) (waiter: Signal) maxCount interrupt =
         task {
-            try
-                let! winner = race waiter.Task interrupt
-                let values = drainState mailbox maxCount
-                return if values.Length > 0 then items values else winner
-            finally
-                // 所有出口都撤回本次 waiter；异常或已有结果不能留下吞唤醒的旧等待者。
-                dropWaiter mailbox waiter
+            // 先结束本次注册，再排空；正常结果与异常都不能留下吞唤醒的旧 waiter。
+            let! winner = withCleanup (race waiter.Task interrupt) (fun () -> dropWaiter mailbox waiter)
+            let values = drainState mailbox maxCount
+            return if values.Length > 0 then items values else winner
         }
 
     let beginJoin owner maxCount interrupt =

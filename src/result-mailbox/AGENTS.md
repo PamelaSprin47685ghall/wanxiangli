@@ -4,7 +4,7 @@
 
 每个实例独占 FIFO、活动工作计数和等待者。start 增加活动数；publish 入队、把活动数减至最低零并只唤醒一个等待者。无 start 的 publish 仍可入队，不设配对检查。pendingCount 是排队结果数，不是等待者数。
 
-drain 按调用方数量排空，不套产品上限。beginJoin 先排空：有结果立即 ready/items；没有可取结果且无活动工作则 ready/empty。否则注册等待，返回 pending/completion。醒来再排空，已到达的结果优先于普通中断；没有结果才交回 interrupted 或 empty。空结果不是业务结果，也不保证所有工作都已结束。
+drain 按调用方数量排空，不套产品上限。beginJoin 先排空：有结果立即 ready/items；没有可取结果且无活动工作则 ready/empty。否则注册等待，返回 pending/completion。竞争结束先清理本次注册，再排空，包含清理期间到达的结果；已到达的结果优先于普通中断，没有结果才交回 interrupted 或 empty。空结果不是业务结果，也不保证所有工作都已结束。
 
 中断只退出本次等待。普通中断、已有结果优先和 interrupt 拒绝的出口都会撤回本次 waiter，避免旧等待者吞掉下一次 publish。拒绝仍以原错误对象向外传播。ready 快路径也处理未消费 interrupt 的拒绝，避免未处理异常，但不改变 ready 结果。
 
