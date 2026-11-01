@@ -34,7 +34,7 @@ function succeed(result) {
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
 }
 
-for (const name of ['lifecycle', 'eventstore', 'runtime', 'trace', 'session', 'delivery', 'degeneration', 'ablation', 'routing', 'projection', 'authority', 'permit', 'capacity', 'admission-queue', 'dispatch', 'borrowing', 'run-witness', 'git', 'failure', 'attachment-lease', 'warm-start', 'failure-budget', 'delegate-batch', 'fission-group', 'ordinal', 'bayes', 'llm-text', 'bounded-map', 'returned-material', 'keyed-serial', 'file-lock', 'result-mailbox', 'task-scope']) {
+for (const name of ['lifecycle', 'eventstore', 'runtime', 'trace', 'session', 'delivery', 'degeneration', 'ablation', 'projection', 'authority', 'permit', 'capacity', 'admission-queue', 'dispatch', 'borrowing', 'run-witness', 'git', 'failure', 'attachment-lease', 'warm-start', 'failure-budget', 'delegate-batch', 'fission-group', 'ordinal', 'bayes', 'llm-text', 'bounded-map', 'returned-material', 'keyed-serial', 'file-lock', 'result-mailbox', 'task-scope']) {
   test(`SPEC[build-001] ${name} compiles and runs its own tests without any sibling source`, { timeout: 90000 }, t => {
     const directory = fixture(t, [name])
     assert.deepEqual(readdirSync(path.join(directory, 'src')), [name])
@@ -53,6 +53,18 @@ for (const name of ['lifecycle', 'eventstore', 'runtime', 'trace', 'session', 'd
     }
   })
 }
+
+test('routing compiles with only public permit, queue, borrowing and run artifacts', { timeout: 90000 }, t => {
+  const directory = fixture(t, ['routing'])
+  const dependencies = ['permit', 'admission-queue', 'borrowing', 'run-witness']
+  for (const name of dependencies) cpSync(path.join(root, 'dist', name), path.join(directory, 'dist', name), { recursive: true })
+  succeed(run(directory, ['scripts/build.mjs', 'routing']))
+  assert.deepEqual(readdirSync(path.join(directory, 'src')), ['routing'])
+  succeed(run(directory, ['--test', 'src/routing/tests/execution.test.mjs']))
+  assert.deepEqual(readdirSync(path.join(directory, 'dist')).sort(), [...dependencies, 'routing'].sort())
+  const artifact = readFileSync(path.join(directory, 'dist/routing/RoutingProtocol.js'), 'utf8')
+  for (const name of dependencies) assert.match(artifact, new RegExp(`from ["']wanxiangli/${name}["']`))
+})
 
 test('handle-lifecycle compiles with only public events and returned-material artifacts', { timeout: 90000 }, t => {
   const directory = fixture(t, ['handle-lifecycle'])
