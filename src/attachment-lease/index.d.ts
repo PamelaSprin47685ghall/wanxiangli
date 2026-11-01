@@ -1,7 +1,5 @@
 /**
- * wanxiangli/attachment-lease — which child one Attached kind's lease uses, and what a
- * fresh child owes when its association fails (vibe-fs CUT-12 sub-loop 3;
- * managed-session-lifecycle [001]/[003]; Package-21: in-process lease registry and single-flight).
+ * Child-session selection, shared establishment, reuse, and retirement.
  */
 export interface LeaseChild {
   readonly sessionId: string
@@ -46,7 +44,7 @@ export interface LeaseOwnerKey {
 export interface StoredLeaseRecord extends StoredLease, LeaseOwnerKey {}
 
 /**
- * Package-21: In-process lease registry and single-flight coordination owner.
+ * In-process lease registry and single-flight coordination owner.
  * Stores bindings by (owner, kind) and coordinates concurrent ensures without duplicate child creation.
  */
 export declare class AttachmentLeaseRegistry {
@@ -64,3 +62,75 @@ export declare class AttachmentLeaseRegistry {
 }
 
 export declare const attachmentLeaseRegistry: AttachmentLeaseRegistry
+
+export type AttachmentResult<T> =
+  | { readonly ok: true; readonly value: T }
+  | { readonly ok: false; readonly error: string }
+
+export interface AttachmentSessionLease {
+  readonly sessionId: string
+  readonly origin: LeaseOrigin
+  readonly agent: string
+}
+
+export interface AttachedSessionRequest extends LeaseOwnerKey {
+  readonly agent: string
+  readonly directory: string | null
+}
+
+export interface AssociatedSessionRequest extends AttachedSessionRequest {
+  readonly title: string
+  readonly restoreHint: string | null
+}
+
+export interface AttachmentCreateRequest {
+  readonly owner: string
+  readonly agent: string
+  readonly directory: string | null
+}
+
+export interface AttachmentLinkRequest {
+  readonly owner: string
+  readonly sessionId: string
+  readonly agent: string
+}
+
+export interface AttachedSessionEffects {
+  isUsable(sessionId: string): boolean
+  /** The adapter supplies an exact match or no association; observation errors stay errors. */
+  observe(request: LeaseOwnerKey & { readonly agent: string }): Promise<AttachmentResult<string | null>>
+  create(request: AttachmentCreateRequest): Promise<AttachmentResult<string>>
+  link(request: AttachmentLinkRequest): Promise<AttachmentResult<void>>
+}
+
+export interface AttachmentRetireEffects {
+  abort(request: { readonly sessionId: string }): Promise<AttachmentResult<void>>
+  close(request: { readonly owner: string }): Promise<AttachmentResult<void>>
+}
+
+export interface AssociatedSessionEffects extends AttachmentRetireEffects {
+  list(request: { readonly owner: string }): Promise<AttachmentResult<readonly LeaseChild[]>>
+  create(request: AttachmentCreateRequest): Promise<AttachmentResult<string>>
+  link(request: AttachmentLinkRequest): Promise<AttachmentResult<void>>
+  rejection(request: LeaseOwnerKey & {
+    readonly child: string
+    readonly rejection: 'Conflicting' | 'Ambiguous'
+  }): string
+}
+
+/** Cooperates through the supplied registry; it owns no second binding or flight table. */
+export declare class AttachmentSessions {
+  constructor(registry: AttachmentLeaseRegistry)
+  /** Reuses a usable binding with its original agent. Observation failure retains the flight. */
+  getOrCreate(request: AttachedSessionRequest, effects: AttachedSessionEffects): Promise<AttachmentResult<AttachmentSessionLease>>
+  /** Observes the association on each call; clears its flight when establishment settles. */
+  ensureAssociated(request: AssociatedSessionRequest, effects: AssociatedSessionEffects): Promise<AttachmentResult<AttachmentSessionLease>>
+  /** Aborts, closes, then removes the binding. A rejected operation stops this sequence. */
+  retireAssociated(owner: string, kind: string, effects: AttachmentRetireEffects): Promise<AttachmentResult<void>>
+  tryFind(owner: string, kind: string, isUsable: (sessionId: string) => boolean): AttachmentSessionLease | null
+  tryFindOwner(sessionId: string, kind: string): string | null
+  remove(owner: string, kind: string): boolean
+  removeByChild(sessionId: string): boolean
+  /** Removes bindings for these kinds without clearing any flight or another kind. */
+  clearKinds(kinds: readonly string[]): void
+}

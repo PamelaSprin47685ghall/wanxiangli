@@ -19,6 +19,31 @@ function succeed(result) {
   return result.stdout
 }
 
+test('installed AttachmentSessions creates, reuses, and retires through the public entry', { timeout: 90000 }, async t => {
+  const temporary = mkdtempSync(path.join(tmpdir(), 'wanxiangli-attachment-package-'))
+  t.after(() => rmSync(temporary, { recursive: true, force: true }))
+  const packed = packedPackage(succeed(spawnSync(npm, ['pack', '--ignore-scripts', '--json', '--pack-destination', temporary], { cwd: root, env: cleanEnvironment, encoding: 'utf8', timeout: 30000 })))
+  assert.ok(packed.files.some(file => file.path === 'dist/attachment-lease/AttachmentLeaseLaw.js'))
+  assert.ok(packed.files.some(file => file.path === 'src/attachment-lease/index.d.ts'))
+  const consumer = path.join(temporary, 'consumer')
+  mkdirSync(consumer)
+  writeFileSync(path.join(consumer, 'package.json'), JSON.stringify({ name: 'attachment-consumer', private: true, type: 'module' }))
+  succeed(spawnSync(npm, ['install', '--ignore-scripts', '--omit=dev', '--no-audit', '--no-fund', path.join(temporary, packed.filename)], { cwd: consumer, env: cleanEnvironment, encoding: 'utf8', timeout: 30000 }))
+  for (const file of ['attachment-sessions-consumer.mjs', 'attachment-sessions-consumer.ts']) {
+    copyFileSync(path.join(root, 'scripts/tests', file), path.join(consumer, file))
+  }
+  succeed(spawnSync(process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), '--noEmit', '--strict', '--target', 'es2022', '--module', 'nodenext', 'attachment-sessions-consumer.ts'], { cwd: consumer, env: cleanEnvironment, encoding: 'utf8', timeout: 30000 }))
+  const runtimes = [['node', process.execPath]]
+  if (spawnSync('bun', ['--version'], { env: cleanEnvironment, encoding: 'utf8' }).status === 0) runtimes.push(['bun', 'bun'])
+  else t.diagnostic('Bun is absent; its attachment consumer was not run.')
+  for (const [name, executable] of runtimes) {
+    await t.test(name, () => {
+      const output = succeed(spawnSync(executable, [path.join(consumer, 'attachment-sessions-consumer.mjs')], { cwd: tmpdir(), env: cleanEnvironment, encoding: 'utf8', timeout: 10000 }))
+      assert.deepEqual(JSON.parse(output), { attachmentSessions: true })
+    })
+  }
+})
+
 test('SPEC[build-002] an installed tarball survives a real effect and process death without dispatching twice', { timeout: 90000, skip: process.platform === 'win32' }, async t => {
   const temporary = mkdtempSync(path.join(tmpdir(), 'wanxiangli-package-'))
   t.after(() => rmSync(temporary, { recursive: true, force: true }))

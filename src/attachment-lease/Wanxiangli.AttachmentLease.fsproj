@@ -8,6 +8,7 @@
     <Compile Include="AttachmentLeaseRegistry.fs" />
     <Compile Include="AttachmentLeaseLaw.fs" />
     <PackageExport Include="AttachmentLeaseLaw.fs" Member="AttachmentLeaseLaw" />
+    <PackageExport Include="AttachmentLeaseLaw.fs" Member="AttachmentSessions" />
     <PackageExport Include="AttachmentLeaseRegistry.fs" Member="AttachmentLeaseRegistry" />
     <PackageExport Include="AttachmentLeaseRegistry.fs" Member="attachmentLeaseRegistry" />
   </ItemGroup>

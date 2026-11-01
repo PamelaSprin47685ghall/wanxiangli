@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { AttachmentLeaseRegistry, attachmentLeaseRegistry } from 'wanxiangli/attachment-lease'
+import { AttachmentLeaseRegistry, AttachmentSessions, attachmentLeaseRegistry } from 'wanxiangli/attachment-lease'
 
 test('SPEC[attachment-lease-2] bind / tryFind / remove 基本生命周期与同键覆写', () => {
   const reg = new AttachmentLeaseRegistry()
@@ -197,4 +197,238 @@ test('SPEC[attachment-lease-2] clear 同时清空 bindings 与 flights，多实�
   assert.throws(() => reg1.bind('o', null, {}), /malformed kind/)
   assert.throws(() => reg1.bind('o', 'k', null), /malformed lease/)
   assert.throws(() => reg1.bind('o', 'k', { sessionId: 123 }), /malformed lease.sessionId/)
+})
+
+const ok = value => ({ ok: true, value })
+const error = reason => ({ ok: false, error: reason })
+const request = { owner: 'owner', kind: 'worker', agent: 'agent', directory: null }
+const associatedRequest = { ...request, title: 'title', restoreHint: null }
+const deferred = () => {
+  let resolve
+  const promise = new Promise(done => { resolve = done })
+  return { promise, resolve }
+}
+
+test('AttachmentSessions shares establishment, keeps the resident agent, and isolates another owner', async () => {
+  const registry = new AttachmentLeaseRegistry()
+  const sessions = new AttachmentSessions(registry)
+  const started = deferred()
+  const release = deferred()
+  const observed = []
+  const created = []
+  const linked = []
+  const effects = {
+    isUsable: () => true,
+    observe: async input => { observed.push(input); return ok(null) },
+    create: async input => {
+      created.push(input)
+      if (input.owner === 'owner') { started.resolve(); await release.promise }
+      return ok(`${input.owner}-child`)
+    },
+    link: async input => { linked.push(input); return ok() },
+  }
+  const first = sessions.getOrCreate(request, effects)
+  const second = sessions.getOrCreate({ ...request, agent: 'later-agent' }, effects)
+  await started.promise
+  assert.equal(registry.hasInFlight('owner', 'worker'), true)
+  const independent = await sessions.getOrCreate({ ...request, owner: 'other' }, effects)
+  assert.equal(independent.value.sessionId, 'other-child')
+  release.resolve()
+  const [initial, concurrent] = await Promise.all([first, second])
+  assert.strictEqual(initial, concurrent)
+  assert.deepEqual(initial, ok({ sessionId: 'owner-child', origin: 'Created', agent: 'agent' }))
+  assert.deepEqual(await sessions.getOrCreate({ ...request, agent: 'new-agent' }, effects), initial)
+  assert.deepEqual(observed, [
+    { owner: 'owner', kind: 'worker', agent: 'agent' },
+    { owner: 'other', kind: 'worker', agent: 'agent' },
+  ])
+  assert.deepEqual(created, [
+    { owner: 'owner', agent: 'agent', directory: null },
+    { owner: 'other', agent: 'agent', directory: null },
+  ])
+  assert.deepEqual(linked.map(item => item.owner), ['other', 'owner'])
+  assert.equal(registry.inFlightCount(), 0)
+  const rejected = new Error('usable failed')
+  assert.throws(() => sessions.getOrCreate(request, { ...effects, isUsable() { throw rejected } }), candidate => candidate === rejected)
+  assert.throws(() => sessions.tryFind('owner', 'worker', () => { throw rejected }), candidate => candidate === rejected)
+})
+
+for (const rejected of [false, true]) {
+  test(`AttachmentSessions retains an observation ${rejected ? 'rejection' : 'error'} flight`, async () => {
+    const registry = new AttachmentLeaseRegistry()
+    const sessions = new AttachmentSessions(registry)
+    const failure = new Error('observation rejected')
+    let observations = 0
+    const effects = {
+      isUsable: () => true,
+      observe: async () => { observations++; if (rejected) throw failure; return error('observation failed') },
+      create: async () => assert.fail('observation did not allow creation'),
+      link: async () => assert.fail('observation did not allow linking'),
+    }
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (rejected) await assert.rejects(sessions.getOrCreate(request, effects), candidate => candidate === failure)
+      else assert.deepEqual(await sessions.getOrCreate(request, effects), error('observation failed'))
+    }
+    assert.equal(observations, 1)
+    assert.equal(registry.hasInFlight('owner', 'worker'), true)
+    assert.equal(sessions.tryFind('owner', 'worker', () => true), null)
+  })
+}
+
+for (const rejected of [false, true]) {
+  test(`AttachmentSessions clears a creation ${rejected ? 'rejection' : 'error'} flight after observation`, async () => {
+    const registry = new AttachmentLeaseRegistry()
+    const sessions = new AttachmentSessions(registry)
+    const failure = new Error('creation rejected')
+    let creations = 0
+    const effects = {
+      isUsable: () => true,
+      observe: async () => ok(null),
+      create: async () => { creations++; if (rejected) throw failure; return error('creation failed') },
+      link: async () => assert.fail('creation did not allow linking'),
+    }
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (rejected) await assert.rejects(sessions.getOrCreate(request, effects), candidate => candidate === failure)
+      else assert.deepEqual(await sessions.getOrCreate(request, effects), error('creation failed'))
+      assert.equal(registry.hasInFlight('owner', 'worker'), false)
+    }
+    assert.equal(creations, 2)
+  })
+}
+
+const associatedEffects = (log, overrides = {}) => ({
+  list: async input => { log.push(['list', input]); return ok([]) },
+  create: async input => { log.push(['create', input]); return ok('created-child') },
+  abort: async input => { log.push(['abort', input]); return ok() },
+  link: async input => { log.push(['link', input]); return ok() },
+  close: async input => { log.push(['close', input]); return ok() },
+  rejection: input => `${input.rejection}:${input.owner}:${input.kind}:${input.child}`,
+  ...overrides,
+})
+
+const cleanupCases = [
+  { origin: 'Replacement', step: 'close', rejected: false, abortRejected: false, expected: ['list', 'create', 'close', 'abort'] },
+  { origin: 'Replacement', step: 'link', rejected: false, abortRejected: false, expected: ['list', 'create', 'close', 'link', 'abort'] },
+  { origin: 'Created', step: 'link', rejected: false, abortRejected: true, expected: ['list', 'create', 'link', 'abort'] },
+  { origin: 'Replacement', step: 'close', rejected: true, expected: ['list', 'create', 'close'] },
+  { origin: 'Created', step: 'link', rejected: true, expected: ['list', 'create', 'link'] },
+  { origin: 'Reused', step: 'link', rejected: false, expected: ['list', 'link'] },
+  { origin: 'Reused', step: 'link', rejected: true, expected: ['list', 'link'] },
+]
+for (const scenario of cleanupCases) {
+  test(`AttachmentSessions ${scenario.origin} ${scenario.step} ${scenario.rejected ? 'rejection' : 'error'} cleanup, abort rejects=${!!scenario.abortRejected}`, async () => {
+    const registry = new AttachmentLeaseRegistry()
+    const sessions = new AttachmentSessions(registry)
+    const log = []
+    const failure = new Error('operation rejected')
+    const abortFailure = new Error('abort rejected')
+    const effects = associatedEffects(log, {
+      list: async input => {
+        log.push(['list', input])
+        return ok(scenario.origin === 'Reused' ? [{ sessionId: 'hint', agent: 'agent', title: 'title' }] : [])
+      },
+      [scenario.step]: async input => {
+        log.push([scenario.step, input])
+        if (scenario.rejected) throw failure
+        return error('original error')
+      },
+      abort: async input => {
+        log.push(['abort', input])
+        if (scenario.abortRejected) throw abortFailure
+        return error('ignored abort error')
+      },
+    })
+    const pending = sessions.ensureAssociated({ ...associatedRequest, restoreHint: scenario.origin === 'Created' ? null : 'hint' }, effects)
+    if (scenario.rejected) await assert.rejects(pending, candidate => candidate === failure)
+    else if (scenario.abortRejected) await assert.rejects(pending, candidate => candidate === abortFailure)
+    else assert.deepEqual(await pending, error('original error'))
+    assert.deepEqual(log.map(([step]) => step), scenario.expected)
+    assert.equal(registry.hasInFlight('owner', 'worker'), false)
+    assert.equal(registry.tryFind('owner', 'worker'), undefined)
+  })
+}
+
+test('AttachmentSessions preserves a replacement association and uses adapter rejection text', async () => {
+  const registry = new AttachmentLeaseRegistry()
+  const sessions = new AttachmentSessions(registry)
+  const log = []
+  const replaced = await sessions.ensureAssociated({ ...associatedRequest, restoreHint: 'gone' }, associatedEffects(log))
+  assert.deepEqual(replaced, ok({ sessionId: 'created-child', origin: 'Replacement', agent: 'agent' }))
+  assert.deepEqual(log.map(([step]) => step), ['list', 'create', 'close', 'link'])
+  assert.deepEqual(log[3][1], { owner: 'owner', sessionId: 'created-child', agent: 'agent' })
+  for (const children of [
+    [{ sessionId: 'gone', agent: 'different', title: 'title' }],
+    [{ sessionId: 'gone' }, { sessionId: 'gone' }],
+  ]) {
+    const effects = associatedEffects([], { list: async () => ok(children) })
+    const result = await sessions.ensureAssociated({ ...associatedRequest, restoreHint: 'gone' }, effects)
+    assert.deepEqual(result, error(`${children.length === 1 ? 'Conflicting' : 'Ambiguous'}:owner:worker:gone`))
+    assert.equal(registry.tryFind('owner', 'worker').sessionId, 'created-child')
+    assert.equal(registry.hasInFlight('owner', 'worker'), false)
+  }
+})
+
+for (const failAt of ['none', 'errors', 'abort', 'close']) {
+  test(`AttachmentSessions retirement keeps the existing cleanup order when ${failAt}`, async () => {
+    const registry = new AttachmentLeaseRegistry()
+    const sessions = new AttachmentSessions(registry)
+    registry.bind('owner', 'worker', { sessionId: 'child', origin: 'Created', agent: 'agent' })
+    const flight = {}
+    registry.ensure('owner', 'worker', () => flight)
+    const steps = []
+    const failure = new Error(`${failAt} rejected`)
+    const effects = {
+      abort: async input => {
+        assert.deepEqual(input, { sessionId: 'child' })
+        steps.push('abort')
+        if (failAt === 'abort') throw failure
+        return failAt === 'errors' ? error('abort error') : ok()
+      },
+      close: async input => {
+        assert.deepEqual(input, { owner: 'owner' })
+        assert.equal(registry.tryFind('owner', 'worker').sessionId, 'child')
+        assert.equal(registry.ensure('owner', 'worker', () => assert.fail('flight was removed early')), flight)
+        steps.push('close')
+        if (failAt === 'close') throw failure
+        return failAt === 'errors' ? error('close error') : ok()
+      },
+    }
+    const pending = sessions.retireAssociated('owner', 'worker', effects)
+    if (failAt === 'abort' || failAt === 'close') {
+      await assert.rejects(pending, candidate => candidate === failure)
+      assert.equal(registry.tryFind('owner', 'worker').sessionId, 'child')
+      assert.equal(registry.hasInFlight('owner', 'worker'), true)
+    } else {
+      assert.deepEqual(await pending, failAt === 'errors' ? error('abort error') : ok())
+      assert.equal(registry.tryFind('owner', 'worker'), undefined)
+      assert.equal(registry.hasInFlight('owner', 'worker'), false)
+    }
+    assert.deepEqual(steps, failAt === 'abort' ? ['abort'] : ['abort', 'close'])
+  })
+}
+
+test('AttachmentSessions removes only requested bindings and closes an absent association after clearing its flight', async () => {
+  const registry = new AttachmentLeaseRegistry()
+  const sessions = new AttachmentSessions(registry)
+  const lease = { sessionId: 'child', origin: 'Created', agent: 'agent' }
+  registry.bind('owner', 'worker', lease)
+  registry.bind('other', 'observer', lease)
+  registry.ensure('owner', 'worker', () => ({}))
+  assert.equal(sessions.tryFindOwner('child', 'observer'), 'other')
+  assert.equal(sessions.tryFindOwner('child', 'missing'), null)
+  assert.equal(sessions.tryFind('owner', 'worker', () => false), null)
+  sessions.clearKinds(['worker'])
+  assert.equal(registry.tryFind('owner', 'worker'), undefined)
+  assert.equal(registry.hasInFlight('owner', 'worker'), true)
+  assert.equal(registry.tryFind('other', 'observer').sessionId, 'child')
+  assert.equal(sessions.removeByChild('child'), true)
+  assert.equal(sessions.removeByChild('child'), false)
+  assert.deepEqual(await sessions.retireAssociated('owner', 'worker', {
+    abort: async () => assert.fail('no resident child'),
+    close: async input => {
+      assert.deepEqual(input, { owner: 'owner' })
+      assert.equal(registry.hasInFlight('owner', 'worker'), false)
+      return error('close failed')
+    },
+  }), error('close failed'))
 })
