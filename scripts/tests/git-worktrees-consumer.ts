@@ -1,4 +1,4 @@
-import { GitWorktrees, type Command, type Result, type WorktreeResource } from 'wanxiangli/git-worktrees'
+import { GitWorktrees, type Command, type WorktreeResult as Result, type WorktreeResource } from 'wanxiangli/git'
 
 const service = new GitWorktrees('/repo', async (command: Command) => {
   const cwd: string | undefined = command.cwd

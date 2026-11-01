@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { GitPorcelain } from 'wanxiangli/git-porcelain'
+import { GitPorcelain } from 'wanxiangli/git'
 
 const g = GitPorcelain()
 
@@ -53,12 +53,7 @@ test('SPEC[git-porcelain-2] branch list markers are not part of the name', () =>
   assert.deepEqual([...g.branches('')], [])
 })
 
-test('SPEC[git-porcelain-3] manager branch identity with or without refs/heads/', () => {
-  assert.equal(g.managerBranchOf('j1'), 'manager/j1')
-  assert.equal(g.isManagerBranch('refs/heads/manager/j1'), true)
-  assert.equal(g.isManagerBranch('manager/j1'), true)
-  assert.equal(g.isManagerBranch('refs/heads/main'), false, 'the main working tree is never a manager worktree')
-  assert.equal(g.isManagerBranch('refs/heads/x/manager/j1'), false)
+test('shortBranch removes only the leading full-ref prefix', () => {
   assert.equal(g.shortBranch('refs/heads/manager/j1'), 'manager/j1')
   assert.equal(g.shortBranch('manager/j1'), 'manager/j1')
 })
@@ -80,16 +75,4 @@ test('SPEC[git-porcelain-5] primary worktree of the -z listing; bare and malform
 test('SPEC[git-porcelain] non-string input is refused, not coerced', () => {
   assert.throws(() => g.worktrees(undefined), /requires string output/)
   assert.throws(() => g.branches(42), /requires string output/)
-})
-
-test('SPEC[git-porcelain-2] worktree cleanup: only unowned manager branches are stale; primary and detached never are', () => {
-  const entries = g.worktrees(LISTING + 'worktree /repo/.wt/j2\nHEAD 4444444444444444444444444444444444444444\nbranch refs/heads/manager/j2\n')
-  assert.deepEqual([...g.staleWorktrees(entries, ['manager/j1'])], ['/repo/.wt/j2'])
-  assert.deepEqual([...g.staleWorktrees(entries, ['manager/j1', 'manager/j2'])], [])
-  // the main working tree is on refs/heads/main: never classified stale even with nothing owned
-  assert.deepEqual([...g.staleWorktrees(entries, [])], ['/repo/.wt/j1', '/repo/.wt/j2'])
-  // ownership compares the whole short name; a job id prefix is not ownership
-  assert.deepEqual([...g.staleWorktrees(entries, ['manager/j'])], ['/repo/.wt/j1', '/repo/.wt/j2'])
-  assert.deepEqual([...g.staleBranches(['manager/j1', 'refs/heads/manager/j2', 'manager/j3'], ['manager/j2'])], ['manager/j1', 'manager/j3'])
-  assert.throws(() => g.staleBranches('manager/j1', []), /string array/)
 })

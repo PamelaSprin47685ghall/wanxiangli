@@ -11,16 +11,10 @@ module private Operations =
         abstract stdout: string
         abstract stderr: string
 
-    type Porcelain =
-        abstract rebaseStatePaths: merge: obj * apply: obj -> string array
-
     type Binding = { Repo: string; Run: obj }
     type Fault = { Code: string; Error: string }
 
-    [<Import("GitPorcelain", "wanxiangli/git-porcelain")>]
-    let private createPorcelain: unit -> Porcelain = jsNative
-
-    let private porcelain = createPorcelain ()
+    let private porcelain = Wanxiangli.GitPorcelain.GitPorcelain.GitPorcelain ()
 
     [<Import("default", "node:fs")>]
     let private fs: obj = jsNative

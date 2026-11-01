@@ -28,7 +28,7 @@ test('workspace-state 实际安装包在 Node/Bun 查询工作树并初始化宿
   succeed(spawnSync('npm', ['install', '--offline', '--ignore-scripts', '--omit=dev', '--no-audit', '--no-fund', path.join(directory, packed.filename)], { cwd: consumer, env, encoding: 'utf8', timeout: 30000 }))
   for (const file of ['workspace-state-consumer.mjs', 'workspace-state-consumer.ts']) copyFileSync(path.join(root, 'scripts/tests', file), path.join(consumer, file))
   assert.equal(existsSync(path.join(consumer, 'node_modules/@fable-org')), false)
-  assert.match(readFileSync(path.join(consumer, 'node_modules/wanxiangli/dist/workspace-state/WorkspaceState.js'), 'utf8'), /from ["']wanxiangli\/git-porcelain["']/)
+  assert.match(readFileSync(path.join(consumer, 'node_modules/wanxiangli/dist/workspace-state/WorkspaceState.js'), 'utf8'), /from ["']wanxiangli\/git["']/)
   succeed(spawnSync(process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), '--noEmit', '--strict', '--target', 'es2022', '--module', 'nodenext', 'workspace-state-consumer.ts'], { cwd: consumer, env, encoding: 'utf8', timeout: 30000 }))
   const runtimes = [['node', process.execPath]]
   if (spawnSync('bun', ['--version'], { encoding: 'utf8', env }).status === 0) runtimes.push(['bun', 'bun'])

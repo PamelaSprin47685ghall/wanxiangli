@@ -22,7 +22,7 @@ type private Porcelain =
 
 let private store = Wanxiangli.WorkspacePathCache.RuntimePathStore()
 
-[<Import("GitPorcelain", "wanxiangli/git-porcelain")>]
+[<Import("GitPorcelain", "wanxiangli/git")>]
 let private createPorcelain: unit -> Porcelain = jsNative
 
 let private porcelain = createPorcelain ()

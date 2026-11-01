@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { tmpdir } from 'node:os'
 import { execFile, execFileSync } from 'node:child_process'
-import { GitPublication } from '../../../dist/git-publication/GitPublication.js'
+import { GitPublication } from 'wanxiangli/git'
 
 const output = (code = 0, stdout = '', stderr = '') => ({ code, stdout, stderr })
 const ok = { ok: true, value: undefined }

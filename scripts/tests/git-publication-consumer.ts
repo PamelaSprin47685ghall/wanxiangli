@@ -1,4 +1,4 @@
-import { GitPublication, type Command, type Runner, type Result, type FastForwardRequest } from 'wanxiangli/git-publication'
+import { GitPublication, type Command, type Runner, type PublicationResult as Result, type FastForwardRequest } from 'wanxiangli/git'
 
 const runner: Runner = async (command: Command) => {
   const cwd: string | undefined = command.cwd

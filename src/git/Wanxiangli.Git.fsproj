@@ -1,12 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
-    <RootNamespace>Wanxiangli.GitPorcelain</RootNamespace>
-    <!-- Fable-only compilation unit. No dotnet build; see AGENTS.md. -->
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="GitPorcelain.fs" />
+    <Compile Include="GitWorktrees.fs" />
+    <Compile Include="GitPublication.fs" />
     <PackageExport Include="GitPorcelain.fs" Member="GitPorcelain" />
+    <PackageExport Include="GitWorktrees.fs" Member="GitWorktrees" />
+    <PackageExport Include="GitPublication.fs" Member="GitPublication" />
   </ItemGroup>
 </Project>

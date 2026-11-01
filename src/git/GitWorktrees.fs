@@ -11,16 +11,9 @@ module private Operations =
         abstract stdout: string
         abstract stderr: string
 
-    type Porcelain =
-        abstract worktrees: output: string -> obj array
-        abstract branches: output: string -> string array
-
     type Binding = { Repo: string; Run: obj }
 
-    [<Import("GitPorcelain", "wanxiangli/git-porcelain")>]
-    let private createPorcelain: unit -> Porcelain = jsNative
-
-    let private porcelain = createPorcelain ()
+    let private porcelain = Wanxiangli.GitPorcelain.GitPorcelain.GitPorcelain ()
 
     [<Emit("new WeakMap()")>]
     let private createOwners () : obj = jsNative

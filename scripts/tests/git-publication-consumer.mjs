@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { tmpdir } from 'node:os'
 import { execFile, execFileSync } from 'node:child_process'
-import { GitPublication } from 'wanxiangli/git-publication'
+import { GitPublication } from 'wanxiangli/git'
 
 const directory = fs.realpathSync(fs.mkdtempSync(path.join(tmpdir(), 'wanxiangli-git-publication-consumer-')))
 try {

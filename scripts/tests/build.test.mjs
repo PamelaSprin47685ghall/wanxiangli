@@ -34,7 +34,7 @@ function succeed(result) {
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
 }
 
-for (const name of ['lifecycle', 'eventstore', 'runtime', 'trace', 'session', 'delivery', 'degeneration', 'ablation', 'routing', 'projection', 'authority', 'permit', 'capacity', 'admission-queue', 'dispatch', 'borrowing', 'run-witness', 'git-porcelain', 'failure', 'attachment-lease', 'warm-start', 'handle-lifecycle', 'failure-budget', 'delegate-batch', 'fission-group', 'ordinal', 'bayes', 'llm-text', 'bounded-map', 'returned-material', 'keyed-serial', 'file-lock', 'result-mailbox', 'task-scope']) {
+for (const name of ['lifecycle', 'eventstore', 'runtime', 'trace', 'session', 'delivery', 'degeneration', 'ablation', 'routing', 'projection', 'authority', 'permit', 'capacity', 'admission-queue', 'dispatch', 'borrowing', 'run-witness', 'git', 'failure', 'attachment-lease', 'warm-start', 'handle-lifecycle', 'failure-budget', 'delegate-batch', 'fission-group', 'ordinal', 'bayes', 'llm-text', 'bounded-map', 'returned-material', 'keyed-serial', 'file-lock', 'result-mailbox', 'task-scope']) {
   test(`SPEC[build-001] ${name} compiles and runs its own tests without any sibling source`, { timeout: 90000 }, t => {
     const directory = fixture(t, [name])
     assert.deepEqual(readdirSync(path.join(directory, 'src')), [name])
@@ -149,10 +149,10 @@ test('SPEC[build-001] composition compiles without sibling sources and runs agai
   assert.doesNotMatch(composition, /WorkOpened|ConfirmationCommitted|DeliveryRequested|SELECT|PRAGMA/)
 })
 
-test('workspace-state compiles with only public git-porcelain artifacts and its own source', { timeout: 90000 }, t => {
+test('workspace-state compiles with only public git artifacts and its own source', { timeout: 90000 }, t => {
   const directory = fixture(t, ['workspace-state'])
-  cpSync(path.join(root, 'dist/git-porcelain'), path.join(directory, 'dist/git-porcelain'), { recursive: true })
-  const dependency = path.join(directory, 'dist/git-porcelain/GitPorcelain.js')
+  cpSync(path.join(root, 'dist/git'), path.join(directory, 'dist/git'), { recursive: true })
+  const dependency = path.join(directory, 'dist/git/GitPublication.js')
   const before = readFileSync(dependency, 'utf8')
   const built = run(directory, ['scripts/build.mjs', 'workspace-state'])
   succeed(built)
@@ -160,35 +160,7 @@ test('workspace-state compiles with only public git-porcelain artifacts and its 
   assert.deepEqual(readdirSync(path.join(directory, 'src')), ['workspace-state'])
   assert.equal(readFileSync(dependency, 'utf8'), before)
   succeed(run(directory, ['--test', path.join(directory, 'src/workspace-state/tests/001.test.mjs')]))
-  assert.match(readFileSync(path.join(directory, 'dist/workspace-state/WorkspaceState.js'), 'utf8'), /from ["']wanxiangli\/git-porcelain["']/)
-})
-
-test('git-worktrees compiles with only public git-porcelain artifacts and its own source', { timeout: 90000 }, t => {
-  const directory = fixture(t, ['git-worktrees'])
-  cpSync(path.join(root, 'dist/git-porcelain'), path.join(directory, 'dist/git-porcelain'), { recursive: true })
-  const dependency = path.join(directory, 'dist/git-porcelain/GitPorcelain.js')
-  const before = readFileSync(dependency, 'utf8')
-  const built = run(directory, ['scripts/build.mjs', 'git-worktrees'])
-  succeed(built)
-  assert.doesNotMatch(built.stdout + built.stderr, /Warning:|Error:/)
-  assert.deepEqual(readdirSync(path.join(directory, 'src')), ['git-worktrees'])
-  assert.equal(readFileSync(dependency, 'utf8'), before)
-  succeed(run(directory, ['--test', path.join(directory, 'src/git-worktrees/tests/001.test.mjs')]))
-  assert.match(readFileSync(path.join(directory, 'dist/git-worktrees/GitWorktrees.js'), 'utf8'), /from ["']wanxiangli\/git-porcelain["']/)
-})
-
-test('git-publication compiles with only public git-porcelain artifacts and its own source', { timeout: 90000 }, t => {
-  const directory = fixture(t, ['git-publication'])
-  cpSync(path.join(root, 'dist/git-porcelain'), path.join(directory, 'dist/git-porcelain'), { recursive: true })
-  const dependency = path.join(directory, 'dist/git-porcelain/GitPorcelain.js')
-  const before = readFileSync(dependency, 'utf8')
-  const built = run(directory, ['scripts/build.mjs', 'git-publication'])
-  succeed(built)
-  assert.doesNotMatch(built.stdout + built.stderr, /Warning:|Error:/)
-  assert.deepEqual(readdirSync(path.join(directory, 'src')), ['git-publication'])
-  assert.equal(readFileSync(dependency, 'utf8'), before)
-  succeed(run(directory, ['--test', path.join(directory, 'src/git-publication/tests/001.test.mjs')]))
-  assert.match(readFileSync(path.join(directory, 'dist/git-publication/GitPublication.js'), 'utf8'), /from ["']wanxiangli\/git-porcelain["']/)
+  assert.match(readFileSync(path.join(directory, 'dist/workspace-state/WorkspaceState.js'), 'utf8'), /from ["']wanxiangli\/git["']/)
 })
 
 test('file-baseline compiles its capture and diff without sibling artifacts', { timeout: 90000 }, t => {

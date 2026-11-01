@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { tmpdir } from 'node:os'
 import { execFile, execFileSync } from 'node:child_process'
-import { GitWorktrees } from 'wanxiangli/git-worktrees'
+import { GitWorktrees } from 'wanxiangli/git'
 
 const directory = fs.realpathSync(fs.mkdtempSync(path.join(tmpdir(), 'wanxiangli-git-worktrees-consumer-')))
 try {
