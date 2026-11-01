@@ -19,6 +19,29 @@ function succeed(result) {
   return result.stdout
 }
 
+test('installed JournalSession commits, notifies, recovers and closes through the public entry', { timeout: 90000 }, async t => {
+  const temporary = mkdtempSync(path.join(tmpdir(), 'wanxiangli-journal-session-package-'))
+  t.after(() => rmSync(temporary, { recursive: true, force: true }))
+  const packed = packedPackage(succeed(spawnSync(npm, ['pack', '--ignore-scripts', '--json', '--pack-destination', temporary], { cwd: root, env: cleanEnvironment, encoding: 'utf8', timeout: 30000 })))
+  const consumer = path.join(temporary, 'consumer')
+  mkdirSync(consumer)
+  writeFileSync(path.join(consumer, 'package.json'), JSON.stringify({ name: 'journal-session-consumer', private: true, type: 'module' }))
+  succeed(spawnSync(npm, ['install', '--ignore-scripts', '--omit=dev', '--no-audit', '--no-fund', path.join(temporary, packed.filename)], { cwd: consumer, env: cleanEnvironment, encoding: 'utf8', timeout: 30000 }))
+  for (const file of ['journal-session-consumer.mjs', 'journal-session-consumer.ts']) {
+    copyFileSync(path.join(root, 'scripts/tests', file), path.join(consumer, file))
+  }
+  succeed(spawnSync(process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), '--noEmit', '--strict', '--target', 'es2022', '--module', 'nodenext', 'journal-session-consumer.ts'], { cwd: consumer, env: cleanEnvironment, encoding: 'utf8', timeout: 30000 }))
+  const runtimes = [['node', process.execPath]]
+  if (spawnSync('bun', ['--version'], { env: cleanEnvironment, encoding: 'utf8' }).status === 0) runtimes.push(['bun', 'bun'])
+  else t.diagnostic('Bun is absent; its journal session consumer was not run.')
+  for (const [name, executable] of runtimes) {
+    await t.test(name, () => {
+      const output = succeed(spawnSync(executable, [path.join(consumer, 'journal-session-consumer.mjs')], { cwd: tmpdir(), env: cleanEnvironment, encoding: 'utf8', timeout: 10000 }))
+      assert.deepEqual(JSON.parse(output), { journalSession: true })
+    })
+  }
+})
+
 test('installed LocalEventStore appends, reopens and consumes the physical entry', { timeout: 90000 }, async t => {
   const temporary = mkdtempSync(path.join(tmpdir(), 'wanxiangli-local-eventstore-package-'))
   t.after(() => rmSync(temporary, { recursive: true, force: true }))

@@ -34,7 +34,7 @@ function succeed(result) {
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
 }
 
-for (const name of ['lifecycle', 'eventstore', 'runtime', 'trace', 'session', 'delivery', 'degeneration', 'ablation', 'projection', 'authority', 'permit', 'capacity', 'admission-queue', 'dispatch', 'borrowing', 'run-witness', 'git', 'failure', 'attachment-lease', 'warm-start', 'failure-budget', 'delegate-batch', 'fission-group', 'ordinal', 'bayes', 'llm-text', 'bounded-map', 'returned-material', 'keyed-serial', 'file-lock', 'result-mailbox', 'task-scope']) {
+for (const name of ['lifecycle', 'eventstore', 'runtime', 'trace', 'session', 'delivery', 'degeneration', 'ablation', 'projection', 'authority', 'permit', 'capacity', 'admission-queue', 'dispatch', 'borrowing', 'run-witness', 'git', 'failure', 'attachment-lease', 'warm-start', 'failure-budget', 'delegate-batch', 'fission-group', 'ordinal', 'bayes', 'llm-text', 'bounded-map', 'returned-material', 'keyed-serial', 'file-lock', 'result-mailbox', 'task-scope', 'journal-session']) {
   test(`SPEC[build-001] ${name} compiles and runs its own tests without any sibling source`, { timeout: 90000 }, t => {
     const directory = fixture(t, [name])
     assert.deepEqual(readdirSync(path.join(directory, 'src')), [name])

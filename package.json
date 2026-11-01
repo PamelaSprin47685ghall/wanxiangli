@@ -56,6 +56,10 @@
       "types": "./src/local-eventstore/index.d.ts",
       "import": "./dist/local-eventstore/LocalStore.js"
     },
+    "./journal-session": {
+      "types": "./src/journal-session/index.d.ts",
+      "import": "./dist/journal-session/JournalSession.js"
+    },
     "./durable-work": {
       "types": "./src/assembly/index.d.ts",
       "import": "./dist/assembly/DurableWork.js"
@@ -251,6 +255,7 @@
     "src/lifecycle/index.d.ts",
     "src/eventstore/index.d.ts",
     "src/local-eventstore/index.d.ts",
+    "src/journal-session/index.d.ts",
     "src/assembly/index.d.ts",
     "src/trace/index.d.ts",
     "src/session/index.d.ts",

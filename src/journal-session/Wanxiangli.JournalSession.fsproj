@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="JournalWriter.fs" />
+    <Compile Include="JournalSession.fs" />
+    <PackageExport Include="JournalWriter.fs" Member="JournalWriter" />
+    <PackageExport Include="JournalSession.fs" Member="JournalSession" />
+  </ItemGroup>
+</Project>
