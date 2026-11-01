@@ -15,12 +15,15 @@ const succeed = result => {
   return result.stdout
 }
 
-test('returned-material 实际安装包在隔离消费者中保留规范字节与分部读取', { timeout: 90000 }, t => {
+test('returned-material 与完成记录的实际安装包保留规范字节和读取闭包', { timeout: 90000 }, t => {
   const directory = mkdtempSync(path.join(tmpdir(), 'wanxiangli-returned-material-package-'))
   t.after(() => rmSync(directory, { recursive: true, force: true }))
   const packed = packedPackage(succeed(spawnSync('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', directory], { cwd: root, env, encoding: 'utf8', timeout: 30000 })))
   assert.ok(packed.files.some(file => file.path === 'dist/returned-material/ReturnedMaterial.js'))
   assert.ok(packed.files.some(file => file.path === 'src/returned-material/index.d.ts'))
+  assert.ok(packed.files.some(file => file.path === 'dist/handle-lifecycle/HandleLifecycleLaw.js'))
+  assert.ok(packed.files.some(file => file.path === 'src/handle-lifecycle/index.d.ts'))
+  assert.ok(packed.files.some(file => file.path === 'dist/events/CanonicalEventCodec.js'))
   for (const file of packed.files) assert.doesNotMatch(file.path, /\.fs(?:proj|i)?$|^scripts\/|^node_modules\//)
   const consumer = path.join(directory, 'consumer')
   mkdirSync(consumer)

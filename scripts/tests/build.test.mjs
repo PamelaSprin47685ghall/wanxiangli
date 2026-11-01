@@ -34,7 +34,7 @@ function succeed(result) {
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
 }
 
-for (const name of ['lifecycle', 'eventstore', 'runtime', 'trace', 'session', 'delivery', 'degeneration', 'ablation', 'routing', 'projection', 'authority', 'permit', 'capacity', 'admission-queue', 'dispatch', 'borrowing', 'run-witness', 'git', 'failure', 'attachment-lease', 'warm-start', 'handle-lifecycle', 'failure-budget', 'delegate-batch', 'fission-group', 'ordinal', 'bayes', 'llm-text', 'bounded-map', 'returned-material', 'keyed-serial', 'file-lock', 'result-mailbox', 'task-scope']) {
+for (const name of ['lifecycle', 'eventstore', 'runtime', 'trace', 'session', 'delivery', 'degeneration', 'ablation', 'routing', 'projection', 'authority', 'permit', 'capacity', 'admission-queue', 'dispatch', 'borrowing', 'run-witness', 'git', 'failure', 'attachment-lease', 'warm-start', 'failure-budget', 'delegate-batch', 'fission-group', 'ordinal', 'bayes', 'llm-text', 'bounded-map', 'returned-material', 'keyed-serial', 'file-lock', 'result-mailbox', 'task-scope']) {
   test(`SPEC[build-001] ${name} compiles and runs its own tests without any sibling source`, { timeout: 90000 }, t => {
     const directory = fixture(t, [name])
     assert.deepEqual(readdirSync(path.join(directory, 'src')), [name])
@@ -53,6 +53,20 @@ for (const name of ['lifecycle', 'eventstore', 'runtime', 'trace', 'session', 'd
     }
   })
 }
+
+test('handle-lifecycle compiles with only public events and returned-material artifacts', { timeout: 90000 }, t => {
+  const directory = fixture(t, ['handle-lifecycle'])
+  for (const name of ['events', 'returned-material']) {
+    cpSync(path.join(root, 'dist', name), path.join(directory, 'dist', name), { recursive: true })
+  }
+  succeed(run(directory, ['scripts/build.mjs', 'handle-lifecycle']))
+  assert.deepEqual(readdirSync(path.join(directory, 'src')), ['handle-lifecycle'])
+  succeed(run(directory, ['--test', 'src/handle-lifecycle/tests/completion-record.test.mjs']))
+  assert.deepEqual(readdirSync(path.join(directory, 'dist')).sort(), ['events', 'handle-lifecycle', 'returned-material'])
+  const artifact = readFileSync(path.join(directory, 'dist/handle-lifecycle/HandleLifecycleLaw.js'), 'utf8')
+  assert.match(artifact, /from ["']wanxiangli\/events["']/)
+  assert.match(artifact, /from ["']wanxiangli\/returned-material["']/)
+})
 
 test('SPEC[build-001] a selected build leaves another module output untouched', { timeout: 60000 }, t => {
   const directory = fixture(t, ['lifecycle', 'eventstore'])

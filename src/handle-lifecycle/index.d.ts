@@ -216,3 +216,64 @@ export declare class PendingRunStore {
 }
 
 export declare const pendingRunStore: PendingRunStore
+
+export interface CompletedRecordPayload {
+  readonly kind: 'completed'
+  readonly runId: string
+  readonly view: string
+  readonly childSessionId: string
+  readonly authorityRoot: string
+  readonly providerRun: string
+  readonly directory: string
+}
+
+export interface FailedRecordPayload {
+  readonly kind: 'failed'
+  readonly runId: string
+  readonly code: string
+  readonly message: string
+  readonly childSessionId: string
+}
+
+export type CompletionRecordPayload = CompletedRecordPayload | FailedRecordPayload
+export type CompletionRecordOutcome =
+  | { readonly kind: 'completed'; readonly runId: string; readonly view: string; readonly childSessionId?: string | null; readonly authorityRoot?: string | null; readonly providerRun?: string | null; readonly directory?: string | null }
+  | { readonly kind: 'failed'; readonly runId: string; readonly code: string; readonly message: string; readonly childSessionId?: string | null }
+  | { readonly kind: 'abandoned'; readonly runId: string; readonly agentId: string; readonly reason: string }
+
+export interface CompletionRecordError {
+  readonly kind: 'MissingSchemaVersion' | 'UnknownSchemaVersion' | 'MissingFinality' | 'UnknownFinality' | 'InvalidJson' | 'IncompletePayload'
+  /** The original error detail; empty for a missing schema or finality. */
+  readonly reason: string
+  readonly message: string
+}
+
+export type CompletionRecordDecode =
+  | { readonly kind: 'current'; readonly payload: CompletionRecordPayload }
+  | { readonly kind: 'legacy-false-abort'; readonly payload: { readonly status: 'aborted'; readonly runId: string; readonly code: string; readonly message: string; readonly childSessionId: string; readonly rawBody: string } }
+  | { readonly kind: 'invalid'; readonly error: CompletionRecordError }
+
+export interface CompletionWork {
+  readonly childSessionId: string
+  readonly authorityRoot: string
+}
+
+export type MaterializedCompletion =
+  | { readonly kind: 'completed'; readonly runId: string; readonly view: string; readonly childSessionId: string | null; readonly authorityRoot: string | null; readonly providerRun: string | null; readonly directory: string | null }
+  | { readonly kind: 'failed'; readonly runId: string; readonly code: string; readonly message: string; readonly childSessionId: string | null }
+
+export type CompletionRecordResult<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: string }
+export interface CompletionReference { readonly ref: string | null; readonly digest: string | null }
+export interface ReadCompletionRecord { readonly body: string; readonly ref: string; readonly digest: string }
+
+/** Schema 4 completion records; storage, handle phase, role and timestamps belong to the caller. */
+export declare class CompletionRecord {
+  encode(outcome: CompletionRecordOutcome): string
+  decode(body: string): CompletionRecordDecode
+  belongsToWork(work: CompletionWork, payload: CompletionRecordPayload): boolean
+  /** Applies the run-id fallback and turns blank optional identity/directory fields into null. */
+  materialize(agentId: string, payload: CompletionRecordPayload): MaterializedCompletion
+  decodeForWork(work: CompletionWork | null, agentId: string, body: string): CompletionRecordResult<MaterializedCompletion>
+  /** Reads once, checks the digest before decoding, and propagates callback rejection without retry. */
+  read(reference: CompletionReference, readBlob: (ref: string) => Promise<CompletionRecordResult<string>>, sha256: (body: string) => string): Promise<CompletionRecordResult<ReadCompletionRecord | null>>
+}
