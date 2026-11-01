@@ -7,8 +7,8 @@ open Fable.Core
 open Fable.Core.JsInterop
 
 module private InvocationValue =
-    let get<'a> (value: obj) name : 'a = unbox value?(name)
-    let optional<'a> (value: obj) name : 'a option =
+    let get<'a> (value: obj) (name: string) : 'a = unbox value?(name)
+    let optional<'a> (value: obj) (name: string) : 'a option =
         let field: obj = value?(name)
         if isNullOrUndefined field then None else Some(unbox field)
     let text value name = get<string> value name
@@ -25,6 +25,8 @@ module private InvocationValue =
     let invoke2 (_callback: obj) (_first: obj) (_second: obj) : 'a = jsNative
     [<Emit("$0($1,$2,$3)")>]
     let invoke3 (_callback: obj) (_first: obj) (_second: obj) (_third: obj) : 'a = jsNative
+    [<Emit("Object.assign({},$0,{observed:$1,observeAdmission:$2,captureResponse:$3})")>]
+    let withObservers (_request: obj) (_observed: bool) (_admission: obj) (_response: obj) : obj = jsNative
 
 open InvocationValue
 
@@ -34,7 +36,7 @@ type DelegateInvocation(request: obj) =
     let mutable startCursor: obj = null
     member _.request = request
     member _.completion = completionSource.Task
-    member _.cursor with get () = startCursor and set value = startCursor <- value
+    member _.cursor with get () : obj = startCursor and set (value: obj) = startCursor <- value
     member _.finish(result: obj) = complete completionSource result
 
 [<Sealed; AttachMembers>]
@@ -57,7 +59,7 @@ type DelegateCall(owner: string, scope: string, role: string, session: string, a
     member _.answer = answerSource.Task
     member _.acceptedPhysical with get () = physical and set value = physical <- value
     member _.acceptedRoot with get () = root and set value = root <- value
-    member _.failureScope with get () = terminalScope and set value = terminalScope <- value
+    member _.failureScope with get () : obj = terminalScope and set (value: obj) = terminalScope <- value
     member _.attach(dispose: unit -> unit) =
         if closed then dispose () else resources.Add dispose
     member _.accept(value: string, notify: unit -> unit) =
@@ -374,3 +376,42 @@ type DelegateInvocationRuntime() =
             | _ -> ()
             return! invoke2 (get effects "awaitInvocation") request (box invocation.completion)
         }
+
+    member this.invokeResponse(request: obj, effects: obj) : Task<obj> =
+        let mutable response: obj = null
+        let capture (value: obj) = response <- value
+        let adapted = withObservers request false null (box capture)
+        let pending = this.invoke(adapted, effects)
+        task {
+            let! result = pending
+            if not (isOk result) then return result
+            elif not (isNullOrUndefined result?mergedInto) then
+                return error "sync delegate protocol defect: singleton invocation was merged"
+            else return view response
+        }
+
+    member this.invokeObserved(request: obj, effects: obj, notDispatched: string -> obj) : obj =
+        let admission = source<obj> ()
+        let mutable response: obj = null
+        let observe value = complete admission value
+        let capture (value: obj) = response <- value
+        let adapted = withObservers request true (box observe) (box capture)
+        let completion =
+            task {
+                try
+                    let! result = this.invoke(adapted, effects)
+                    if not (isOk result) then
+                        observe (notDispatched (text result "error"))
+                        return result
+                    elif not (isNullOrUndefined result?mergedInto) then
+                        let reason = "sync delegate protocol defect: singleton invocation was merged"
+                        observe (notDispatched reason)
+                        return error reason
+                    elif isNullOrUndefined response then
+                        return error "Completed delegation did not supply a terminal response"
+                    else return view response
+                with failure ->
+                    observe (notDispatched failure.Message)
+                    return error failure.Message
+            }
+        createObj [ "admission" ==> admission.Task; "completion" ==> completion ]

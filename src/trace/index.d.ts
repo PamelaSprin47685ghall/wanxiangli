@@ -137,3 +137,44 @@ export function inspectTraceItems(traceId: string, openingText: string | null, r
   readonly window: TraceWindow;
   readonly materializedCount: number;
 };
+
+export interface CapturedIdentity {
+  readonly key: string
+  readonly secondaryKey: string | null
+  readonly compatibility: string
+}
+export interface CapturePart<M = unknown> extends CapturedIdentity {
+  readonly exactKey: boolean
+  readonly legacyKey: string | null
+  readonly role: string
+  readonly kind: string
+  readonly toolName: string | null
+  readonly body: string
+  readonly metadata: M
+}
+export type CaptureFact<M = unknown> =
+  | {readonly kind: 'opening', readonly assignment: string, readonly requirements: readonly string[]}
+  | {readonly kind: 'terminal', readonly providerRun: string, readonly bodyRef: string, readonly bodyDigest: string}
+  | {readonly kind: 'part', readonly sequence: bigint, readonly part: Pick<CapturePart<M>, 'key' | 'role' | 'kind' | 'toolName' | 'metadata'>, readonly bodyRef: string, readonly bodyDigest: string}
+export interface CaptureStore<M = unknown, E = unknown> {
+  read(): {readonly history: TraceHistory, readonly identities: readonly CapturedIdentity[]}
+  writeBody(body: string): Promise<HistoryResult<{reference: string, digest: string}, E>>
+  append(fact: CaptureFact<M>): Promise<void>
+}
+export interface CaptureReceipt {
+  readonly previousHead: bigint
+  readonly currentHead: bigint
+  readonly capturedPartCount: number
+  readonly openingCaptured: boolean
+  readonly terminalCaptured: boolean
+}
+export class TraceCapture {
+  constructor()
+  run<T>(key: string, action: () => Promise<T>): Promise<T>
+  receipt(before: TraceHistory, after: TraceHistory): CaptureReceipt
+  captureOpening<M,E>(store: CaptureStore<M,E>, assignment: string, requirements: readonly string[]): Promise<void>
+  captureTerminalText<M,E>(store: CaptureStore<M,E>, providerRun: string, body: string, digest: string): Promise<HistoryResult<null,E>>
+  captureTerminalReference<M,E>(store: CaptureStore<M,E>, providerRun: string, reference: string, digest: string): Promise<void>
+  captureParts<M,E>(store: CaptureStore<M,E>, parts: readonly CapturePart<M>[], mode: 'positional' | 'stable'): Promise<HistoryResult<null,E>>
+  captureReference<M,E>(store: CaptureStore<M,E>, part: Pick<CapturePart<M>, 'key' | 'role' | 'kind' | 'toolName' | 'metadata'>, reference: string, digest: string): Promise<void>
+}
