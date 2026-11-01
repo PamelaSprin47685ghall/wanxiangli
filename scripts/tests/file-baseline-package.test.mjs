@@ -15,7 +15,7 @@ const succeed = result => {
   return result.stdout
 }
 
-test('实际安装包在 Node/Bun 保留基线、编辑案例并独立认领结算', { timeout: 90000 }, t => {
+test('实际安装包在 Node/Bun 保留基线、编辑和投影案例并独立认领结算', { timeout: 90000 }, t => {
   const directory = mkdtempSync(path.join(tmpdir(), 'wanxiangli-file-baseline-package-'))
   t.after(() => rmSync(directory, { recursive: true, force: true }))
   const packed = packedPackage(succeed(spawnSync('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', directory], { cwd: root, env, encoding: 'utf8', timeout: 30000 })))

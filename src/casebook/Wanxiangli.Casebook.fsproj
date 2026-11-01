@@ -24,5 +24,8 @@
     <PackageExport Include="CasebookIndexLaw.fs" Member="CasebookIndex" />
     <PackageExport Include="CasebookIndexLaw.fs" Member="casebookIndex" />
     <PackageExport Include="CasebookIndexLaw.fs" Member="CasebookIndexLaw" />
+    <PackageExport Include="CasebookIndexLaw.fs" Member="CasebookState" />
+    <PackageExport Include="CasebookIndexLaw.fs" Member="normalizeObservations" />
+    <PackageExport Include="CasebookIndexLaw.fs" Member="sameObservations" />
   </ItemGroup>
 </Project>

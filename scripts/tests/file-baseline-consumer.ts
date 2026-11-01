@@ -1,5 +1,9 @@
 import { FileBaseline, FileDiff, type MaintenanceSummary, type TruncatedDiff } from 'wanxiangli/file-baseline'
-import { CasebookSettlementOwner, BookkeeperStaging, type CasebookEdit, type CasebookEditFailure, type SettlementOutcomeTag } from 'wanxiangli/casebook'
+import {
+  CasebookSettlementOwner, BookkeeperStaging, CasebookState, normalizeObservations, sameObservations,
+  type CasebookEdit, type CasebookEditFailure, type SettlementOutcomeTag,
+  type CasebookCase, type CasebookFact, type CasebookObservation, type CasebookVisible,
+} from 'wanxiangli/casebook'
 
 const diff = new FileDiff()
 const summary: MaintenanceSummary = diff.summarize([diff.fileDiff('file', null, 'text')])
@@ -27,6 +31,27 @@ if (created.tag === 0) {
 }
 // @ts-expect-error 错误文案按失败键懒取，不能传预先求值的字符串。
 staging.edit('edit', 'error text')
+const observations: readonly CasebookObservation[] = [
+  { kind: 'grep-result', pattern: 'text', matches: [['file', 1, 'text']] },
+]
+const record: CasebookCase = {
+  identity: 'one', sourceTrace: 'trace', q: 'question', a: 'answer', relatedPaths: ['file'],
+  completionFileState: 'completion', maintenanceFileState: 'maintenance', accessOrder: 0n, observations,
+}
+const fact: CasebookFact = { kind: 'captured', case: record }
+const empty = new CasebookState()
+const current: CasebookState = empty.apply(fact)
+const visible: CasebookVisible = current.visible(1)
+const resolved: CasebookCase | null = current.resolve(1, 'shelfmark')
+const normalized: CasebookObservation[] = normalizeObservations(observations)
+const same: boolean = sameObservations(observations, normalized)
+void visible; void resolved; void same
+// @ts-expect-error 从空状态开始，不提供计数器或状态快照注入。
+void new CasebookState(99n)
+// @ts-expect-error 案例表是私有状态。
+void current.Cases
+// @ts-expect-error 访问序是 bigint，不经过 number。
+void current.apply({ kind: 'captured', case: { ...record, accessOrder: 1 } })
 // @ts-expect-error 文件状态只接受字符串或 null。
 void diff.fileDiff('file', undefined, 'text')
 // @ts-expect-error 结算消息形状由实例固定。

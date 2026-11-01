@@ -1,10 +1,8 @@
 /**
- * wanxiangli/casebook — Casebook 公开索引的纯投影（CUT-27 子范围①，knowledge-reuse-008/012），
- * Bookkeeper 暂存事务的进程内自治对象（knowledge-reuse-006），
- * 以及会话草稿注册表的进程内自治对象（knowledge-reuse-010）。
+ * wanxiangli/casebook — 案例当前状态、公开索引与 Bookkeeper 的独立对象。
  *
- * 索引律是纯计算：不读存储、不持有快照、不读时钟、不写事件。进程级冻结快照、“已失效”标记、
- * epoch 的数值与 Case 本体都归调用方；这里只给出名字、次序与是否推进的判定。
+ * 索引律是纯计算；CasebookState 持有不可变案例表与访问序；CasebookIndex 持有公开冻结快照、
+ * 失效标记和 epoch。它们不读存储、不读时钟、不写事件。
  * 暂存对象持有进程内事务槽状态：所有操作同步完成，不在状态变换中等待外部操作，
  * 不承诺跨线程或跨进程共享；宿主全部消费者经由唯一实例 bookkeeperStaging。
  * 草稿对象持有进程内委托会话的问答轮次：支持未答覆写、已答追加、覆写 A 及原子消费（tryTake）。
@@ -68,6 +66,58 @@ export declare class CasebookIndexLaw {
   /** LRU：容量 ≤ 0 或未超容量为空；否则按访问序升序（同序保留输入次序）给出最旧的 count - capacity 个 sessionId。 */
   evictionVictims(capacity: number, cases: readonly AccessCase[]): string[]
 }
+
+export type CasebookObservation =
+  | { readonly kind: 'file-read'; readonly path: string; readonly contentHash: string }
+  | { readonly kind: 'glob-result'; readonly pattern: string; readonly paths: readonly string[] }
+  | { readonly kind: 'grep-result'; readonly pattern: string; readonly matches: readonly (readonly [string, number, string])[] }
+
+export interface CasebookCase {
+  readonly identity: string
+  readonly sourceTrace: string
+  readonly q: string
+  readonly a: string
+  readonly relatedPaths: readonly string[]
+  readonly completionFileState: string
+  readonly maintenanceFileState: string
+  readonly accessOrder: bigint
+  readonly observations: readonly CasebookObservation[]
+}
+
+export type CasebookFact =
+  | { readonly kind: 'captured'; readonly case: CasebookCase }
+  | {
+      readonly kind: 'refreshed'
+      readonly identity: string
+      readonly q: string
+      readonly a: string
+      readonly maintenanceFileState: string | null
+      readonly relatedPaths: readonly string[]
+      readonly observations: readonly CasebookObservation[]
+    }
+  | { readonly kind: 'accessed'; readonly identity: string }
+  | { readonly kind: 'evicted'; readonly identity: string }
+
+export interface CasebookVisible {
+  readonly cases: readonly CasebookCase[]
+  readonly victims: readonly string[]
+}
+
+/** 不可变案例投影；只接收单项事实，不读存储、不持有历史或公开索引快照。 */
+export interface CasebookState {
+  apply(event: CasebookFact): CasebookState
+  /** 容量 <= 0 时不淘汰；返回按 identity 排序的可见案例及 LRU 受害者，不改变状态。 */
+  visible(capacity: number): CasebookVisible
+  resolve(capacity: number, shelfmark: string): CasebookCase | null
+}
+
+/** 从空状态开始；历史由调用方逐项提交，不接受外部状态或计数器注入。 */
+export declare const CasebookState: { new(): CasebookState }
+
+/** 按既有身份串排序、去重留首项；保留首项自身的路径和匹配次序。 */
+export declare function normalizeObservations(items: readonly CasebookObservation[]): CasebookObservation[]
+/** 比较归一后的身份集合，不作 JSON 深比较。 */
+export declare function sameObservations(left: readonly CasebookObservation[], right: readonly CasebookObservation[]): boolean
 
 /** Fable 5 Result 的实际产物形状：tag 0 成功、tag 1 失败，fields 为 case 字段。 */
 export type FableResult<T> =

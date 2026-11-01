@@ -4,7 +4,10 @@ import path from 'node:path'
 import { tmpdir } from 'node:os'
 import { createHash } from 'node:crypto'
 import { FileBaseline, FileDiff } from 'wanxiangli/file-baseline'
-import { CasebookSettlementOwner, BookkeeperStaging } from 'wanxiangli/casebook'
+import {
+  CasebookSettlementOwner, BookkeeperStaging, CasebookState, CasebookIndexLaw,
+  normalizeObservations, sameObservations,
+} from 'wanxiangli/casebook'
 
 const diff = new FileDiff()
 assert.equal(diff.fileDiff('unchanged', 'same\n', 'same\n'), '')
@@ -32,6 +35,22 @@ assert.equal(program.question().text(), 'old question')
 assert.deepEqual(staging.snapshot('edit').fields[0], ['old question', 'old answer'])
 assert.equal(edit.commit().tag, 0)
 assert.deepEqual(staging.take('edit').fields[0], ['new question', 'new answer'])
+
+const observation = { kind: 'glob-result', pattern: '*', paths: ['z', 'a'] }
+const empty = new CasebookState()
+const captured = empty.apply({ kind: 'captured', case: {
+  identity: 'one', sourceTrace: 'trace', q: 'question', a: 'answer', relatedPaths: ['file'],
+  completionFileState: 'completion', maintenanceFileState: 'maintenance', accessOrder: 99n,
+  observations: [observation],
+} })
+const current = captured.apply({ kind: 'accessed', identity: 'one' })
+assert.deepEqual(empty.visible(0), { cases: [], victims: [] })
+assert.equal(captured.visible(1).cases[0].accessOrder, 0n)
+assert.equal(current.visible(1).cases[0].accessOrder, 1n)
+const shelfmark = new CasebookIndexLaw().shelfmarkFor('one', 'question')
+assert.equal(current.resolve(1, shelfmark).a, 'answer')
+assert.deepEqual(normalizeObservations([observation, observation]), [observation])
+assert.equal(sameObservations([observation], [{ ...observation, paths: ['a', 'z'] }]), true)
 
 const directory = fs.mkdtempSync(path.join(tmpdir(), 'wanxiangli-file-baseline-consumer-'))
 try {

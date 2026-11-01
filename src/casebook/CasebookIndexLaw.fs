@@ -281,3 +281,165 @@ let fetchFlightRegistry = Wanxiangli.Casebook.FetchFlightRegistry.fetchFlightReg
 
 type BookkeeperLedger = Wanxiangli.Casebook.BookkeeperLedger.BookkeeperLedger
 let bookkeeperLedger = Wanxiangli.Casebook.BookkeeperLedger.bookkeeperLedger
+
+type private StoredObservation =
+    | FileRead of path: string * contentHash: string
+    | GlobResult of pattern: string * paths: string list
+    | GrepResult of pattern: string * matches: (string * int * string) list
+
+let private observationOfJs (item: obj) : StoredObservation =
+    match unbox<string> (field item "kind") with
+    | "file-read" -> FileRead(unbox (field item "path"), unbox (field item "contentHash"))
+    | "glob-result" ->
+        GlobResult(unbox (field item "pattern"), unbox<string array> (field item "paths") |> Array.toList)
+    | "grep-result" ->
+        let matches =
+            unbox<obj array array> (field item "matches")
+            |> Array.map (fun row -> unbox<string> row[0], unbox<int> row[1], unbox<string> row[2])
+            |> Array.toList
+        GrepResult(unbox (field item "pattern"), matches)
+    | _ -> invalidArg "observation" "Unknown observation kind"
+
+let private observationToJs observation : obj =
+    match observation with
+    | FileRead(path, contentHash) ->
+        createObj [ "kind" ==> "file-read"; "path" ==> path; "contentHash" ==> contentHash ]
+    | GlobResult(pattern, paths) ->
+        createObj [ "kind" ==> "glob-result"; "pattern" ==> pattern; "paths" ==> List.toArray paths ]
+    | GrepResult(pattern, matches) ->
+        let rows = matches |> List.map (fun (path, index, text) -> [| box path; box index; box text |]) |> List.toArray
+        createObj [ "kind" ==> "grep-result"; "pattern" ==> pattern; "matches" ==> rows ]
+
+let private observationIdentity observation =
+    match observation with
+    | FileRead(path, contentHash) -> "read:" + path + ":" + contentHash
+    | GlobResult(pattern, paths) ->
+        "glob:" + pattern + ":" + (paths |> List.sort |> String.concat ",")
+    | GrepResult(pattern, matches) ->
+        let flat =
+            matches
+            |> List.map (fun (path, index, text) -> path + "@" + string index + ":" + text)
+            |> List.sort
+            |> String.concat "|"
+        "grep:" + pattern + ":" + flat
+
+let private normalizeObservationValues observations =
+    observations
+    |> List.map (fun observation -> observationIdentity observation, observation)
+    |> List.sortBy fst
+    |> List.distinctBy fst
+    |> List.map snd
+
+let private observationsOfJs (items: obj array) =
+    items |> Array.map observationOfJs |> Array.toList
+
+let normalizeObservations (items: obj array) : obj array =
+    items |> observationsOfJs |> normalizeObservationValues |> List.map observationToJs |> List.toArray
+
+let sameObservations (left: obj array) (right: obj array) : bool =
+    let identities items =
+        items
+        |> observationsOfJs
+        |> normalizeObservationValues
+        |> List.map observationIdentity
+        |> Set.ofList
+    identities left = identities right
+
+type private StoredCase =
+    { Identity: string
+      SourceTrace: string
+      Q: string
+      A: string
+      RelatedPaths: string list
+      CompletionFileState: string
+      MaintenanceFileState: string
+      AccessOrder: int64
+      Observations: StoredObservation list }
+
+let private capturedCase (counter: int64) (item: obj) : StoredCase =
+    { Identity = unbox (field item "identity")
+      SourceTrace = unbox (field item "sourceTrace")
+      Q = unbox (field item "q")
+      A = unbox (field item "a")
+      RelatedPaths = unbox<string array> (field item "relatedPaths") |> Array.toList
+      CompletionFileState = unbox (field item "completionFileState")
+      MaintenanceFileState = unbox (field item "maintenanceFileState")
+      AccessOrder = counter
+      Observations = unbox<obj array> (field item "observations") |> observationsOfJs |> normalizeObservationValues }
+
+let private caseToJs (case: StoredCase) : obj =
+    createObj
+        [ "identity" ==> case.Identity
+          "sourceTrace" ==> case.SourceTrace
+          "q" ==> case.Q
+          "a" ==> case.A
+          "relatedPaths" ==> List.toArray case.RelatedPaths
+          "completionFileState" ==> case.CompletionFileState
+          "maintenanceFileState" ==> case.MaintenanceFileState
+          "accessOrder" ==> case.AccessOrder
+          "observations" ==> (case.Observations |> List.map observationToJs |> List.toArray) ]
+
+let private stateIndexLaw = CasebookIndexLaw()
+
+let private visibleCases capacity (cases: Map<string, StoredCase>) =
+    let accessCases =
+        cases
+        |> Map.toArray
+        |> Array.map (fun (identity, case) -> createObj [ "sessionId" ==> identity; "accessOrder" ==> case.AccessOrder ])
+    let victims = stateIndexLaw.evictionVictims (capacity, accessCases)
+    let remaining = victims |> Array.fold (fun values identity -> Map.remove identity values) cases
+    remaining |> Map.toArray |> Array.map snd, victims
+
+type private StateView =
+    abstract apply: event: obj -> StateView
+    abstract visible: capacity: int -> obj
+    abstract resolve: capacity: int * shelfmark: string -> obj
+
+let rec private stateFrom (counter: int64) (cases: Map<string, StoredCase>) : StateView =
+    { new StateView with
+        member this.apply(event: obj) =
+            match unbox<string> (field event "kind") with
+            | "captured" ->
+                let captured = capturedCase counter (field event "case")
+                stateFrom (counter + 1L) (Map.add captured.Identity captured cases)
+            | "refreshed" ->
+                let identity: string = unbox (field event "identity")
+                match Map.tryFind identity cases with
+                | None -> this
+                | Some existing ->
+                    let maintenance: string = unbox (field event "maintenanceFileState")
+                    let relatedPaths = unbox<string array> (field event "relatedPaths") |> Array.toList
+                    let updated =
+                        { existing with
+                            Q = unbox (field event "q")
+                            A = unbox (field event "a")
+                            MaintenanceFileState =
+                                if System.String.IsNullOrEmpty maintenance then existing.MaintenanceFileState else maintenance
+                            RelatedPaths = if List.isEmpty relatedPaths then existing.RelatedPaths else relatedPaths
+                            Observations = unbox<obj array> (field event "observations") |> observationsOfJs |> normalizeObservationValues
+                            AccessOrder = counter }
+                    stateFrom (counter + 1L) (Map.add identity updated cases)
+            | "accessed" ->
+                let identity: string = unbox (field event "identity")
+                match Map.tryFind identity cases with
+                | None -> this
+                | Some existing ->
+                    stateFrom (counter + 1L) (Map.add identity { existing with AccessOrder = counter } cases)
+            | "evicted" -> stateFrom counter (Map.remove (unbox (field event "identity")) cases)
+            | _ -> invalidArg "event" "Unknown casebook event kind"
+
+        member _.visible(capacity: int) =
+            let visible, victims = visibleCases capacity cases
+            createObj [ "cases" ==> Array.map caseToJs visible; "victims" ==> victims ]
+
+        member _.resolve(capacity: int, shelfmark: string) =
+            let visible, _ = visibleCases capacity cases
+            let indexCases =
+                visible |> Array.map (fun case -> createObj [ "sessionId" ==> case.Identity; "question" ==> case.Q ])
+            let position = stateIndexLaw.locate (indexCases, shelfmark)
+            if position < 0 then null else caseToJs visible[position] }
+
+[<Emit("function CasebookState() { return $0(); }")>]
+let private stateConstructor (_create: unit -> StateView) : obj = jsNative
+
+let CasebookState = stateConstructor (fun () -> stateFrom 0L Map.empty)

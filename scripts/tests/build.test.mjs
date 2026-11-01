@@ -189,12 +189,13 @@ test('file-baseline compiles its capture and diff without sibling artifacts', { 
   assert.doesNotMatch(readFileSync(path.join(directory, 'dist/file-baseline/FileBaseline.js'), 'utf8'), /from ["']wanxiangli\//)
 })
 
-test('casebook compiles its edits and settlement owner without sibling artifacts', { timeout: 90000 }, t => {
+test('casebook compiles its state, edits and settlement owner without sibling artifacts', { timeout: 90000 }, t => {
   const directory = fixture(t, ['casebook'])
   succeed(run(directory, ['scripts/build.mjs', 'casebook']))
   succeed(run(directory, ['--test',
     path.join(directory, 'src/casebook/tests/settlement.test.mjs'),
     path.join(directory, 'src/casebook/tests/edit.test.mjs'),
+    path.join(directory, 'src/casebook/tests/state.test.mjs'),
     path.join(directory, 'src/casebook/tests/006.test.mjs')]))
 })
 
