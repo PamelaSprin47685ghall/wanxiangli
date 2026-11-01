@@ -149,6 +149,20 @@ test('SPEC[build-001] composition compiles without sibling sources and runs agai
   assert.doesNotMatch(composition, /WorkOpened|ConfirmationCommitted|DeliveryRequested|SELECT|PRAGMA/)
 })
 
+test('workspace-state compiles with only public git-porcelain artifacts and its own source', { timeout: 90000 }, t => {
+  const directory = fixture(t, ['workspace-state'])
+  cpSync(path.join(root, 'dist/git-porcelain'), path.join(directory, 'dist/git-porcelain'), { recursive: true })
+  const dependency = path.join(directory, 'dist/git-porcelain/GitPorcelain.js')
+  const before = readFileSync(dependency, 'utf8')
+  const built = run(directory, ['scripts/build.mjs', 'workspace-state'])
+  succeed(built)
+  assert.doesNotMatch(built.stdout + built.stderr, /Warning:|Error:/)
+  assert.deepEqual(readdirSync(path.join(directory, 'src')), ['workspace-state'])
+  assert.equal(readFileSync(dependency, 'utf8'), before)
+  succeed(run(directory, ['--test', path.join(directory, 'src/workspace-state/tests/001.test.mjs')]))
+  assert.match(readFileSync(path.join(directory, 'dist/workspace-state/WorkspaceState.js'), 'utf8'), /from ["']wanxiangli\/git-porcelain["']/)
+})
+
 function snapshot(directory) {
   const files = {}
   const walk = (folder, prefix) => {

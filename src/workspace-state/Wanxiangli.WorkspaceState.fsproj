@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- 运行时只消费 wanxiangli/git-porcelain 公开产物，不编译其源码。 -->
+    <Compile Include="WorkspaceState.fs" />
+    <PackageExport Include="WorkspaceState.fs" Member="primaryDirectory" />
+    <PackageExport Include="WorkspaceState.fs" Member="primaryDirectorySync" />
+    <PackageExport Include="WorkspaceState.fs" Member="checkStateDirectory" />
+    <PackageExport Include="WorkspaceState.fs" Member="initializeStateDirectory" />
+  </ItemGroup>
+</Project>
