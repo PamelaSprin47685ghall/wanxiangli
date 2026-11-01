@@ -17,7 +17,7 @@ const succeed = result => {
   return result.stdout
 }
 
-test('installed TraceHistory preserves fixed materialization on Node and Bun', { timeout: 90000 }, async t => {
+test('installed TraceHistory and TraceCapture preserve materialization and serial capture on Node and Bun', { timeout: 90000 }, async t => {
   const directory = mkdtempSync(path.join(tmpdir(), 'wanxiangli-trace-history-package-'))
   t.after(() => rmSync(directory, { recursive: true, force: true }))
   const packed = packedPackage(succeed(spawnSync('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', directory], { cwd: root, env, encoding: 'utf8', timeout: 30000 })))
@@ -33,6 +33,8 @@ test('installed TraceHistory preserves fixed materialization on Node and Bun', {
   for (const [runtime, executable] of runtimes) {
     const reply = succeed(spawnSync(executable, [path.join(consumer, 'trace-consumer.mjs'), runtime, 'history'], { cwd: tmpdir(), env, encoding: 'utf8', timeout: 15000 }))
     assert.equal(JSON.parse(reply.trim()).history, true)
+    const captured = succeed(spawnSync(executable, [path.join(consumer, 'trace-consumer.mjs'), runtime, 'capture'], { cwd: tmpdir(), env, encoding: 'utf8', timeout: 15000 }))
+    assert.equal(JSON.parse(captured.trim()).capture, true)
     t.diagnostic(`${runtime}: TraceHistory fixed range and semantic payload passed`)
   }
 })

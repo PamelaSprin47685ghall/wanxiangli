@@ -1,4 +1,14 @@
-import { Trace, TraceHistory, materializeTraceItems, inspectTraceItems, type Observation, type Cut, type HistoryItem } from 'wanxiangli/trace'
+import { Trace, TraceHistory, TraceCapture, materializeTraceItems, inspectTraceItems, type Observation, type Cut, type HistoryItem, type CaptureStore, type CapturePart } from 'wanxiangli/trace'
+
+const captureStore: CaptureStore<string, Error> = {
+  read: () => ({history:new TraceHistory('typed-capture'),identities:[]}),
+  writeBody: async () => ({ok:true,value:{reference:'ref',digest:'digest'}}),
+  append: async fact => { if(fact.kind==='part') { const metadata:string=fact.part.metadata; void metadata } },
+}
+const capturePart: CapturePart<string> = {key:'key',secondaryKey:null,compatibility:'same',exactKey:true,legacyKey:null,role:'user',kind:'text',toolName:null,body:'original',metadata:'opaque'}
+const capture = new TraceCapture()
+const captured = await capture.run('session',()=>capture.captureParts(captureStore,[capturePart],'stable'))
+if(!captured.ok) { const error:Error=captured.error; void error }
 
 const trace = new Trace('typed-trace')
 const before: Cut = trace.head()

@@ -9,6 +9,9 @@
     <Compile Include="FissionLaneRegistry.fs" />
     <Compile Include="FissionRuntime.fs" />
     <Compile Include="FissionAdmissionRegistry.fs" />
+    <Compile Include="FissionGroupLawCore.fs" />
+    <Compile Include="FissionHistory.fs" />
+    <Compile Include="FissionLifecycle.fs" />
     <Compile Include="FissionGroupLaw.fs" />
     <PackageExport Include="FissionLaneQuiescenceGate.fs" Member="FissionLaneQuiescenceGate" />
     <PackageExport Include="FissionLaneQuiescenceGate.fs" Member="fissionLaneQuiescenceGate" />
@@ -18,6 +21,8 @@
     <PackageExport Include="FissionRuntime.fs" Member="fissionRuntime" />
     <PackageExport Include="FissionAdmissionRegistry.fs" Member="FissionAdmissionRegistry" />
     <PackageExport Include="FissionAdmissionRegistry.fs" Member="fissionAdmissionRegistry" />
-    <PackageExport Include="FissionGroupLaw.fs" Member="FissionGroupLaw" />
+    <PackageExport Include="FissionGroupLawCore.fs" Member="FissionGroupLaw" />
+    <PackageExport Include="FissionHistory.fs" Member="FissionHistory" />
+    <PackageExport Include="FissionLifecycle.fs" Member="FissionLifecycle" />
   </ItemGroup>
 </Project>

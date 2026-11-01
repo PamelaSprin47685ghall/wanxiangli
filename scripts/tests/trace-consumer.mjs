@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { Trace, TraceHistory, materializeTraceItems, inspectTraceItems } from 'wanxiangli/trace'
+import { Trace, TraceHistory, TraceCapture, materializeTraceItems, inspectTraceItems } from 'wanxiangli/trace'
 
 const [runtime, mode, database, checkpointJson] = process.argv.slice(2)
 const id = 'installed-trace'
@@ -7,7 +7,31 @@ const source = Uint8Array.from([...new TextEncoder().encode('\ufeff用户原件\
 const observed = { type: 'MessageObserved', messageId: 'user', role: 'user', origin: 'human', runId: null }
 const confirmed = { type: 'PartConfirmed', messageId: 'user', partId: 'original', index: 0, kind: 'binary', bytes: source }
 const finished = { type: 'MessageFinished', messageId: 'user', partCount: 1 }
-assert.deepEqual(Object.keys(await import('wanxiangli/trace')), ['Trace', 'TraceHistory', 'inspectTraceItems', 'materializeTraceItems'])
+assert.deepEqual(Object.keys(await import('wanxiangli/trace')), ['Trace', 'TraceCapture', 'TraceHistory', 'inspectTraceItems', 'materializeTraceItems'])
+
+if (mode === 'capture') {
+  const capture = new TraceCapture()
+  let history = new TraceHistory('installed-capture')
+  const identities = []
+  const writes = []
+  const store = {
+    read: () => ({ history, identities }),
+    writeBody: async body => { writes.push(body); return {ok:true,value:{reference:'ref',digest:'digest'}} },
+    append: async fact => {
+      assert.equal(fact.kind,'part')
+      const next = history.appendPart({...fact.part,sequence:fact.sequence,bodyRef:fact.bodyRef,bodyDigest:fact.bodyDigest,descriptor:fact.part.key})
+      assert.equal(next.ok,true)
+      history = next.value
+      identities.push({key:fact.part.key,secondaryKey:null,compatibility:'same'})
+    },
+  }
+  const part = {key:'one',secondaryKey:null,compatibility:'same',exactKey:true,legacyKey:null,role:'user',kind:'text',toolName:null,body:'original\0',metadata:null}
+  await Promise.all([capture.run('session',()=>capture.captureParts(store,[part],'stable')),capture.run('session',()=>capture.captureParts(store,[part],'stable'))])
+  assert.deepEqual(writes,['original\0'])
+  assert.equal(history.headSequence(),1n)
+  console.log(JSON.stringify({capture:true}))
+  process.exit(0)
+}
 
 if (mode === 'history') {
   const metadata = { origin: 'consumer' }

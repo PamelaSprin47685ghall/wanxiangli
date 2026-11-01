@@ -37,6 +37,7 @@ function succeed(result) {
 for (const name of ['lifecycle', 'eventstore', 'runtime', 'trace', 'session', 'delivery', 'degeneration', 'ablation', 'projection', 'authority', 'permit', 'capacity', 'admission-queue', 'dispatch', 'borrowing', 'run-witness', 'git', 'failure', 'attachment-lease', 'warm-start', 'failure-budget', 'delegate-batch', 'fission-group', 'ordinal', 'bayes', 'llm-text', 'bounded-map', 'returned-material', 'keyed-serial', 'file-lock', 'result-mailbox', 'task-scope', 'journal-session']) {
   test(`SPEC[build-001] ${name} compiles and runs its own tests without any sibling source`, { timeout: 90000 }, t => {
     const directory = fixture(t, [name])
+    if (name === 'trace') cpSync(path.join(root, 'dist/keyed-serial'), path.join(directory, 'dist/keyed-serial'), { recursive: true })
     assert.deepEqual(readdirSync(path.join(directory, 'src')), [name])
     const build = run(tmpdir(), [path.join(directory, 'scripts/build.mjs'), name])
     succeed(build)
@@ -45,7 +46,7 @@ for (const name of ['lifecycle', 'eventstore', 'runtime', 'trace', 'session', 'd
       .filter(file => file.endsWith('.test.mjs'))
       .map(file => path.join(directory, 'src', name, 'tests', file))
     succeed(run(directory, ['--test', ...tests]))
-    assert.deepEqual(readdirSync(path.join(directory, 'dist')), [name])
+    assert.deepEqual(readdirSync(path.join(directory, 'dist')).sort(), name === 'trace' ? ['keyed-serial', 'trace'] : [name])
     if (name === 'runtime') {
       const artifact = readFileSync(path.join(directory, 'dist/runtime/Runtime.js'), 'utf8')
       assert.doesNotMatch(artifact, /from ["']wanxiangli\//)
@@ -129,8 +130,9 @@ test('SPEC[build-001] a real compiler error fails without replacing a previous a
   assert.deepEqual(readdirSync(path.join(directory, '.build')), [])
 })
 
-test('SPEC[build-001] the third cut leaves both earlier cuts untouched and has no sibling imports', { timeout: 60000 }, t => {
+test('trace uses the public serial artifact and leaves unrelated output untouched', { timeout: 60000 }, t => {
   const directory = fixture(t, ['trace'])
+  cpSync(path.join(root, 'dist/keyed-serial'), path.join(directory, 'dist/keyed-serial'), { recursive: true })
   for (const name of ['lifecycle', 'eventstore', 'assembly', 'runtime', 'failure']) {
     mkdirSync(path.join(directory, 'dist', name), { recursive: true })
     writeFileSync(path.join(directory, 'dist', name, 'keep'), `unchanged-${name}`)
@@ -140,7 +142,7 @@ test('SPEC[build-001] the third cut leaves both earlier cuts untouched and has n
     assert.equal(readFileSync(path.join(directory, 'dist', name, 'keep'), 'utf8'), `unchanged-${name}`)
     assert.deepEqual(readdirSync(path.join(directory, 'dist', name)), ['keep'])
   }
-  assert.doesNotMatch(readFileSync(path.join(directory, 'dist/trace/Trace.js'), 'utf8'), /from ["']wanxiangli\//)
+  assert.match(readFileSync(path.join(directory, 'dist/trace/Trace.js'), 'utf8'), /from ["']wanxiangli\/keyed-serial["']/)
 })
 
 test('SPEC[build-001] cross-project references are rejected by the same build entrypoint', t => {

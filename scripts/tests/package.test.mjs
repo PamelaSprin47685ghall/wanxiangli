@@ -19,6 +19,69 @@ function succeed(result) {
   return result.stdout
 }
 
+test('installed FissionLifecycle runs two lanes through shared results and owner convergence', { timeout: 90000 }, async t => {
+  const temporary = mkdtempSync(path.join(tmpdir(), 'wanxiangli-fission-lifecycle-package-'))
+  t.after(() => rmSync(temporary, { recursive: true, force: true }))
+  const packed = packedPackage(succeed(spawnSync(npm, ['pack', '--ignore-scripts', '--json', '--pack-destination', temporary], { cwd: root, env: cleanEnvironment, encoding: 'utf8', timeout: 30000 })))
+  const consumer = path.join(temporary, 'consumer')
+  mkdirSync(consumer)
+  writeFileSync(path.join(consumer, 'package.json'), JSON.stringify({ name: 'fission-lifecycle-consumer', private: true, type: 'module' }))
+  succeed(spawnSync(npm, ['install', '--ignore-scripts', '--omit=dev', '--no-audit', '--no-fund', path.join(temporary, packed.filename)], { cwd: consumer, env: cleanEnvironment, encoding: 'utf8', timeout: 30000 }))
+  for (const file of ['fission-lifecycle-consumer.mjs', 'fission-lifecycle-consumer.ts']) copyFileSync(path.join(root, 'scripts/tests', file), path.join(consumer, file))
+  succeed(spawnSync(process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), '--noEmit', '--strict', '--target', 'es2022', '--module', 'nodenext', 'fission-lifecycle-consumer.ts'], { cwd: consumer, env: cleanEnvironment, encoding: 'utf8', timeout: 30000 }))
+  const runtimes = [['node', process.execPath]]
+  if (spawnSync('bun', ['--version'], { env: cleanEnvironment, encoding: 'utf8' }).status === 0) runtimes.push(['bun', 'bun'])
+  else t.diagnostic('Bun is absent; its Fission lifecycle consumer was not run.')
+  for (const [name, executable] of runtimes) {
+    await t.test(name, () => {
+      const output = succeed(spawnSync(executable, [path.join(consumer, 'fission-lifecycle-consumer.mjs')], { cwd: tmpdir(), env: cleanEnvironment, encoding: 'utf8', timeout: 10000 }))
+      assert.deepEqual(JSON.parse(output), { fissionLifecycle: true })
+    })
+  }
+})
+
+test('installed DelegateInvocation owns observed acceptance and terminal settlement', { timeout: 90000 }, async t => {
+  const temporary = mkdtempSync(path.join(tmpdir(), 'wanxiangli-delegate-invocation-package-'))
+  t.after(() => rmSync(temporary, { recursive: true, force: true }))
+  const packed = packedPackage(succeed(spawnSync(npm, ['pack', '--ignore-scripts', '--json', '--pack-destination', temporary], { cwd: root, env: cleanEnvironment, encoding: 'utf8', timeout: 30000 })))
+  const consumer = path.join(temporary, 'consumer')
+  mkdirSync(consumer)
+  writeFileSync(path.join(consumer, 'package.json'), JSON.stringify({ name: 'delegate-invocation-consumer', private: true, type: 'module' }))
+  succeed(spawnSync(npm, ['install', '--ignore-scripts', '--omit=dev', '--no-audit', '--no-fund', path.join(temporary, packed.filename)], { cwd: consumer, env: cleanEnvironment, encoding: 'utf8', timeout: 30000 }))
+  for (const file of ['delegate-invocation-consumer.mjs', 'delegate-invocation-consumer.ts']) copyFileSync(path.join(root, 'scripts/tests', file), path.join(consumer, file))
+  succeed(spawnSync(process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), '--noEmit', '--strict', '--target', 'es2022', '--module', 'nodenext', 'delegate-invocation-consumer.ts'], { cwd: consumer, env: cleanEnvironment, encoding: 'utf8', timeout: 30000 }))
+  const runtimes = [['node', process.execPath]]
+  if (spawnSync('bun', ['--version'], { env: cleanEnvironment, encoding: 'utf8' }).status === 0) runtimes.push(['bun', 'bun'])
+  else t.diagnostic('Bun is absent; its delegate invocation consumer was not run.')
+  for (const [name, executable] of runtimes) {
+    await t.test(name, () => {
+      const output = succeed(spawnSync(executable, [path.join(consumer, 'delegate-invocation-consumer.mjs')], { cwd: tmpdir(), env: cleanEnvironment, encoding: 'utf8', timeout: 10000 }))
+      assert.deepEqual(JSON.parse(output), { delegateInvocation: true })
+    })
+  }
+})
+
+test('installed PairGuidance owns history and commits rendered occurrences', { timeout: 90000 }, async t => {
+  const temporary = mkdtempSync(path.join(tmpdir(), 'wanxiangli-pair-guidance-package-'))
+  t.after(() => rmSync(temporary, { recursive: true, force: true }))
+  const packed = packedPackage(succeed(spawnSync(npm, ['pack', '--ignore-scripts', '--json', '--pack-destination', temporary], { cwd: root, env: cleanEnvironment, encoding: 'utf8', timeout: 30000 })))
+  const consumer = path.join(temporary, 'consumer')
+  mkdirSync(consumer)
+  writeFileSync(path.join(consumer, 'package.json'), JSON.stringify({ name: 'pair-guidance-consumer', private: true, type: 'module' }))
+  succeed(spawnSync(npm, ['install', '--ignore-scripts', '--omit=dev', '--no-audit', '--no-fund', path.join(temporary, packed.filename)], { cwd: consumer, env: cleanEnvironment, encoding: 'utf8', timeout: 30000 }))
+  for (const file of ['pair-guidance-consumer.mjs', 'pair-guidance-consumer.ts']) copyFileSync(path.join(root, 'scripts/tests', file), path.join(consumer, file))
+  succeed(spawnSync(process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), '--noEmit', '--strict', '--target', 'es2022', '--module', 'nodenext', 'pair-guidance-consumer.ts'], { cwd: consumer, env: cleanEnvironment, encoding: 'utf8', timeout: 30000 }))
+  const runtimes = [['node', process.execPath]]
+  if (spawnSync('bun', ['--version'], { env: cleanEnvironment, encoding: 'utf8' }).status === 0) runtimes.push(['bun', 'bun'])
+  else t.diagnostic('Bun is absent; its pair guidance consumer was not run.')
+  for (const [name, executable] of runtimes) {
+    await t.test(name, () => {
+      const output = succeed(spawnSync(executable, [path.join(consumer, 'pair-guidance-consumer.mjs')], { cwd: tmpdir(), env: cleanEnvironment, encoding: 'utf8', timeout: 10000 }))
+      assert.deepEqual(JSON.parse(output), { pairGuidance: true })
+    })
+  }
+})
+
 test('installed JournalSession commits, notifies, recovers and closes through the public entry', { timeout: 90000 }, async t => {
   const temporary = mkdtempSync(path.join(tmpdir(), 'wanxiangli-journal-session-package-'))
   t.after(() => rmSync(temporary, { recursive: true, force: true }))
@@ -194,6 +257,27 @@ test('SPEC[build-002] an installed tarball survives a real effect and process de
       const recovery = succeed(spawnSync(executable, [script, runtime, 'recover', database, effects], { cwd: tmpdir(), env: cleanEnvironment, encoding: 'utf8', timeout: 10000 }))
       assert.equal(JSON.parse(recovery.trim()).externalEffects, 1)
       assert.equal(readFileSync(effects, 'utf8').trim().split('\n').length, 1)
+    })
+  }
+})
+
+test('installed ProviderRecovery composes a durable budget and one stopped dispatch', { timeout: 90000 }, async t => {
+  const temporary = mkdtempSync(path.join(tmpdir(), 'wanxiangli-provider-recovery-package-'))
+  t.after(() => rmSync(temporary, { recursive: true, force: true }))
+  const packed = packedPackage(succeed(spawnSync(npm, ['pack', '--ignore-scripts', '--json', '--pack-destination', temporary], { cwd: root, env: cleanEnvironment, encoding: 'utf8', timeout: 30000 })))
+  const consumer = path.join(temporary, 'consumer')
+  mkdirSync(consumer)
+  writeFileSync(path.join(consumer, 'package.json'), JSON.stringify({ name: 'provider-recovery-consumer', private: true, type: 'module' }))
+  succeed(spawnSync(npm, ['install', '--ignore-scripts', '--omit=dev', '--no-audit', '--no-fund', path.join(temporary, packed.filename)], { cwd: consumer, env: cleanEnvironment, encoding: 'utf8', timeout: 30000 }))
+  for (const file of ['provider-recovery-consumer.mjs', 'provider-recovery-consumer.ts']) copyFileSync(path.join(root, 'scripts/tests', file), path.join(consumer, file))
+  succeed(spawnSync(process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), '--noEmit', '--strict', '--target', 'es2022', '--module', 'nodenext', 'provider-recovery-consumer.ts'], { cwd: consumer, env: cleanEnvironment, encoding: 'utf8', timeout: 30000 }))
+  const runtimes = [['node', process.execPath]]
+  if (spawnSync('bun', ['--version'], { env: cleanEnvironment, encoding: 'utf8' }).status === 0) runtimes.push(['bun', 'bun'])
+  else t.diagnostic('Bun is absent; its provider recovery consumer was not run.')
+  for (const [name, executable] of runtimes) {
+    await t.test(name, () => {
+      const output = succeed(spawnSync(executable, [path.join(consumer, 'provider-recovery-consumer.mjs')], { cwd: tmpdir(), env: cleanEnvironment, encoding: 'utf8', timeout: 10000 }))
+      assert.deepEqual(JSON.parse(output), { providerRecovery: true })
     })
   }
 })

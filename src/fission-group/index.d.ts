@@ -151,3 +151,127 @@ export declare class FissionAdmissionRegistry {
 }
 
 export declare const fissionAdmissionRegistry: FissionAdmissionRegistry
+
+export interface FissionHistoryTakeover {
+  readonly laneIndex: number
+  readonly session: string
+  readonly prompt: string | null
+  readonly physical: string | null
+  readonly reference: string
+  readonly digest: string
+}
+export type FissionHistoryTerminal =
+  | {readonly kind:'Open'}
+  | {readonly kind:'Failed',readonly reason:string}
+  | {readonly kind:'Converged',readonly session:string,readonly run:string,readonly reference:string,readonly digest:string}
+export interface FissionHistoryGroup {
+  readonly id: string
+  readonly owner: string
+  readonly parent: string | null
+  readonly origin: string
+  readonly count: number
+  readonly sessions: readonly (readonly [number,string])[]
+  readonly prompts: readonly (readonly [number,string])[]
+  readonly ownerReference: string
+  readonly ownerDigest: string
+  readonly before: readonly string[]
+  readonly work: readonly (readonly [number,readonly [string,string]])[]
+  readonly runs: readonly (readonly [number,string])[]
+  readonly captured: readonly (readonly [string,readonly [string,string]])[]
+  readonly delivered: readonly (readonly [string,readonly number[]])[]
+  readonly affinities: readonly (readonly [string,number])[]
+  readonly takeover: FissionHistoryTakeover | null
+  readonly terminal: FissionHistoryTerminal
+}
+export type FissionHistoryEvent = {readonly groupId:string,readonly owner:string} & (
+  | {readonly kind:'admitted',readonly parent:string|null,readonly origin:string,readonly count:number,readonly sessions:readonly string[],readonly prompts:readonly string[],readonly reference:string,readonly digest:string,readonly before:readonly string[]}
+  | {readonly kind:'laneMaterialized',readonly laneIndex:number,readonly session:string,readonly run:string,readonly reference:string,readonly digest:string}
+  | {readonly kind:'completionCaptured',readonly completion:string,readonly reference:string,readonly digest:string}
+  | {readonly kind:'completionDelivered',readonly completion:string,readonly laneIndex:number}
+  | {readonly kind:'externalAffinityBound',readonly external:string,readonly laneIndex:number}
+  | {readonly kind:'takeover',readonly laneIndex:number,readonly session:string,readonly prompt:string|null,readonly physical:string|null,readonly reference:string,readonly digest:string}
+  | {readonly kind:'converged',readonly session:string,readonly run:string,readonly reference:string,readonly digest:string}
+  | {readonly kind:'failed',readonly reason:string}
+)
+export class FissionHistory {
+  constructor()
+  apply(event:FissionHistoryEvent): {readonly ok:true,readonly history:FissionHistory} | {readonly ok:false,readonly rejection:FissionGroupRejection}
+  group(id:string): FissionHistoryGroup | null
+  activeForOwner(owner:string): FissionHistoryGroup | null
+  latestForOwner(owner:string): FissionHistoryGroup | null
+  ownerOfLane(session:string): string | null
+  membership(session:string): {readonly group:FissionHistoryGroup,readonly laneIndex:number} | null
+  activeGroups(): readonly FissionHistoryGroup[]
+  convergenceReady(id:string): boolean
+}
+
+export type FissionResult<T> = {readonly ok:true,readonly value:T} | {readonly ok:false,readonly error:string}
+export interface FissionLaneInput {readonly index:number,readonly prompt:string}
+export interface FissionStartedLane extends FissionLaneInput {readonly session:string}
+export interface FissionAdmissionRequest {readonly owner:string,readonly count:number,readonly lanes:readonly FissionLaneInput[]}
+export interface FissionAdmissionValue {readonly owner:string,readonly parent:string|null,readonly ownerView:string|null,readonly lanes:readonly FissionStartedLane[]}
+export interface FissionAdmissionEffects {
+  parentOf(owner:string):Promise<FissionResult<string|null>>
+  ownerView(owner:string):Promise<FissionResult<string|null>>
+  createLane(owner:string,parent:string|null,lane:FissionLaneInput):Promise<FissionResult<string>>
+  renderStartup(count:number,lane:FissionStartedLane,ownerView:string|null):string
+  startLane(session:string,prompt:string):Promise<FissionResult<void>>
+  abortLane(session:string):Promise<void>
+  interruptOwner(owner:string):Promise<FissionResult<void>>
+  onLanesCreated(owner:string,parent:string|null,ownerView:string,lanes:readonly FissionStartedLane[]):Promise<FissionResult<void>>
+  onFailed(owner:string,reason:string):Promise<void>
+}
+export interface FissionBlob {readonly reference:string,readonly digest:string}
+export interface FissionConvergenceEffects<Authority> {
+  history():FissionHistory
+  append(event:FissionHistoryEvent):Promise<FissionResult<void>>
+  readBlob(reference:string,digest:string):Promise<FissionResult<string>>
+  writeBlob(text:string):Promise<FissionResult<FissionBlob>>
+  ownerAuthority(owner:string):Authority|null
+  retireCompletion(owner:string,completion:string):Promise<boolean>
+  sendTakeover(session:string,authority:Authority,aggregate:string):Promise<FissionResult<string>>
+  report(kind:string,group:FissionHistoryGroup,detail:unknown):void
+}
+export interface FissionObservation {
+  readonly session:string
+  readonly run:string
+  readonly outcome:'OngoingExecution'|'NeedsContinuation'|'ProviderFailed'|'DegenerationInterrupted'|'ExternalAbort'|'Completed'
+  readonly reason?:string
+  readonly canNudge:boolean
+}
+export interface FissionObservationEffects<Authority,Observation extends FissionObservation> extends FissionConvergenceEffects<Authority> {
+  abortSession(session:string):Promise<FissionResult<void>>
+  notifyFailed(owner:string,reason:string):boolean
+  publishOwner(group:FissionHistoryGroup,observation:Observation):Promise<FissionResult<boolean>>
+  readDelivery(observation:Observation):string|null
+  isExternalRetired(owner:string,external:string):boolean
+  nudge(group:FissionHistoryGroup,lane:number,observation:Observation,outstanding:boolean):Promise<{readonly kind:'failed',readonly error:string}|{readonly kind:'kept'}>
+}
+export interface FissionBroadcast {
+  readonly id:string
+  readonly owner:string
+  readonly lanes:readonly FissionStartedLane[]
+  readonly completion:string
+  readonly payload:string
+}
+export interface FissionBroadcastEffects<Revision> {
+  history():FissionHistory
+  append(event:FissionHistoryEvent):Promise<FissionResult<void>>
+  writeBlob(text:string):Promise<FissionResult<FissionBlob>>
+  sendShared(request:FissionBroadcast,lane:FissionStartedLane):Promise<FissionResult<boolean>>
+  readonly canConverge:boolean
+  revision():Revision
+  awaitChange(revision:Revision):Promise<void>
+  converge(owner:string):Promise<boolean>
+  report(kind:string,request:FissionBroadcast,detail:unknown):void
+}
+export class FissionLifecycle {
+  constructor()
+  isActive(owner:string):boolean
+  release(owner:string):void
+  admit(request:FissionAdmissionRequest,effects:FissionAdmissionEffects):Promise<{readonly ok:true,readonly value:FissionAdmissionValue}|{readonly ok:false,readonly kind:'TooFewLanes'|'InvalidOrigin'|'AlreadyFissioned'|'RuntimeUnavailable',readonly error:string}>
+  converge<Authority>(owner:string,effects:FissionConvergenceEffects<Authority>):Promise<boolean>
+  observe<Authority,Observation extends FissionObservation>(observation:Observation,effects:FissionObservationEffects<Authority,Observation>):Promise<boolean>
+  fail<Authority,Observation extends FissionObservation>(group:FissionHistoryGroup,reason:string,effects:FissionObservationEffects<Authority,Observation>):Promise<void>
+  broadcast<Revision>(request:FissionBroadcast,effects:FissionBroadcastEffects<Revision>):Promise<void>
+}

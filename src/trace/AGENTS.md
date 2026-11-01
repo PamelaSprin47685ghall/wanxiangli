@@ -24,8 +24,16 @@
 - `read` 按调用方选定的条目顺序逐项读取，允许重复条目。普通读取不计算正文摘要；读取失败返回原有上下文文字，Promise 拒绝直接传播。未知部件类型或缺少工具名，在对应正文读取成功之后才返回错误。
 - `materialize` 和 `materializeTraceItems` 保留既有语义往返：TextEncoder 编码、512 KiB 分块、Trace 固定窗口、合并字节后 UTF-8 解码。工具名和媒体类型长度按 UTF-16 字符单元编码。普通 `read` 不经过这次往返。
 
-宿主事件排序、代际选择、消息身份解析、正文保存、显式摘要核对和 provider 请求组装留在调用方。返回数组和 History 自己的记录视图会复制；metadata 保持调用方不可变值的引用，不产生第二份宿主状态。
+宿主事件排序、代际选择、消息身份解析、显式摘要核对和 provider 请求组装留在调用方。返回数组和 History 自己的记录视图会复制；metadata 保持调用方不可变值的引用，不产生第二份宿主状态。
+
+## TraceCapture
+
+`TraceCapture` 组织原文保存与事实追加。它读取调用方当前的 History，按已解码的不透明身份辨认重入，为新部件分配游标，先写正文，再追加对应事实。每项依次结算；后项失败时，前面已经提交的材料仍然保留。正文写入的普通错误原样返回，事实提交的 Promise 拒绝原样传播，不重发整批。
+
+同一会话的完整捕获通过 `run` 串行，复用公开 `wanxiangli/keyed-serial`；不同 key 可独立前进。对象只拥有在途合作和每批索引，不复制 Journal 的持久 Current。索引以批次开始时的历史为准，不新增批内去重。
+
+Opening、正文终端和已保存引用分别保持自己的重入条件。receipt 从捕获前后的 History 计算；返回不代表额外的落盘保证，实际提交由调用方提供的存储参与者兑现。库不识别宿主消息字段、provenance 字符串格式、重试注入或压缩代际；这些由万象通翻译成身份键和不透明 metadata。
 
 ## 修改与自保
 
-本模块独立构建：`node scripts/build.mjs trace`。Trace 的既有就近测试覆盖字节捕获和固定窗口；History 的差分集中在 `tests/history.test.mjs`。安装消费者复用 `scripts/tests/trace-consumer.mjs` 的 `history` 模式和对应 TypeScript 文件，走 npm 公开入口；不以本地私有源码替代交付内容。
+本模块独立构建：`node scripts/build.mjs trace`；运行时通过公开产物消费 keyed-serial，不编译其源码。Trace 的既有就近测试覆盖字节捕获和固定窗口；History 与捕获合作的差分分别在 `tests/history.test.mjs`、`tests/capture.test.mjs`。安装消费者复用 `scripts/tests/trace-consumer.mjs` 的 `history` / `capture` 模式和对应 TypeScript 文件，走 npm 公开入口；不以本地私有源码替代交付内容。
