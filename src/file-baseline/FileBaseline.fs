@@ -5,22 +5,11 @@ open Fable.Core
 open Fable.Core.JsInterop
 
 module private Baselines =
-    type Law =
-        abstract readFailure: code: obj -> string
-        abstract fileDiff: path: string * before: string * after: string -> string
-        abstract summarize: diffs: string array -> obj
-
     type Binding = { Resolve: obj; Payloads: obj }
     type private Content = { Bytes: obj; Text: string; Hash: string }
     type private Stored = Missing | Present of hash: string * payload: string
 
-    [<Import("CasebookMaintenanceLaw", "wanxiangli/casebook-maintenance")>]
-    let private lawClass: obj = jsNative
-
-    [<Emit("new $0()")>]
-    let private construct (_class: obj) : Law = jsNative
-
-    let private law = construct lawClass
+    let private law = Wanxiangli.FileBaseline.FileDiff.FileDiff()
 
     [<Emit("new WeakMap()")>]
     let private createOwners () : obj = jsNative

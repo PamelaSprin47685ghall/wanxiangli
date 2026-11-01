@@ -209,3 +209,18 @@ export declare class BookkeeperLedger {
 }
 
 export declare const bookkeeperLedger: BookkeeperLedger
+
+export type SettlementIncidentKind = 'StorageInvalid' | 'SemanticCut' | 'Unscoped'
+export type SettlementOutcomeTag =
+  | 'LogScopeFailure'
+  | 'CaseUnavailable'
+  | 'CaseUnavailableKnown'
+  | 'Unscoped'
+
+/** 按事件认领案例结算冲突；各实例独立，回调失败不改变结算结果。 */
+export declare class CasebookSettlementOwner<TIncident = unknown> {
+  constructor(onConflict: (incident: TIncident) => void)
+  Observe(eventId: string, kind: SettlementIncidentKind, incident: TIncident | null | undefined): SettlementOutcomeTag
+  Redeliver(eventId: string, incident: TIncident): 'CaseUnavailableKnown'
+  readonly SnapshotCount?: number
+}

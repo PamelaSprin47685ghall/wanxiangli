@@ -1,4 +1,19 @@
-import { FileBaseline } from 'wanxiangli/file-baseline'
+import { FileBaseline, FileDiff, type MaintenanceSummary, type TruncatedDiff } from 'wanxiangli/file-baseline'
+import { CasebookSettlementOwner, type SettlementOutcomeTag } from 'wanxiangli/casebook'
+
+const diff = new FileDiff()
+const summary: MaintenanceSummary = diff.summarize([diff.fileDiff('file', null, 'text')])
+const truncated: TruncatedDiff = diff.truncate(summary.diffSummary, 200)
+void truncated
+const owner = new CasebookSettlementOwner<{ message: string }>(incident => { void incident.message })
+const incident = { message: 'case conflict' }
+const settled: SettlementOutcomeTag = owner.Observe('event', 'SemanticCut', incident)
+const redelivered: 'CaseUnavailableKnown' = owner.Redeliver('event', incident)
+void settled; void redelivered
+// @ts-expect-error 文件状态只接受字符串或 null。
+void diff.fileDiff('file', undefined, 'text')
+// @ts-expect-error 结算消息形状由实例固定。
+void owner.Observe('event', 'SemanticCut', { code: 1 })
 
 const service = new FileBaseline({
   resolvePath: (path: string): string => path,

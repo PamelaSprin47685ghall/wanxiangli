@@ -1,23 +1,23 @@
-module Wanxiangli.CasebookMaintenance.CasebookMaintenanceLaw
+module Wanxiangli.FileBaseline.FileDiff
 
 open System.Collections.Generic
 open Fable.Core
 open Fable.Core.JsInterop
 
 [<Emit("typeof $0 === 'string'")>]
-let private isString (value: obj) : bool = jsNative
+let private isString (_value: obj) : bool = jsNative
 
 [<Emit("Number.isInteger($0)")>]
-let private isInteger (value: obj) : bool = jsNative
+let private isInteger (_value: obj) : bool = jsNative
 
 [<Emit("Array.isArray($0)")>]
-let private isArray (value: obj) : bool = jsNative
+let private isArray (_value: obj) : bool = jsNative
 
 [<Emit("$0 === null")>]
-let private isNullExactly (value: obj) : bool = jsNative
+let private isNullExactly (_value: obj) : bool = jsNative
 
 [<Emit("$0.charCodeAt($1)")>]
-let private codeUnitAt (text: string) (index: int) : float = jsNative
+let private codeUnitAt (_text: string) (_index: int) : float = jsNative
 
 let private requireText (name: string) (value: obj) : string =
     if isString value then unbox<string> value
@@ -211,9 +211,9 @@ let private isLow (text: string) index =
     let unit = codeUnitAt text index
     unit >= 56320.0 && unit <= 57343.0
 
-/// Casebook 按差异维护的纯决策（knowledge-reuse-005/014/015/016）。不读文件、不读写 payload、不调 Bookkeeper、不写事件。
+/// 原始文件文本的差异、汇总与截断；不读文件、不访问 payload、不持有案例状态。
 [<AttachMembers>]
-type CasebookMaintenanceLaw() =
+type FileDiff() =
     /// 一个关联文件从维护基线 B 到目标状态 T 的零上下文统一 diff；null 为 Missing。B 与 T 相同（含同为 Missing）时为空串。
     member _.fileDiff(path: obj, before: obj, after: obj) : string =
         fileDiffOf (requireText "path" path) (requireState "before" before) (requireState "after" after)

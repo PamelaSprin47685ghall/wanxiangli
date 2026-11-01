@@ -1,4 +1,4 @@
-module Wanxiangli.CasebookMaintenance.CasebookSettlementOwner
+module Wanxiangli.Casebook.CasebookSettlementOwner
 
 open System.Collections.Generic
 open Fable.Core

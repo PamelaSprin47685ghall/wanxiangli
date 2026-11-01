@@ -4,7 +4,9 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
-    <!-- 仅通过公开 ESM 消费 casebook-maintenance，不编译其源码。 -->
+    <Compile Include="FileDiff.fs" />
     <Compile Include="FileBaseline.fs" />
+    <PackageExport Include="FileDiff.fs" Member="FileDiff" />
+    <PackageExport Include="FileBaseline.fs" Member="FileBaseline" />
   </ItemGroup>
 </Project>

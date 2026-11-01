@@ -3,7 +3,7 @@ import { WriterRetention } from 'wanxiangli/retention'
 import { CanonicalEventCodec } from 'wanxiangli/events'
 import { WriterSegments } from 'wanxiangli/segments'
 import { CasebookIndexLaw } from 'wanxiangli/casebook'
-import { CasebookMaintenanceLaw } from 'wanxiangli/casebook-maintenance'
+import { FileDiff } from 'wanxiangli/file-baseline'
 import { CasebookAccessLaw } from 'wanxiangli/casebook-access'
 
 const event = (id, parents = []) => ({ id, stream: 'job/main', type: 'JobRequested', parents, payload: {}, payloadRefs: [] })
@@ -31,7 +31,7 @@ process.stdout.write(JSON.stringify({
   ),
   stream: segments.decodeStream('w', codec.encode(root) + codec.encode(left)).events.length,
   shelfmark: new CasebookIndexLaw().shelfmarkFor('private-session-a', '## Restart behavior\nfull canonical question').startsWith('Restart behavior · '),
-  maintenance: new CasebookMaintenanceLaw().summarize([new CasebookMaintenanceLaw().fileDiff('a.txt', 'old\n', 'new\n')]).refresh,
+  maintenance: new FileDiff().summarize([new FileDiff().fileDiff('a.txt', 'old\n', 'new\n')]).refresh,
   access: new CasebookAccessLaw().relatedPaths(['b', 'a', 'b']),
   activity: new WriterRetention().lastActivity(tail) === now,
   closure: new CanonicalEventCodec().checkClosure([orphan], () => true).error.code,

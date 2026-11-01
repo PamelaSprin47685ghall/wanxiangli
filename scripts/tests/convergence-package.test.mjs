@@ -25,7 +25,7 @@ test('SPEC[convergence-package] installed convergence and retention merge a real
   assert.ok(packed.files.some(file => file.path === 'dist/events/CanonicalEventCodec.js'))
   assert.ok(packed.files.some(file => file.path === 'dist/segments/SegmentedWriter.js'))
   assert.ok(packed.files.some(file => file.path === 'dist/casebook/CasebookIndexLaw.js'))
-  assert.ok(packed.files.some(file => file.path === 'dist/casebook-maintenance/CasebookMaintenanceLaw.js'))
+  assert.ok(packed.files.some(file => file.path === 'dist/file-baseline/FileBaseline.js'))
   assert.ok(packed.files.some(file => file.path === 'dist/casebook-access/CasebookAccessLaw.js'))
   assert.ok(packed.files.some(file => file.path === 'dist/quarantine/RuleQuarantine.js'))
   for (const file of packed.files) assert.doesNotMatch(file.path, /\.fs(?:proj|i)?$|^scripts\/|^node_modules\//)

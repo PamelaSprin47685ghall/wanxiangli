@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, rmSync, existsSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -15,12 +15,14 @@ const succeed = result => {
   return result.stdout
 }
 
-test('file-baseline 实际安装包在 Node/Bun 保留文件原件并形成下一基线', { timeout: 90000 }, t => {
+test('实际安装包在 Node/Bun 保留基线、计算差异并独立认领案例结算', { timeout: 90000 }, t => {
   const directory = mkdtempSync(path.join(tmpdir(), 'wanxiangli-file-baseline-package-'))
   t.after(() => rmSync(directory, { recursive: true, force: true }))
   const packed = packedPackage(succeed(spawnSync('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', directory], { cwd: root, env, encoding: 'utf8', timeout: 30000 })))
   assert.ok(packed.files.some(file => file.path === 'dist/file-baseline/FileBaseline.js'))
   assert.ok(packed.files.some(file => file.path === 'src/file-baseline/index.d.ts'))
+  assert.ok(packed.files.some(file => file.path === 'dist/casebook/CasebookIndexLaw.js'))
+  assert.equal(packed.files.some(file => /^(dist|src)\/casebook-maintenance\//.test(file.path)), false)
   for (const file of packed.files) assert.doesNotMatch(file.path, /\.fs(?:proj|i)?$|^scripts\/|^node_modules\//)
   const consumer = path.join(directory, 'consumer')
   mkdirSync(consumer)
@@ -28,7 +30,6 @@ test('file-baseline 实际安装包在 Node/Bun 保留文件原件并形成下�
   succeed(spawnSync('npm', ['install', '--offline', '--ignore-scripts', '--omit=dev', '--no-audit', '--no-fund', path.join(directory, packed.filename)], { cwd: consumer, env, encoding: 'utf8', timeout: 30000 }))
   for (const file of ['file-baseline-consumer.mjs', 'file-baseline-consumer.ts']) copyFileSync(path.join(root, 'scripts/tests', file), path.join(consumer, file))
   assert.equal(existsSync(path.join(consumer, 'node_modules/@fable-org')), false)
-  assert.match(readFileSync(path.join(consumer, 'node_modules/wanxiangli/dist/file-baseline/FileBaseline.js'), 'utf8'), /from ["']wanxiangli\/casebook-maintenance["']/)
   succeed(spawnSync(process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), '--noEmit', '--strict', '--target', 'es2022', '--module', 'nodenext', 'file-baseline-consumer.ts'], { cwd: consumer, env, encoding: 'utf8', timeout: 30000 }))
   const runtimes = [['node', process.execPath]]
   if (spawnSync('bun', ['--version'], { encoding: 'utf8', env }).status === 0) runtimes.push(['bun', 'bun'])

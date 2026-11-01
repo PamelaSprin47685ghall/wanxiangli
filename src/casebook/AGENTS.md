@@ -1,6 +1,8 @@
 # casebook
 
-层：内核。同一入口并存两种职责：`CasebookIndexLaw` 是纯计算；`BookkeeperStaging` 是进程内自治暂存对象，持有事务槽状态，所有操作同步完成、不在状态变换中等待外部操作，无 IO、不读存储、不读时钟、不写事件。两者都不得 import 宿主 SDK 或其它 wanxiangli 模块。npm 入口 `wanxiangli/casebook`。
+层：内核。同一入口保留索引纯规则，以及暂存事务、会话草稿、取用单飞、Bookkeeper 附着和结算冲突的独立对象。它们各自拥有状态，不合成一份共享账本。无 IO、不读存储、不读时钟、不写事件，不 import 宿主 SDK 或其它 wanxiangli 模块。npm 入口 `wanxiangli/casebook`。
+
+`CasebookSettlementOwner` 拥有自己的 conflicts 字典，按 eventId 认领冲突。首次 StorageInvalid 通知并返回 LogScopeFailure；首次语义冲突通知并返回 CaseUnavailable，重复返回 CaseUnavailableKnown；Unscoped 不认领。通知异常被吞掉，不改变结果或已有认领；Redeliver 仅接受原 owner 已认领的同一对象引用。各实例互相隔离，不读取索引或基线。相关用例在 `tests/settlement.test.mjs`，与文件差异计算分开维护。
 
 # AXIOM
 

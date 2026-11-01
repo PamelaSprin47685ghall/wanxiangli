@@ -3,7 +3,21 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { tmpdir } from 'node:os'
 import { createHash } from 'node:crypto'
-import { FileBaseline } from 'wanxiangli/file-baseline'
+import { FileBaseline, FileDiff } from 'wanxiangli/file-baseline'
+import { CasebookSettlementOwner } from 'wanxiangli/casebook'
+
+const diff = new FileDiff()
+assert.equal(diff.fileDiff('unchanged', 'same\n', 'same\n'), '')
+assert.deepEqual(diff.summarize(['first', 'second']), { diffSummary: 'firstsecond', refresh: true })
+assert.equal(diff.truncate('short', 20).text, 'short')
+const reported = []
+const owner = new CasebookSettlementOwner(incident => { reported.push(incident); throw new Error('report failed') })
+const incident = { message: 'case conflict' }
+assert.equal(owner.Observe('event', 'SemanticCut', incident), 'CaseUnavailable')
+assert.equal(owner.Observe('event', 'SemanticCut', { message: 'another object' }), 'CaseUnavailableKnown')
+assert.deepEqual(reported, [incident])
+assert.equal(owner.Redeliver('event', incident), 'CaseUnavailableKnown')
+assert.throws(() => new CasebookSettlementOwner(() => {}).Redeliver('event', incident), /original settled owner/)
 
 const directory = fs.mkdtempSync(path.join(tmpdir(), 'wanxiangli-file-baseline-consumer-'))
 try {

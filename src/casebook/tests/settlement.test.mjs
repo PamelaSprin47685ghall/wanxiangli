@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { CasebookSettlementOwner } from 'wanxiangli/casebook-maintenance'
+import { CasebookSettlementOwner } from 'wanxiangli/casebook'
 
 test('SPEC[settlement-owner-1] onConflict requires non-null callback and rejects null/undefined', () => {
   assert.throws(() => new CasebookSettlementOwner(null), /onConflict/)
