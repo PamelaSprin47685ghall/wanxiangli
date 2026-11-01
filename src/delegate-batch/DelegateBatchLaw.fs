@@ -16,6 +16,7 @@ let retiredDelegateRegistry = RetiredDelegateRegistry.retiredDelegateRegistry
 
 type SyncDelegateBatchStore = SyncDelegateBatchStore.SyncDelegateBatchStore
 let syncDelegateBatchStore = SyncDelegateBatchStore.syncDelegateBatchStore
+type DelegateInvocationRuntime = Wanxiangli.DelegateBatch.DelegateInvocationRuntime
 
 type DeferredCallRecord = DeferredInspectionStore.DeferredCallRecord
 type DeferredInspectionStore = DeferredInspectionStore.DeferredInspectionStore

@@ -7,6 +7,7 @@
   <ItemGroup>
     <Compile Include="OutboundViewStore.fs" />
     <Compile Include="PairGuidanceMemoryStore.fs" />
+    <Compile Include="PairGuidanceHistory.fs" />
     <Compile Include="PairHint.fs" />
     <PackageExport Include="OutboundViewStore.fs" Member="OutboundViewStore" />
     <PackageExport Include="OutboundViewStore.fs" Member="outboundViewStore" />
@@ -14,6 +15,8 @@
     <PackageExport Include="PairGuidanceMemoryStore.fs" Member="pairGuidanceMemoryStore" />
     <PackageExport Include="PairGuidanceMemoryStore.fs" Member="pairGuidanceSource" />
     <PackageExport Include="PairGuidanceMemoryStore.fs" Member="PairGuidanceMemoryEntry" />
+    <PackageExport Include="PairGuidanceHistory.fs" Member="PairGuidanceHistory" />
+    <PackageExport Include="PairGuidanceHistory.fs" Member="PairGuidanceOccurrences" />
     <PackageExport Include="PairHint.fs" Member="PairHint" />
   </ItemGroup>
 </Project>

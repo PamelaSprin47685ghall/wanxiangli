@@ -10,6 +10,7 @@
     <Compile Include="JoinGuardReservationStore.fs" />
     <Compile Include="RetiredDelegateRegistry.fs" />
     <Compile Include="SyncDelegateBatchStore.fs" />
+    <Compile Include="DelegateInvocation.fs" />
     <Compile Include="DelegateBatchLaw.fs" />
     <PackageExport Include="DelegateBatchLaw.fs" Member="DelegateBatchLaw" />
     <PackageExport Include="DeferredInspectionStore.fs" Member="DeferredInspectionStore" />
@@ -21,5 +22,6 @@
     <PackageExport Include="RetiredDelegateRegistry.fs" Member="retiredDelegateRegistry" />
     <PackageExport Include="SyncDelegateBatchStore.fs" Member="SyncDelegateBatchStore" />
     <PackageExport Include="SyncDelegateBatchStore.fs" Member="syncDelegateBatchStore" />
+    <PackageExport Include="DelegateInvocation.fs" Member="DelegateInvocationRuntime" />
   </ItemGroup>
 </Project>

@@ -151,3 +151,47 @@ export class PairGuidanceMemoryStore {
 
 export const pairGuidanceMemoryStore: PairGuidanceMemoryStore
 export const pairGuidanceSource: string
+
+export interface PairGuidanceHistoryEntry<M = unknown> {
+  readonly ordinal: bigint
+  readonly callId: string
+  readonly markerText: string
+  readonly placementKey: string
+  readonly metadata: M
+}
+export class PairGuidanceHistory<M = unknown> {
+  constructor()
+  history(): readonly PairGuidanceHistoryEntry<M>[]
+  visible(): readonly PairGuidanceHistoryEntry<M>[]
+  callIds(): readonly string[]
+  placementCount(): number
+  visibleFromOrdinal(): bigint
+  nextOrdinal(): bigint
+  reanchor(): PairGuidanceHistory<M>
+  restoreVisibilityFloor(floor: bigint): PairGuidanceHistory<M>
+  append(entry: PairGuidanceHistoryEntry<M>):
+    | {ok: true, value: PairGuidanceHistory<M>}
+    | {ok: false, error: {kind: 'NonSequentialOrdinal', expected: bigint, actual: bigint} | {kind: 'DuplicateCallId', callId: string} | {kind: 'DuplicatePlacement'}}
+}
+export interface PairGuidanceOccurrence<M = unknown> {
+  readonly ordinal: bigint
+  readonly callId: string
+  readonly markerText: string
+  readonly metadata: M
+}
+export type PairGuidanceResult<T, E> = {ok: true, value: T} | {ok: false, error: E}
+export class PairGuidanceOccurrences {
+  constructor()
+  occur<M, W, E>(input: {
+    readonly history: readonly PairGuidanceOccurrence<M>[]
+    readonly visible: readonly PairGuidanceOccurrence<M>[]
+    readonly occupied: readonly {callGapKey: string, resultGapKey: string}[]
+    readonly syntheticCallIds: readonly string[]
+    readonly placement: PairGuidanceResult<{callGapKey: string, resultGapKey: string, metadata: M} | null, E> | null
+    readonly skipNew: boolean
+    readonly sessionKey: string
+    readonly markerText: string
+  }, render: (entries: readonly PairGuidanceOccurrence<M>[]) => PairGuidanceResult<W, E>,
+     append: (entry: PairGuidanceOccurrence<M>) => Promise<PairGuidanceResult<unknown, E>>):
+    Promise<PairGuidanceResult<{wire: W, appended: boolean}, {kind: 'Orphaned', callIds: readonly string[]} | {kind: 'Placement' | 'Render' | 'Append', cause: E}>>
+}

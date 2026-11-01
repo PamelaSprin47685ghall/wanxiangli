@@ -42,3 +42,25 @@ export declare class ProviderFailureBudget {
   mayRetry(budgetLimit: number, current: FailureBudgetState): boolean
   replay(budgetLimit: number, identity: FailedAttemptIdentity, current: FailureBudgetState): 'RetryAuthorized' | 'RetryExhausted' | 'EpisodeSuperseded'
 }
+
+export type FailureAdmission = 'RetryAuthorized' | 'RetryExhausted' | 'EpisodeSuperseded' | 'NoActiveRun'
+export type BudgetAppendResult<E = unknown> = { readonly ok: true } | { readonly ok: false; readonly error: E }
+export type BudgetResult<T, E = unknown> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: E }
+export interface ProviderBudgetEvent {
+  readonly kind: 'FailureRecorded' | 'RetryExhausted' | 'SuccessRecorded'
+  readonly sessionId: string
+  readonly providerRun: string
+  readonly logicalRun: string
+  readonly authorityRoot: string
+  readonly count: number
+  readonly reason: string
+}
+/** Coordinates current state and durable writes without caching another budget. */
+export declare class DurableProviderBudget<E = unknown> {
+  constructor(port: {
+    current(sessionId: string): FailureBudgetState | null
+    append(event: ProviderBudgetEvent): Promise<BudgetAppendResult<E>>
+  })
+  recordAuthorizedFailure(sessionId: string, authorization: { readonly logicalRun: string; readonly providerRun: string }, reason: string): Promise<BudgetResult<FailureAdmission, E | string>>
+  recordConfirmedSuccess(sessionId: string, providerRun: string): Promise<BudgetAppendResult<E>>
+}
