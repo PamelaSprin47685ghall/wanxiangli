@@ -48,14 +48,16 @@ module internal FissionHistoryValue =
         | Failed reason -> createObj [ "kind" ==> "Failed"; "reason" ==> reason ]
         | Converged(session, run, reference, digest) ->
             createObj [ "kind" ==> "Converged"; "session" ==> session; "run" ==> run; "reference" ==> reference; "digest" ==> digest ]
+    let materialPairs values =
+        values |> Map.toArray |> Array.map (fun (key, (reference, digest)) -> key, (reference, digest))
     let dto group =
         createObj
             [ "id" ==> group.Id; "owner" ==> group.Owner; "parent" ==> nullable group.Parent
               "origin" ==> group.Origin; "count" ==> group.Count
               "sessions" ==> (group.Sessions |> Map.toArray); "prompts" ==> (group.Prompts |> Map.toArray)
               "ownerReference" ==> group.OwnerReference; "ownerDigest" ==> group.OwnerDigest
-              "before" ==> (group.Before |> Set.toArray); "work" ==> (group.Work |> Map.toArray)
-              "runs" ==> (group.Runs |> Map.toArray); "captured" ==> (group.Captured |> Map.toArray)
+              "before" ==> (group.Before |> Set.toArray); "work" ==> materialPairs group.Work
+              "runs" ==> (group.Runs |> Map.toArray); "captured" ==> materialPairs group.Captured
               "delivered" ==> (group.Delivered |> Map.toArray |> Array.map (fun (key, lanes) -> key, Set.toArray lanes))
               "affinities" ==> (group.Affinities |> Map.toArray)
               "takeover" ==> (group.Takeover |> Option.map takeoverDto |> Option.defaultValue null)

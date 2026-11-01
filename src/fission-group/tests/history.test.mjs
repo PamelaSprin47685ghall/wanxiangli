@@ -37,6 +37,11 @@ test('history retains pre-group deliveries and work through takeover and termina
     history=applied(history,event('completionDelivered',{completion:'prior',laneIndex}))
   }
   assert.equal(history.convergenceReady('g'),true)
+  const detached=history.group('g')
+  detached.work[0][1][0]='changed-work'
+  detached.captured[0][1][0]='changed-prior'
+  assert.equal(history.group('g').work[0][1][0],'ref:a')
+  assert.equal(history.group('g').captured[0][1][0],'ref:prior')
   history=applied(history,event('externalAffinityBound',{external:'agent',laneIndex:1}))
   history=applied(history,event('takeover',{laneIndex:1,session:'b',prompt:'prompt',physical:null,reference:'aggregate',digest:'d'}))
   const open=history
