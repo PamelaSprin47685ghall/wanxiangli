@@ -66,6 +66,19 @@ test('routing compiles with only public permit, queue, borrowing and run artifac
   for (const name of dependencies) assert.match(artifact, new RegExp(`from ["']wanxiangli/${name}["']`))
 })
 
+test('local-eventstore compiles with its public dependency closure and no sibling source', { timeout: 90000 }, t => {
+  const directory = fixture(t, ['local-eventstore'])
+  const dependencies = ['events', 'segments', 'convergence', 'quarantine', 'file-lock', 'retention']
+  for (const name of dependencies) cpSync(path.join(root, 'dist', name), path.join(directory, 'dist', name), { recursive: true })
+  succeed(run(directory, ['scripts/build.mjs', 'local-eventstore']))
+  assert.deepEqual(readdirSync(path.join(directory, 'src')), ['local-eventstore'])
+  const tests = readdirSync(path.join(directory, 'src/local-eventstore/tests'))
+    .filter(file => file.endsWith('.test.mjs'))
+    .map(file => path.join(directory, 'src/local-eventstore/tests', file))
+  succeed(run(directory, ['--test', ...tests]))
+  assert.deepEqual(readdirSync(path.join(directory, 'dist')).sort(), [...dependencies, 'local-eventstore'].sort())
+})
+
 test('handle-lifecycle compiles with only public events and returned-material artifacts', { timeout: 90000 }, t => {
   const directory = fixture(t, ['handle-lifecycle'])
   for (const name of ['events', 'returned-material']) {

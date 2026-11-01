@@ -19,6 +19,29 @@ function succeed(result) {
   return result.stdout
 }
 
+test('installed LocalEventStore appends, reopens and consumes the physical entry', { timeout: 90000 }, async t => {
+  const temporary = mkdtempSync(path.join(tmpdir(), 'wanxiangli-local-eventstore-package-'))
+  t.after(() => rmSync(temporary, { recursive: true, force: true }))
+  const packed = packedPackage(succeed(spawnSync(npm, ['pack', '--ignore-scripts', '--json', '--pack-destination', temporary], { cwd: root, env: cleanEnvironment, encoding: 'utf8', timeout: 30000 })))
+  const consumer = path.join(temporary, 'consumer')
+  mkdirSync(consumer)
+  writeFileSync(path.join(consumer, 'package.json'), JSON.stringify({ name: 'local-eventstore-consumer', private: true, type: 'module' }))
+  succeed(spawnSync(npm, ['install', '--ignore-scripts', '--omit=dev', '--no-audit', '--no-fund', path.join(temporary, packed.filename)], { cwd: consumer, env: cleanEnvironment, encoding: 'utf8', timeout: 30000 }))
+  for (const file of ['local-eventstore-consumer.mjs', 'local-eventstore-consumer.ts']) {
+    copyFileSync(path.join(root, 'scripts/tests', file), path.join(consumer, file))
+  }
+  succeed(spawnSync(process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), '--noEmit', '--strict', '--target', 'es2022', '--module', 'nodenext', 'local-eventstore-consumer.ts'], { cwd: consumer, env: cleanEnvironment, encoding: 'utf8', timeout: 30000 }))
+  const runtimes = [['node', process.execPath]]
+  if (spawnSync('bun', ['--version'], { env: cleanEnvironment, encoding: 'utf8' }).status === 0) runtimes.push(['bun', 'bun'])
+  else t.diagnostic('Bun is absent; its local event-store consumer was not run.')
+  for (const [name, executable] of runtimes) {
+    await t.test(name, () => {
+      const output = succeed(spawnSync(executable, [path.join(consumer, 'local-eventstore-consumer.mjs')], { cwd: tmpdir(), env: cleanEnvironment, encoding: 'utf8', timeout: 10000 }))
+      assert.deepEqual(JSON.parse(output), { localEventStore: true })
+    })
+  }
+})
+
 test('installed ExecutionRouting acquires, commits, runs a step and releases exact capacity', { timeout: 90000 }, async t => {
   const temporary = mkdtempSync(path.join(tmpdir(), 'wanxiangli-routing-package-'))
   t.after(() => rmSync(temporary, { recursive: true, force: true }))

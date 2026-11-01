@@ -52,6 +52,10 @@
       "types": "./src/eventstore/index.d.ts",
       "import": "./dist/eventstore/SqliteJournal.js"
     },
+    "./local-eventstore": {
+      "types": "./src/local-eventstore/index.d.ts",
+      "import": "./dist/local-eventstore/LocalStore.js"
+    },
     "./durable-work": {
       "types": "./src/assembly/index.d.ts",
       "import": "./dist/assembly/DurableWork.js"
@@ -246,6 +250,7 @@
     "resources/",
     "src/lifecycle/index.d.ts",
     "src/eventstore/index.d.ts",
+    "src/local-eventstore/index.d.ts",
     "src/assembly/index.d.ts",
     "src/trace/index.d.ts",
     "src/session/index.d.ts",
