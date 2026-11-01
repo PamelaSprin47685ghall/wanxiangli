@@ -1,6 +1,6 @@
 {
   "name": "wanxiangli",
-  "version": "0.79.0",
+  "version": "0.80.0",
   "private": true,
   "description": "Independent work, journal, process, trace and resource ownership libraries, written in F#.",
   "type": "module",
@@ -8,6 +8,10 @@
     "node": ">=22.13.0"
   },
   "exports": {
+    "./segmented-writer": {
+      "types": "./src/segmented-writer/index.d.ts",
+      "import": "./dist/segmented-writer/SegmentedWriter.js"
+    },
     "./file-baseline": {
       "types": "./src/file-baseline/index.d.ts",
       "import": "./dist/file-baseline/FileBaseline.js"
@@ -323,11 +327,12 @@
     "src/result-mailbox/index.d.ts",
     "src/task-scope/index.d.ts",
     "src/git-publication/index.d.ts",
-    "src/file-baseline/index.d.ts"
+    "src/file-baseline/index.d.ts",
+    "src/segmented-writer/index.d.ts"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "npm run build && node --test src/lifecycle/tests/*.test.mjs src/eventstore/tests/*.test.mjs src/assembly/tests/*.test.mjs src/runtime/process/tests/*.test.mjs src/trace/tests/*.test.mjs src/session/tests/*.test.mjs src/resources/tests/*.test.mjs src/identity/tests/*.test.mjs src/events/tests/*.test.mjs src/runtime/files/tests/*.test.mjs src/runtime/time/tests/*.test.mjs src/program/wait/tests/*.test.mjs src/prefix/tests/*.test.mjs src/pair-hint/tests/*.test.mjs src/scope-retention/tests/*.test.mjs src/scope-progress/tests/*.test.mjs src/delivery/tests/*.test.mjs src/degeneration/tests/*.test.mjs src/runtime/spool/tests/*.test.mjs src/convergence/tests/*.test.mjs src/retention/tests/*.test.mjs src/segments/tests/*.test.mjs src/casebook/tests/*.test.mjs src/casebook-maintenance/tests/*.test.mjs src/casebook-access/tests/*.test.mjs src/quarantine/tests/*.test.mjs src/runtime/pty/tests/*.test.mjs src/ablation/tests/*.test.mjs src/capability/tests/*.test.mjs src/authority/tests/*.test.mjs src/projection/tests/*.test.mjs src/runtime/tests/*.test.mjs src/routing/tests/*.test.mjs src/permit/tests/*.test.mjs src/capacity/tests/*.test.mjs src/admission-queue/tests/*.test.mjs src/dispatch/tests/*.test.mjs src/borrowing/tests/*.test.mjs src/chat-execution/tests/*.test.mjs src/association/tests/*.test.mjs src/program/tests/*.test.mjs src/run-witness/tests/*.test.mjs src/git-porcelain/tests/*.test.mjs src/failure/tests/*.test.mjs src/failure-budget/tests/*.test.mjs src/attachment-lease/tests/*.test.mjs src/warm-start/tests/*.test.mjs src/handle-lifecycle/tests/*.test.mjs src/delegate-batch/tests/*.test.mjs src/ordinal/tests/*.test.mjs src/bayes/tests/*.test.mjs src/fission-group/tests/*.test.mjs src/terminal/tests/*.test.mjs src/llm-text/tests/*.test.mjs src/bounded-map/tests/*.test.mjs src/response-text/tests/*.test.mjs src/returned-material/tests/*.test.mjs src/keyed-serial/tests/*.test.mjs src/file-lock/tests/*.test.mjs src/workspace-state/tests/*.test.mjs src/git-worktrees/tests/*.test.mjs src/result-mailbox/tests/*.test.mjs src/task-scope/tests/*.test.mjs src/git-publication/tests/*.test.mjs src/file-baseline/tests/*.test.mjs scripts/tests/*.test.mjs",
+    "test": "npm run build && node --test src/lifecycle/tests/*.test.mjs src/eventstore/tests/*.test.mjs src/assembly/tests/*.test.mjs src/runtime/process/tests/*.test.mjs src/trace/tests/*.test.mjs src/session/tests/*.test.mjs src/resources/tests/*.test.mjs src/identity/tests/*.test.mjs src/events/tests/*.test.mjs src/runtime/files/tests/*.test.mjs src/runtime/time/tests/*.test.mjs src/program/wait/tests/*.test.mjs src/prefix/tests/*.test.mjs src/pair-hint/tests/*.test.mjs src/scope-retention/tests/*.test.mjs src/scope-progress/tests/*.test.mjs src/delivery/tests/*.test.mjs src/degeneration/tests/*.test.mjs src/runtime/spool/tests/*.test.mjs src/convergence/tests/*.test.mjs src/retention/tests/*.test.mjs src/segments/tests/*.test.mjs src/casebook/tests/*.test.mjs src/casebook-maintenance/tests/*.test.mjs src/casebook-access/tests/*.test.mjs src/quarantine/tests/*.test.mjs src/runtime/pty/tests/*.test.mjs src/ablation/tests/*.test.mjs src/capability/tests/*.test.mjs src/authority/tests/*.test.mjs src/projection/tests/*.test.mjs src/runtime/tests/*.test.mjs src/routing/tests/*.test.mjs src/permit/tests/*.test.mjs src/capacity/tests/*.test.mjs src/admission-queue/tests/*.test.mjs src/dispatch/tests/*.test.mjs src/borrowing/tests/*.test.mjs src/chat-execution/tests/*.test.mjs src/association/tests/*.test.mjs src/program/tests/*.test.mjs src/run-witness/tests/*.test.mjs src/git-porcelain/tests/*.test.mjs src/failure/tests/*.test.mjs src/failure-budget/tests/*.test.mjs src/attachment-lease/tests/*.test.mjs src/warm-start/tests/*.test.mjs src/handle-lifecycle/tests/*.test.mjs src/delegate-batch/tests/*.test.mjs src/ordinal/tests/*.test.mjs src/bayes/tests/*.test.mjs src/fission-group/tests/*.test.mjs src/terminal/tests/*.test.mjs src/llm-text/tests/*.test.mjs src/bounded-map/tests/*.test.mjs src/response-text/tests/*.test.mjs src/returned-material/tests/*.test.mjs src/keyed-serial/tests/*.test.mjs src/file-lock/tests/*.test.mjs src/workspace-state/tests/*.test.mjs src/git-worktrees/tests/*.test.mjs src/result-mailbox/tests/*.test.mjs src/task-scope/tests/*.test.mjs src/git-publication/tests/*.test.mjs src/file-baseline/tests/*.test.mjs src/segmented-writer/tests/*.test.mjs scripts/tests/*.test.mjs",
     "prepack": "npm run build"
   },
   "devDependencies": {

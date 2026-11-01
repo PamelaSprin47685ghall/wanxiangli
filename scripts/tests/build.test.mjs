@@ -205,6 +205,22 @@ test('file-baseline compiles with only public casebook-maintenance artifacts and
   assert.match(readFileSync(path.join(directory, 'dist/file-baseline/FileBaseline.js'), 'utf8'), /from ["']wanxiangli\/casebook-maintenance["']/)
 })
 
+test('segmented-writer compiles with only public segments/events artifacts and its own source', { timeout: 90000 }, t => {
+  const directory = fixture(t, ['segmented-writer'])
+  for (const dependency of ['segments', 'events']) {
+    cpSync(path.join(root, 'dist', dependency), path.join(directory, 'dist', dependency), { recursive: true })
+  }
+  const dependency = path.join(directory, 'dist/segments/WriterSegments.js')
+  const before = readFileSync(dependency, 'utf8')
+  const built = run(directory, ['scripts/build.mjs', 'segmented-writer'])
+  succeed(built)
+  assert.doesNotMatch(built.stdout + built.stderr, /Warning:|Error:/)
+  assert.deepEqual(readdirSync(path.join(directory, 'src')), ['segmented-writer'])
+  assert.equal(readFileSync(dependency, 'utf8'), before)
+  succeed(run(directory, ['--test', path.join(directory, 'src/segmented-writer/tests/001.test.mjs')]))
+  assert.match(readFileSync(path.join(directory, 'dist/segmented-writer/SegmentedWriter.js'), 'utf8'), /from ["']wanxiangli\/segments["']/)
+})
+
 function snapshot(directory) {
   const files = {}
   const walk = (folder, prefix) => {

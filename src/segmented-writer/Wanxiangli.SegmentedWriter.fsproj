@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- 仅通过公开 ESM 使用 segments，运行闭包还包括它的 events 依赖。 -->
+    <Compile Include="SegmentedWriter.fs" />
+  </ItemGroup>
+</Project>
