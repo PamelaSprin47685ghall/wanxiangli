@@ -40,3 +40,22 @@ test('terminal publication rejection records failure before aborting and never r
   assert.equal(await lifecycle.observe({session:'lane:1',run:'final',outcome:'Completed',canNudge:false},{...s,publishOwner:async()=>{calls.push('publish');return bad('not delivered')},abortSession:async session=>{assert.equal(s.facts.at(-1),'failed');calls.push('abort:'+session);return ok()},notifyFailed:()=>{calls.push('notify');return true},report(){assert.fail('unexpected diagnostic')}}),true)
   assert.deepEqual(calls,['publish','abort:lane:0','abort:lane:1','notify']);assert.equal(s.history().group('group').terminal.reason,'not delivered');assert.equal(s.facts.includes('converged'),false);assert.equal(lifecycle.isActive('owner'),false)
 })
+
+test('owner cleanup preserves an in-flight broadcast claim until its sender settles',async()=>{
+  reset();const lifecycle=new FissionLifecycle(),s=state(['prior']);await s.init()
+  fissionRuntime.bindLane('group','owner',0,2,'lane:0')
+  let start,finish,sends=0
+  const started=new Promise(resolve=>{start=resolve}),pending=new Promise(resolve=>{finish=resolve})
+  const request={id:'group',owner:'owner',completion:'prior',payload:'payload',lanes:[{index:0,session:'lane:0',prompt:'one'}]}
+  const effects={...s,writeBlob:async()=>ok({reference:'prior',digest:'d'}),sendShared:async()=>{sends++;start();await pending;return ok(true)},canConverge:false,report(){assert.fail('unexpected diagnostic')}}
+  const first=lifecycle.broadcast(request,effects)
+  await started
+  fissionRuntime.clearOwner('owner')
+  assert.equal(fissionRuntime.hasDeliveryClaim('group','prior',-1),true)
+  await lifecycle.broadcast(request,effects)
+  assert.equal(sends,1)
+  finish();await first
+  assert.deepEqual(s.facts,['admitted','completionCaptured','completionDelivered'])
+  assert.equal(fissionRuntime.hasDeliveryClaim('group','prior',-1),false)
+  assert.equal(fissionRuntime.hasDeliveryClaim('group','prior',0),false)
+})
