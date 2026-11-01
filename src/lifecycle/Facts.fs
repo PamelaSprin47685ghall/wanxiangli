@@ -15,6 +15,7 @@ module internal Identities =
     let complete workId tenure call = identity "complete-v1" [ workId; tenure; call ]
     let stop workId tenure = identity "stop-v1" [ workId; tenure ]
     let reopen workId messageId = identity "reopen-v1" [ workId; messageId ]
+    let continuation workId continuationId = identity "continue-v1" [ workId; continuationId ]
 
 type internal Tenure =
     { Id: string
@@ -28,7 +29,10 @@ type internal Round =
       Origin: string
       Milestone: string
       Outcome: string
-      RetirementId: string }
+      RetirementId: string
+      ProviderRunId: string
+      ToolCallId: string
+      StopEffectId: string option }
 
 [<RequireQualifiedAccess>]
 type internal Slot =
@@ -41,6 +45,7 @@ type internal Slot =
 type internal Fact =
     | WorkOpened of workId: string * office: string
     | IncumbencyOpened of id: string * origin: string * milestone: string * messageId: string option
+    | WorkContinued of id: string * continuationId: string
     | QuestionRequested of id: string * incumbency: string * run: string * call: string * text: string * updates: (string * string option) list
     | OperatorAnswered of messageId: string * incumbency: string * questionId: string
     | Reviewed of incumbency: string * run: string * call: string * updates: (string * string option) list
@@ -60,6 +65,7 @@ type internal Fact =
 type internal Seal =
     | Tool of string
     | Message of string
+    | Continuation of string
     | None
 
 module internal FactCodec =
@@ -74,6 +80,8 @@ module internal FactCodec =
         | Fact.WorkOpened(workId, office) -> make "WorkOpened" [ "workId", box workId; "office", box office ]
         | Fact.IncumbencyOpened(id, origin, milestone, messageId) ->
             make "IncumbencyOpened" [ "incumbencyId", box id; "origin", box origin; "milestone", box milestone; "messageId", nullable messageId ]
+        | Fact.WorkContinued(id, continuationId) ->
+            make "WorkContinued" [ "incumbencyId", box id; "continuationId", box continuationId ]
         | Fact.QuestionRequested(id, incumbency, run, call, text, updates) ->
             make "QuestionRequested" [ "questionId", box id; "incumbencyId", box incumbency; "providerRunId", box run; "toolCallId", box call; "text", box text; "updates", box (encodeUpdates updates) ]
         | Fact.OperatorAnswered(messageId, incumbency, questionId) ->
@@ -110,6 +118,9 @@ module internal FactCodec =
         | "IncumbencyOpened" ->
             exact [ "incumbencyId"; "origin"; "milestone"; "messageId" ]
             Fact.IncumbencyOpened(id "incumbencyId", oneOf [ "Originator"; "Successor" ] (get value "origin"), word "milestone", optionalId "messageId")
+        | "WorkContinued" ->
+            exact [ "incumbencyId"; "continuationId" ]
+            Fact.WorkContinued(id "incumbencyId", id "continuationId")
         | "QuestionRequested" ->
             exact [ "questionId"; "incumbencyId"; "providerRunId"; "toolCallId"; "text"; "updates" ]
             Fact.QuestionRequested(id "questionId", id "incumbencyId", id "providerRunId", id "toolCallId", word "text", updates (get value "updates"))

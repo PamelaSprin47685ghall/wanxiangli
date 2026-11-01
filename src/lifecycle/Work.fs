@@ -159,6 +159,15 @@ module private Commands =
                     | Program.Reopened facts, _ -> Write facts
                     | Program.Ignored, _ -> Observe(ignored messageId ledger)
                 | _ -> Refuse "Operator message is only accepted after completion"
+        | "ContinueWork" ->
+            fields [ "type"; "continuationId" ] [] command
+            let continuationId = identifier (get command "continuationId")
+            match ledger.TryContinuation continuationId with
+            | Some result -> Observe result
+            | None ->
+                if ledger.Phase <> "Completed" then Refuse "Continuation requires completion"
+                elif ledger.HasBlockingPending || ledger.HasUnobservedStop then Refuse "Previous execution stop is not observed"
+                else Write [ Fact.WorkContinued(Identities.continuation workId continuationId, continuationId) ]
         | "Confirm" ->
             fields [ "type"; "effectId"; "outcome" ] [ "execSessionId"; "reason" ] command
             let effectId = identifier (get command "effectId")

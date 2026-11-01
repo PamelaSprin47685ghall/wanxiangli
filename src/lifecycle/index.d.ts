@@ -33,6 +33,7 @@ export type Command =
   | { type: 'Review'; office: Office; providerRunId: string; toolCallId: string; updates: readonly { key: string; value: string | null }[]; blockers?: readonly string[]; digest?: string }
   | { type: 'OperatorAnswer'; messageId: string }
   | { type: 'OperatorMessage'; kind: 'Operator' | 'Agent'; messageId: string }
+  | { type: 'ContinueWork'; continuationId: string }
   | { type: 'Confirm'; effectId: string; outcome: ConfirmOutcome; execSessionId?: string; reason?: string }
   | { type: 'BindDevOps'; trigger: 'Ask' | 'Resume' | 'Horizon'; devopsId: string; target: string | null };
 export interface Decision {
