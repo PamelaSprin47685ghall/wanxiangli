@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- 仅通过公开 ESM 消费 git-porcelain，不编译其源码。 -->
+    <Compile Include="GitPublication.fs" />
+  </ItemGroup>
+</Project>
