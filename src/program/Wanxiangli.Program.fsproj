@@ -15,6 +15,7 @@
     <Compile Include="ActiveTurnBridge.fs" />
     <Compile Include="Run.fs" />
     <Compile Include="Caller.fs" />
+    <Compile Include="Invocation.fs" />
     <Compile Include="Program.fs" />
     <PackageExport Include="Catalog.fs" Member="ProgramCatalog" />
     <PackageExport Include="wait/Wait.fs" Member="Wait" />
@@ -22,6 +23,7 @@
     <PackageExport Include="Caller.fs" Member="programCallers" />
     <PackageExport Include="ActiveTurnBridge.fs" Member="ActiveTurnBridge" />
     <PackageExport Include="ActiveTurnBridge.fs" Member="activeTurnBridge" />
+    <PackageExport Include="Invocation.fs" Member="ProgramInvocation" />
     <PackageExport Include="Program.fs" Member="ProgramSession" />
     <PackageExport Include="Program.fs" Member="Program" />
   </ItemGroup>
