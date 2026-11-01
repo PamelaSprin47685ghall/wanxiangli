@@ -89,3 +89,25 @@ export declare class SegmentedWriter {
   filePath(): string
   append(text: string): AppendResult
 }
+
+export interface WriterPhysicalMetadata extends WriterFiles {
+  readonly lastActivityMs: number
+}
+export interface WriterStream {
+  readonly writerId: string
+  readonly events: EventOutput[]
+}
+export type StreamsReadResult =
+  | { ok: true; streams: WriterStream[] }
+  | { ok: false; error: CodecError }
+
+/** Owns decoded prefixes across reads; the caller chooses the instance lifetime. */
+export declare class SegmentedReader {
+  constructor()
+  /** Read complete retained writer streams. Filesystem open/stat/close errors may throw. */
+  readStreams(directory: () => string, nowMs: number): StreamsReadResult
+  /** Observe writer activity from the tail, with file-time fallback. Does not filter writers. */
+  writerPhysicalMetadata(directory: () => string): WriterPhysicalMetadata[]
+  /** Physical file identities; returns "inventory-unavailable" when observation throws. */
+  physicalInventory(directory: () => string): string
+}

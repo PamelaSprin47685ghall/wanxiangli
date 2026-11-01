@@ -181,16 +181,20 @@ test('casebook compiles its settlement owner without sibling artifacts', { timeo
   succeed(run(directory, ['--test', path.join(directory, 'src/casebook/tests/settlement.test.mjs')]))
 })
 
-test('segments compiles its rules and writer with only public events artifacts', { timeout: 90000 }, t => {
+test('segments compiles its rules and reader/writer with public events and retention artifacts', { timeout: 90000 }, t => {
   const directory = fixture(t, ['segments'])
   cpSync(path.join(root, 'dist/events'), path.join(directory, 'dist/events'), { recursive: true })
+  cpSync(path.join(root, 'dist/retention'), path.join(directory, 'dist/retention'), { recursive: true })
   const dependency = path.join(directory, 'dist/events/CanonicalEventCodec.js')
   const before = readFileSync(dependency, 'utf8')
+  const retention = path.join(directory, 'dist/retention/WriterRetention.js')
+  const retentionBefore = readFileSync(retention, 'utf8')
   const built = run(directory, ['scripts/build.mjs', 'segments'])
   succeed(built)
   assert.doesNotMatch(built.stdout + built.stderr, /Warning:|Error:/)
   assert.deepEqual(readdirSync(path.join(directory, 'src')), ['segments'])
   assert.equal(readFileSync(dependency, 'utf8'), before)
+  assert.equal(readFileSync(retention, 'utf8'), retentionBefore)
   const tests = readdirSync(path.join(directory, 'src/segments/tests'))
     .filter(file => file.endsWith('.test.mjs')).map(file => path.join(directory, 'src/segments/tests', file))
   succeed(run(directory, ['--test', ...tests]))

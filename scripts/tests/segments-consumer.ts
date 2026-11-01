@@ -1,4 +1,5 @@
-import { SegmentedWriter, WriterSegments } from 'wanxiangli/segments'
+import { SegmentedReader, SegmentedWriter, WriterSegments } from 'wanxiangli/segments'
+import type { CodecError, EventOutput } from 'wanxiangli/events'
 
 const segments = new WriterSegments()
 const name: string = segments.segmentFileName('owner', 0)
@@ -28,3 +29,23 @@ writer.writerId = 'other'
 void writer.append(new Uint8Array([65]))
 // @ts-expect-error 主体不能控制或镜像库的 CurrentFile。
 writer.currentFile = 'other.ndjson'
+
+const reader = new SegmentedReader()
+const read = reader.readStreams(() => '/caller/events', Date.now())
+if (read.ok) {
+  const events: EventOutput[] = read.streams.flatMap(stream => stream.events)
+  const writers: string[] = read.streams.map(stream => stream.writerId)
+  void events; void writers
+} else {
+  const error: CodecError = read.error
+  void error
+}
+const metadata: { writerId: string; fileNames: readonly string[]; lastActivityMs: number }[] = reader.writerPhysicalMetadata(() => '/caller/events')
+const inventory: string = reader.physicalInventory(() => '/caller/events')
+void metadata; void inventory
+// @ts-expect-error Reader queries the directory capability at each use.
+reader.readStreams('/caller/events', Date.now())
+// @ts-expect-error The caller must provide the retention clock.
+reader.readStreams(() => '/caller/events')
+// @ts-expect-error Cache maintenance is private to the reader.
+reader.clearCache()

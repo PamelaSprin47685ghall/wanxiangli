@@ -15,7 +15,7 @@ const succeed = result => {
   return result.stdout
 }
 
-test('segments 实际安装包在 Node/Bun 使用纯规则并按字节上限滚段', { timeout: 90000 }, t => {
+test('segments 实际安装包在 Node/Bun 使用纯规则、滚段写入和完整读取', { timeout: 90000 }, t => {
   const directory = mkdtempSync(path.join(tmpdir(), 'wanxiangli-segments-package-'))
   t.after(() => rmSync(directory, { recursive: true, force: true }))
   const packed = packedPackage(succeed(spawnSync('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', directory], { cwd: root, env, encoding: 'utf8', timeout: 30000 })))
