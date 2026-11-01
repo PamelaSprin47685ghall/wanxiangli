@@ -1,8 +1,9 @@
 import { FileBaseline, FileDiff, type MaintenanceSummary, type TruncatedDiff } from 'wanxiangli/file-baseline'
 import {
-  CasebookSettlementOwner, BookkeeperStaging, CasebookState, normalizeObservations, sameObservations,
+  CasebookSettlementOwner, BookkeeperStaging, BookkeeperLedger, BookkeeperTransaction, CasebookState, normalizeObservations, sameObservations,
   type CasebookEdit, type CasebookEditFailure, type SettlementOutcomeTag,
   type CasebookCase, type CasebookFact, type CasebookObservation, type CasebookVisible,
+  type BookkeeperTransactionEffects, type BookkeeperTransactionRequest,
 } from 'wanxiangli/casebook'
 
 const diff = new FileDiff()
@@ -31,6 +32,25 @@ if (created.tag === 0) {
 }
 // @ts-expect-error 错误文案按失败键懒取，不能传预先求值的字符串。
 staging.edit('edit', 'error text')
+const ledger = new BookkeeperLedger()
+const transaction = new BookkeeperTransaction(staging, ledger)
+const transactionRequest: BookkeeperTransactionRequest = { txId: 'transaction', ownerId: 'owner', question: 'Q', answer: 'A' }
+const effects: BookkeeperTransactionEffects = {
+  open: async () => ({ ok: true, value: 'child' }),
+  subscribe: (_child, complete) => { complete({ ok: true }); return () => {} },
+  prepare: () => ({ ok: true, value: { agent: 'agent', text: 'prompt' } }),
+  send: async () => ({ ok: true }),
+  abort: async () => undefined,
+}
+void transaction.run(transactionRequest, effects).then(result => {
+  if (result.ok) { const answer: string = result.value.answer; return answer }
+  const reason: string = result.error
+  return reason
+})
+// @ts-expect-error 组合者只接收明确协作者，不偷偷创建新会话表。
+void new BookkeeperTransaction()
+// @ts-expect-error prepare 必须在原时点同步决定，不能返回一个稍后完成的 Promise。
+void transaction.run(transactionRequest, { ...effects, prepare: async () => ({ ok: true, value: { agent: 'agent', text: 'prompt' } }) })
 const observations: readonly CasebookObservation[] = [
   { kind: 'grep-result', pattern: 'text', matches: [['file', 1, 'text']] },
 ]

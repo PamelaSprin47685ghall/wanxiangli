@@ -1,6 +1,6 @@
 # casebook
 
-层：内核。同一入口保留案例当前状态、索引纯规则，以及暂存事务、会话草稿、取用单飞、Bookkeeper 附着和结算冲突的独立对象。它们各自拥有状态，不合成一份共享账本。无 IO、不读存储、不读时钟、不写事件，不 import 宿主 SDK 或其它 wanxiangli 模块。npm 入口 `wanxiangli/casebook`。
+层：内核。同一入口保留案例当前状态、索引纯规则，以及暂存事务、会话草稿、取用单飞、Bookkeeper 附着和结算冲突的独立对象。它们各自拥有状态，不合成一份共享账本。基础状态对象不直接 IO、不读时钟、不写事件；完整事务组合通过声明的回调安排外部动作。具体宿主和持久协议留外层，不 import 宿主 SDK 或其它 wanxiangli 模块。npm 入口 `wanxiangli/casebook`。
 
 `CasebookSettlementOwner` 拥有自己的 conflicts 字典，按 eventId 认领冲突。首次 StorageInvalid 通知并返回 LogScopeFailure；首次语义冲突通知并返回 CaseUnavailable，重复返回 CaseUnavailableKnown；Unscoped 不认领。通知异常被吞掉，不改变结果或已有认领；Redeliver 仅接受原 owner 已认领的同一对象引用。各实例互相隔离，不读取索引或基线。相关用例在 `tests/settlement.test.mjs`，与文件差异计算分开维护。
 
@@ -23,6 +23,16 @@ Bookkeeper 修改一对问答时，`BookkeeperStaging.edit` 为这次调用取�
 `visible` 复用索引律选择 LRU 受害者，返回按 identity 排序的剩余案例；容量不大于零时不淘汰。它不改变当前状态。`resolve` 在同一可见集合中按 shelfmark 找回案例，不碰另一个对象持有的公开索引快照。输入数组被转成私有不可变值，读取结果重新生成原生数组，外部编辑不能反写状态。
 
 `normalizeObservations` 按原身份串排序、去重并保留首项；只在计算身份时排序路径和匹配，保留首项自身的原次序。`sameObservations` 比较身份集合。它们沿用现有分隔符和碰撞行为，不改成 JSON 深比较，也不改持久格式。具体消息形状见 `index.d.ts`。
+
+## Bookkeeper 单次会话事务
+
+保存或维护案例时，`BookkeeperTransaction(staging, ledger)` 开始本次暂存，创建子会话，绑定并登记完成等待，再订阅终端、准备提示、授权发送。外层先完成首次 owner/seed 检查与 txId 生成；`prepare` 在订阅后才执行二次身份检查和提示构造。agent、标题、语言和提示字节属于外层，组合者只按原次序传递。
+
+事务对象复用传入的 staging 和 ledger。直接终端订阅与原 `completePhysical` 交给同一个完成等待；ledger 的解绑、重绑和 reset 仍结算它，不增加另一份会话表、取消机制或超时。同步订阅终端不会丢失；重复完成不会重复取回或退场。即使终端提前成功，发送随后返回 Error 时仍走发送失败。
+
+发送成功后才消费完成结果。终端成功且 touched 时取出问答，未写时返回 `bookkeeper program did not write the staged case`。零 setter 的成功编辑仍会 touched。成功与已知失败都按原次序释放订阅、移除完成登记、处理暂存，再等待 Abort，最后 unbind；Abort 返回 Error 或拒绝都吞掉，不能提前解绑。
+
+创建返回 Error 时只撤销暂存。创建或发送 Promise 拒绝，以及订阅、prepare、dispose 同步抛错仍直接传播，不补通用 finally；原来可能留下的暂存或附着不会在迁移时悄悄改变。特别是 Dispose 抛错时，后续 removeCompletion、暂存清理与退场均不执行。接口和这些协作分支分别在 `index.d.ts` 与 `tests/transaction.test.mjs` 就近维护。
 
 # AXIOM
 

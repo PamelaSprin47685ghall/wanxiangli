@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { createHash } from 'node:crypto'
 import { FileBaseline, FileDiff } from 'wanxiangli/file-baseline'
 import {
-  CasebookSettlementOwner, BookkeeperStaging, CasebookState, CasebookIndexLaw,
+  CasebookSettlementOwner, BookkeeperStaging, BookkeeperLedger, BookkeeperTransaction, CasebookState, CasebookIndexLaw,
   normalizeObservations, sameObservations,
 } from 'wanxiangli/casebook'
 
@@ -35,6 +35,32 @@ assert.equal(program.question().text(), 'old question')
 assert.deepEqual(staging.snapshot('edit').fields[0], ['old question', 'old answer'])
 assert.equal(edit.commit().tag, 0)
 assert.deepEqual(staging.take('edit').fields[0], ['new question', 'new answer'])
+
+const ledger = new BookkeeperLedger()
+const transaction = new BookkeeperTransaction(staging, ledger)
+let complete
+const written = await transaction.run({ txId: 'transaction', ownerId: 'owner', question: 'Q', answer: 'A' }, {
+  async open() { return { ok: true, value: 'child' } },
+  subscribe(childId, callback) {
+    assert.equal(ledger.txIdFor(childId), 'transaction')
+    complete = callback
+    return () => {}
+  },
+  prepare() { return { ok: true, value: { agent: 'agent', text: 'prompt' } } },
+  async send(childId, agent, text) {
+    assert.equal(ledger.tryConsume(childId, agent, text), true)
+    const edit = staging.edit('transaction', key => key).fields[0]
+    edit.api.bookkeeper.setQuestion('stored Q')
+    edit.api.bookkeeper.setAnswer('stored A')
+    assert.equal(edit.commit().tag, 0)
+    complete({ ok: true })
+    return { ok: true }
+  },
+  async abort(childId) { assert.equal(ledger.isAttached(childId), true) },
+})
+assert.deepEqual(written, { ok: true, value: { question: 'stored Q', answer: 'stored A' } })
+assert.equal(ledger.isAttached('child'), false)
+assert.equal(staging.snapshot('transaction').tag, 1)
 
 const observation = { kind: 'glob-result', pattern: '*', paths: ['z', 'a'] }
 const empty = new CasebookState()

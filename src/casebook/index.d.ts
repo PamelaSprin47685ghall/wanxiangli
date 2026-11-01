@@ -278,6 +278,33 @@ export declare class BookkeeperLedger {
 
 export declare const bookkeeperLedger: BookkeeperLedger
 
+export type BookkeeperResult<T> =
+  | { readonly ok: true; readonly value: T }
+  | { readonly ok: false; readonly error: string }
+export type BookkeeperAck = { readonly ok: true } | { readonly ok: false; readonly error: string }
+
+export interface BookkeeperTransactionRequest {
+  readonly txId: string
+  readonly ownerId: string
+  readonly question: string
+  readonly answer: string
+}
+
+export interface BookkeeperTransactionEffects {
+  open(): Promise<BookkeeperResult<string>>
+  subscribe(childId: string, complete: (outcome: BookkeeperAck) => void): () => void
+  prepare(childId: string): BookkeeperResult<{ readonly agent: string; readonly text: string }>
+  send(childId: string, agent: string, text: string): Promise<BookkeeperAck>
+  abort(childId: string): Promise<unknown>
+}
+
+/** 单次会话事务只持有在途等待与订阅；暂存、附着和提示授权仍归传入的原对象。 */
+export declare class BookkeeperTransaction {
+  constructor(staging: BookkeeperStaging, ledger: BookkeeperLedger)
+  /** Result 错误走原失败收尾；open/send 拒绝及 subscribe/prepare/dispose 抛错直接传播。 */
+  run(request: BookkeeperTransactionRequest, effects: BookkeeperTransactionEffects): Promise<BookkeeperResult<{ readonly question: string; readonly answer: string }>>
+}
+
 export type SettlementIncidentKind = 'StorageInvalid' | 'SemanticCut' | 'Unscoped'
 export type SettlementOutcomeTag =
   | 'LogScopeFailure'
