@@ -96,7 +96,7 @@ process.on('message', async request => {
         const entry = path.join(output, publicClass + '.js')
         await bundler.build({
           stdin: { contents: exports.length ? exports.join('\n') : `export { ${publicClass} } from ${JSON.stringify(entry)}`, resolveDir: root },
-          outfile: path.join(output, 'package', publicClass + '.js'), bundle: true, external: ['wanxiangli/*'],
+          outfile: path.join(output, 'package', publicClass + '.js'), bundle: true, external: ['wanxiangli/*', 'proper-lockfile'],
           platform: 'node', format: 'esm', target: 'node22', legalComments: 'inline', absWorkingDir: output,
         })
         completed++

@@ -34,9 +34,10 @@ function succeed(result) {
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
 }
 
-for (const name of ['lifecycle', 'eventstore', 'runtime', 'trace', 'session', 'delivery', 'degeneration', 'ablation', 'routing', 'projection', 'authority', 'permit', 'capacity', 'admission-queue', 'dispatch', 'borrowing', 'run-witness', 'git-porcelain', 'failure', 'attachment-lease', 'warm-start', 'handle-lifecycle', 'failure-budget', 'delegate-batch', 'fission-group', 'ordinal', 'bayes']) {
+for (const name of ['lifecycle', 'eventstore', 'runtime', 'trace', 'session', 'delivery', 'degeneration', 'ablation', 'projection', 'authority', 'permit', 'capacity', 'admission-queue', 'dispatch', 'borrowing', 'run-witness', 'git', 'failure', 'attachment-lease', 'warm-start', 'failure-budget', 'delegate-batch', 'fission-group', 'ordinal', 'bayes', 'llm-text', 'bounded-map', 'returned-material', 'keyed-serial', 'file-lock', 'result-mailbox', 'task-scope', 'journal-session']) {
   test(`SPEC[build-001] ${name} compiles and runs its own tests without any sibling source`, { timeout: 90000 }, t => {
     const directory = fixture(t, [name])
+    if (name === 'trace') cpSync(path.join(root, 'dist/keyed-serial'), path.join(directory, 'dist/keyed-serial'), { recursive: true })
     assert.deepEqual(readdirSync(path.join(directory, 'src')), [name])
     const build = run(tmpdir(), [path.join(directory, 'scripts/build.mjs'), name])
     succeed(build)
@@ -45,7 +46,7 @@ for (const name of ['lifecycle', 'eventstore', 'runtime', 'trace', 'session', 'd
       .filter(file => file.endsWith('.test.mjs'))
       .map(file => path.join(directory, 'src', name, 'tests', file))
     succeed(run(directory, ['--test', ...tests]))
-    assert.deepEqual(readdirSync(path.join(directory, 'dist')), [name])
+    assert.deepEqual(readdirSync(path.join(directory, 'dist')).sort(), name === 'trace' ? ['keyed-serial', 'trace'] : [name])
     if (name === 'runtime') {
       const artifact = readFileSync(path.join(directory, 'dist/runtime/Runtime.js'), 'utf8')
       assert.doesNotMatch(artifact, /from ["']wanxiangli\//)
@@ -53,6 +54,45 @@ for (const name of ['lifecycle', 'eventstore', 'runtime', 'trace', 'session', 'd
     }
   })
 }
+
+test('routing compiles with only public permit, queue, borrowing and run artifacts', { timeout: 90000 }, t => {
+  const directory = fixture(t, ['routing'])
+  const dependencies = ['permit', 'admission-queue', 'borrowing', 'run-witness']
+  for (const name of dependencies) cpSync(path.join(root, 'dist', name), path.join(directory, 'dist', name), { recursive: true })
+  succeed(run(directory, ['scripts/build.mjs', 'routing']))
+  assert.deepEqual(readdirSync(path.join(directory, 'src')), ['routing'])
+  succeed(run(directory, ['--test', 'src/routing/tests/execution.test.mjs']))
+  assert.deepEqual(readdirSync(path.join(directory, 'dist')).sort(), [...dependencies, 'routing'].sort())
+  const artifact = readFileSync(path.join(directory, 'dist/routing/RoutingProtocol.js'), 'utf8')
+  for (const name of dependencies) assert.match(artifact, new RegExp(`from ["']wanxiangli/${name}["']`))
+})
+
+test('local-eventstore compiles with its public dependency closure and no sibling source', { timeout: 90000 }, t => {
+  const directory = fixture(t, ['local-eventstore'])
+  const dependencies = ['events', 'segments', 'convergence', 'quarantine', 'file-lock', 'retention']
+  for (const name of dependencies) cpSync(path.join(root, 'dist', name), path.join(directory, 'dist', name), { recursive: true })
+  succeed(run(directory, ['scripts/build.mjs', 'local-eventstore']))
+  assert.deepEqual(readdirSync(path.join(directory, 'src')), ['local-eventstore'])
+  const tests = readdirSync(path.join(directory, 'src/local-eventstore/tests'))
+    .filter(file => file.endsWith('.test.mjs'))
+    .map(file => path.join(directory, 'src/local-eventstore/tests', file))
+  succeed(run(directory, ['--test', ...tests]))
+  assert.deepEqual(readdirSync(path.join(directory, 'dist')).sort(), [...dependencies, 'local-eventstore'].sort())
+})
+
+test('handle-lifecycle compiles with only public events and returned-material artifacts', { timeout: 90000 }, t => {
+  const directory = fixture(t, ['handle-lifecycle'])
+  for (const name of ['events', 'returned-material']) {
+    cpSync(path.join(root, 'dist', name), path.join(directory, 'dist', name), { recursive: true })
+  }
+  succeed(run(directory, ['scripts/build.mjs', 'handle-lifecycle']))
+  assert.deepEqual(readdirSync(path.join(directory, 'src')), ['handle-lifecycle'])
+  succeed(run(directory, ['--test', 'src/handle-lifecycle/tests/completion-record.test.mjs']))
+  assert.deepEqual(readdirSync(path.join(directory, 'dist')).sort(), ['events', 'handle-lifecycle', 'returned-material'])
+  const artifact = readFileSync(path.join(directory, 'dist/handle-lifecycle/HandleLifecycleLaw.js'), 'utf8')
+  assert.match(artifact, /from ["']wanxiangli\/events["']/)
+  assert.match(artifact, /from ["']wanxiangli\/returned-material["']/)
+})
 
 test('SPEC[build-001] a selected build leaves another module output untouched', { timeout: 60000 }, t => {
   const directory = fixture(t, ['lifecycle', 'eventstore'])
@@ -90,8 +130,9 @@ test('SPEC[build-001] a real compiler error fails without replacing a previous a
   assert.deepEqual(readdirSync(path.join(directory, '.build')), [])
 })
 
-test('SPEC[build-001] the third cut leaves both earlier cuts untouched and has no sibling imports', { timeout: 60000 }, t => {
+test('trace uses the public serial artifact and leaves unrelated output untouched', { timeout: 60000 }, t => {
   const directory = fixture(t, ['trace'])
+  cpSync(path.join(root, 'dist/keyed-serial'), path.join(directory, 'dist/keyed-serial'), { recursive: true })
   for (const name of ['lifecycle', 'eventstore', 'assembly', 'runtime', 'failure']) {
     mkdirSync(path.join(directory, 'dist', name), { recursive: true })
     writeFileSync(path.join(directory, 'dist', name, 'keep'), `unchanged-${name}`)
@@ -101,7 +142,7 @@ test('SPEC[build-001] the third cut leaves both earlier cuts untouched and has n
     assert.equal(readFileSync(path.join(directory, 'dist', name, 'keep'), 'utf8'), `unchanged-${name}`)
     assert.deepEqual(readdirSync(path.join(directory, 'dist', name)), ['keep'])
   }
-  assert.doesNotMatch(readFileSync(path.join(directory, 'dist/trace/Trace.js'), 'utf8'), /from ["']wanxiangli\//)
+  assert.match(readFileSync(path.join(directory, 'dist/trace/Trace.js'), 'utf8'), /from ["']wanxiangli\/keyed-serial["']/)
 })
 
 test('SPEC[build-001] cross-project references are rejected by the same build entrypoint', t => {
@@ -147,6 +188,62 @@ test('SPEC[build-001] composition compiles without sibling sources and runs agai
   const composition = readFileSync(path.join(directory, 'dist/assembly/DurableWork.js'), 'utf8')
   assert.match(composition, /from ["']wanxiangli\/work["']/)
   assert.doesNotMatch(composition, /WorkOpened|ConfirmationCommitted|DeliveryRequested|SELECT|PRAGMA/)
+})
+
+test('workspace-state compiles with only public git artifacts and its own source', { timeout: 90000 }, t => {
+  const directory = fixture(t, ['workspace-state'])
+  cpSync(path.join(root, 'dist/git'), path.join(directory, 'dist/git'), { recursive: true })
+  const dependency = path.join(directory, 'dist/git/GitPublication.js')
+  const before = readFileSync(dependency, 'utf8')
+  const built = run(directory, ['scripts/build.mjs', 'workspace-state'])
+  succeed(built)
+  assert.doesNotMatch(built.stdout + built.stderr, /Warning:|Error:/)
+  assert.deepEqual(readdirSync(path.join(directory, 'src')), ['workspace-state'])
+  assert.equal(readFileSync(dependency, 'utf8'), before)
+  succeed(run(directory, ['--test', path.join(directory, 'src/workspace-state/tests/001.test.mjs')]))
+  assert.match(readFileSync(path.join(directory, 'dist/workspace-state/WorkspaceState.js'), 'utf8'), /from ["']wanxiangli\/git["']/)
+})
+
+test('file-baseline compiles its capture and diff without sibling artifacts', { timeout: 90000 }, t => {
+  const directory = fixture(t, ['file-baseline'])
+  const built = run(directory, ['scripts/build.mjs', 'file-baseline'])
+  succeed(built)
+  assert.doesNotMatch(built.stdout + built.stderr, /Warning:|Error:/)
+  assert.deepEqual(readdirSync(path.join(directory, 'src')), ['file-baseline'])
+  const tests = readdirSync(path.join(directory, 'src/file-baseline/tests'))
+    .filter(file => file.endsWith('.test.mjs')).map(file => path.join(directory, 'src/file-baseline/tests', file))
+  succeed(run(directory, ['--test', ...tests]))
+  assert.doesNotMatch(readFileSync(path.join(directory, 'dist/file-baseline/FileBaseline.js'), 'utf8'), /from ["']wanxiangli\//)
+})
+
+test('casebook compiles its state, edits and settlement owner without sibling artifacts', { timeout: 90000 }, t => {
+  const directory = fixture(t, ['casebook'])
+  succeed(run(directory, ['scripts/build.mjs', 'casebook']))
+  succeed(run(directory, ['--test',
+    path.join(directory, 'src/casebook/tests/settlement.test.mjs'),
+    path.join(directory, 'src/casebook/tests/edit.test.mjs'),
+    path.join(directory, 'src/casebook/tests/state.test.mjs'),
+    path.join(directory, 'src/casebook/tests/006.test.mjs')]))
+})
+
+test('segments compiles its rules and reader/writer with public events and retention artifacts', { timeout: 90000 }, t => {
+  const directory = fixture(t, ['segments'])
+  cpSync(path.join(root, 'dist/events'), path.join(directory, 'dist/events'), { recursive: true })
+  cpSync(path.join(root, 'dist/retention'), path.join(directory, 'dist/retention'), { recursive: true })
+  const dependency = path.join(directory, 'dist/events/CanonicalEventCodec.js')
+  const before = readFileSync(dependency, 'utf8')
+  const retention = path.join(directory, 'dist/retention/WriterRetention.js')
+  const retentionBefore = readFileSync(retention, 'utf8')
+  const built = run(directory, ['scripts/build.mjs', 'segments'])
+  succeed(built)
+  assert.doesNotMatch(built.stdout + built.stderr, /Warning:|Error:/)
+  assert.deepEqual(readdirSync(path.join(directory, 'src')), ['segments'])
+  assert.equal(readFileSync(dependency, 'utf8'), before)
+  assert.equal(readFileSync(retention, 'utf8'), retentionBefore)
+  const tests = readdirSync(path.join(directory, 'src/segments/tests'))
+    .filter(file => file.endsWith('.test.mjs')).map(file => path.join(directory, 'src/segments/tests', file))
+  succeed(run(directory, ['--test', ...tests]))
+  assert.doesNotMatch(readFileSync(path.join(directory, 'dist/segments/SegmentedWriter.js'), 'utf8'), /from ["']wanxiangli\/segments["']/)
 })
 
 function snapshot(directory) {

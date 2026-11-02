@@ -1,27 +1,17 @@
 # attachment-lease
 
-层：内核。纯计算与自治状态，不得 import 宿主 SDK 或其它 wanxiangli 模块；不列子会话、不建/关/链/弃子会话。npm 入口 `wanxiangli/attachment-lease`。
+遵守根目录 [万象理](../../AGENTS.md)。入口为 `wanxiangli/attachment-lease`。
 
-# AXIOM
+用户把同一件工作再次交给同一种角色时，可以继续使用所属的子会话。原关联消失时，系统按既定方式建立替代；工作结束时，关闭自己的关联。这里负责建立、复用、替换和退场的合作顺序，宿主的消息形状、角色名称、子会话查询与实际创建/关闭操作由外层适配。
 
-1. [使用者] 一个 Attached 种类（Companion、Sync*、Bookkeeper、只读副本）复用的子会话只能是其持久关联点名、且 agent 与 title 精确相同的那个；没有持久关联时一律新建，不收养长得一样的无关联子会话。
-    - 理由：managed-session-lifecycle [001] 单一租约机制、[003] 不收养无关联会话。
-2. [使用者] 新建或替换出来的子会话只有在关联写成后才算真实；关联失败必须把它弃掉，已复用的旧子会话从不弃。
-    - 理由：失败的 link 留下无主子会话，下一次恢复会把它当成冲突或歧义。
-3. [使用者] 进程内租约注册表与单飞单例自治管理 (owner, kind) 租约映射，并在首次 ensure 时单飞去重，避免并发创建重复子会话。
-    - 理由：Package-21 状态所有权抽取；managed-session-lifecycle [001]、[002]。
+`AttachmentLeaseLaw` 判断已有关联是否可复用。`AttachmentLeaseRegistry` 独占持有 `(owner, kind)` 的绑定与在途调用；`AttachmentSessions` 使用调用方传入的同一个注册表，没有第二份会话表。不同 owner 和 kind 各自独立。
 
-# LEMMA
+## 调用与结果
 
-1. [AXIOM 1] 无 restoreHint → create(Created)。
-2. [AXIOM 1] 有 restoreHint：Host 子列表中该 id 恰一个且 agent、title 均精确相等 → reuse；恰一个但不精确 → reject Conflicting；零个 → create(Replacement)，并须先关闭已消失的关联再链新子；多于一个 → reject Ambiguous。
-3. [AXIOM 2] abortOnFailure(Created | Replacement) = true，abortOnFailure(Reused) = false。
-4. [AXIOM 3] AttachmentLeaseRegistry 独占持有 bindings 与 flights 状态：
-    - bind 覆写保存结构化条目；tryFind 精确按 (owner, kind) 查找；remove 注销单个租约。
-    - tryFindByChild 与 removeByChild 按 childSessionId 反向关联并返回所有匹配 (owner, kind)。
-    - ensure 独占单飞并发合并，直接持有在途对象；finishEnsure 移除占位；clear 彻底重置。
+- `getOrCreate` 先查可用绑定，直接返回原子会话及创建时的 agent。没有可用绑定时，共享同 key 的建立过程。外层观察给出精确匹配、无关联或错误；观察错误和拒绝保留当前在途记录，建立过程开始后则在结束时清理。这是现行两阶段寿命，调用方不能把错误当作已清理并重新创建。
+- `ensureAssociated` 每次检查外层提供的关联。无关联时新建，不因同名兄弟存在而收养；有关联时只复用唯一且 agent/title 一致的子会话。关联指向的子会话消失时，先创建替代，再关闭旧关联，最后连接新子会话。冲突与歧义由外层提供原有说明，库不猜测可用对象。
+- 关闭或连接返回普通错误时，仅本次新建或替换的子会话需要弃置。弃置返回普通错误不覆盖原错误，弃置拒绝则向外传播。操作本身拒绝不触发额外补偿；复用的旧子会话不弃置。`ensureAssociated` 的在途记录在这些结果或拒绝后清理。
+- `retireAssociated` 有绑定时依次弃置、关闭关联、删除绑定和清理在途记录。普通错误仍执行后续步骤，弃置错误优先；拒绝会中断余下步骤。没有绑定时，只清理在途记录并关闭关联。
+- 反查、移除和 `clearKinds` 都作用于原注册表。`clearKinds` 只删除指定种类的绑定，不清理在途记录，也不触及别的种类。
 
-# SPEC
-
-1. [LEMMA 1, 2, 3] 证明：`tests/001.test.mjs`；与 vibe-fs 旧 `AttachmentLeaseCore.resolve/abortFresh/closeReplaced` 逐项对照见 vibe-fs `evidence/CUT-12/`。
-2. [LEMMA 4] 证明：`tests/002.test.mjs`（Package-21 单元测试）。
+异步结果使用 `{ ok, value/error }`，拒绝保持原异常。具体参数见同目录 `.d.ts`。这里不启动宿主，不保存持久日志，不新增恢复入口。

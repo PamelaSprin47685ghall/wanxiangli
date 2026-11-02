@@ -1,6 +1,50 @@
 # casebook
 
-层：内核。同一入口并存两种职责：`CasebookIndexLaw` 是纯计算；`BookkeeperStaging` 是进程内自治暂存对象，持有事务槽状态，所有操作同步完成、不在状态变换中等待外部操作，无 IO、不读存储、不读时钟、不写事件。两者都不得 import 宿主 SDK 或其它 wanxiangli 模块。npm 入口 `wanxiangli/casebook`。
+层：内核。同一入口保留案例当前状态、索引纯规则，以及暂存事务、会话草稿、取用单飞、Bookkeeper 附着和结算冲突的独立对象。它们各自拥有状态，不合成一份共享账本。基础状态对象不直接 IO、不读时钟、不写事件；完整事务组合通过声明的回调安排外部动作。具体宿主和持久协议留外层，不 import 宿主 SDK 或其它 wanxiangli 模块。npm 入口 `wanxiangli/casebook`。
+
+`CasebookSettlementOwner` 拥有自己的 conflicts 字典，按 eventId 认领冲突。首次 StorageInvalid 通知并返回 LogScopeFailure；首次语义冲突通知并返回 CaseUnavailable，重复返回 CaseUnavailableKnown；Unscoped 不认领。通知异常被吞掉，不改变结果或已有认领；Redeliver 仅接受原 owner 已认领的同一对象引用。各实例互相隔离，不读取索引或基线。相关用例在 `tests/settlement.test.mjs`，与文件差异计算分开维护。
+
+## 单次案例编辑
+
+Bookkeeper 修改一对问答时，`BookkeeperStaging.edit` 为这次调用取得原始快照，返回独立的 `CasebookEdit`。它私有保存本次 question/answer 补丁与成功设置次数；模型读到的始终是开始时的快照。事务槽仍由 staging 拥有，ProgramSession 仍负责运行和结算。
+
+编辑的 `api` 提供读取与两个 setter，`runtimeBaseClass` 提供原有锚点视图。每个字段只能成功设置一次；首次非法类型不消耗设置次数，重复调用先报重复错误。失败文案在失败发生时才向调用方索取。模型捕获错误后仍可继续程序，不额外把整次编辑标坏。
+
+调用方只在程序成功且返回值解析成功后调用 `commit`。它把两项补丁一起应用到 txId 当前的事务槽；未改字段保留当前值，零 setter 仍标记 touched。原事务被同名重开时，旧编辑按原语义提交到新槽；重复 commit 不增加一次性限制。失败或未提交的调用不改事务；缺失槽继续返回原错误。编辑不启动程序、不读资源、不增加互斥锁或事务代际。
+
+锚点仍按声明顺序在原文中向后定位，保留 RegExp、UTF-16 位置、偏移递归与裁剪、零宽匹配和原错误文字。本能力不承担文件系统锚点规则。接口以 `index.d.ts` 为准。
+
+## 案例当前状态
+
+用户取用旧案例时，系统从已接收的案例事实得到当前内容。`CasebookState` 从空状态开始，逐项接收捕获、刷新、访问和淘汰消息；每次变更返回新状态，先前状态仍可读取。私有案例表和访问计数器属于这个值，调用方不能注入另一份表或计数器。历史读取、存储编解码和淘汰事件的追加仍归调用方。
+
+捕获按 identity 覆盖，刷新只更新已存在案例。刷新接受空问答；空维护基线和空相关路径沿用旧值，空观察列表则清空观察。完成基线和来源不随刷新改变。捕获、已有案例的刷新及访问才推进访问序；缺失案例的刷新或访问不推进，淘汰也不推进。访问序仍用 F# int64，保持原来的 64 位回绕。
+
+`visible` 复用索引律选择 LRU 受害者，返回按 identity 排序的剩余案例；容量不大于零时不淘汰。它不改变当前状态。`resolve` 在同一可见集合中按 shelfmark 找回案例，不碰另一个对象持有的公开索引快照。输入数组被转成私有不可变值，读取结果重新生成原生数组，外部编辑不能反写状态。
+
+`normalizeObservations` 按原身份串排序、去重并保留首项；只在计算身份时排序路径和匹配，保留首项自身的原次序。`sameObservations` 比较身份集合。它们沿用现有分隔符和碰撞行为，不改成 JSON 深比较，也不改持久格式。具体消息形状见 `index.d.ts`。
+
+## Bookkeeper 单次会话事务
+
+保存或维护案例时，`BookkeeperTransaction(staging, ledger)` 开始本次暂存，创建子会话，绑定并登记完成等待，再订阅终端、准备提示、授权发送。外层先完成首次 owner/seed 检查与 txId 生成；`prepare` 在订阅后才执行二次身份检查和提示构造。agent、标题、语言和提示字节属于外层，组合者只按原次序传递。
+
+事务对象复用传入的 staging 和 ledger。直接终端订阅与原 `completePhysical` 交给同一个完成等待；ledger 的解绑、重绑和 reset 仍结算它，不增加另一份会话表、取消机制或超时。同步订阅终端不会丢失；重复完成不会重复取回或退场。即使终端提前成功，发送随后返回 Error 时仍走发送失败。
+
+发送成功后才消费完成结果。终端成功且 touched 时取出问答，未写时返回 `bookkeeper program did not write the staged case`。零 setter 的成功编辑仍会 touched。成功与已知失败都按原次序释放订阅、移除完成登记、处理暂存，再等待 Abort，最后 unbind；Abort 返回 Error 或拒绝都吞掉，不能提前解绑。
+
+创建返回 Error 时只撤销暂存。创建或发送 Promise 拒绝，以及订阅、prepare、dispose 同步抛错仍直接传播，不补通用 finally；原来可能留下的暂存或附着不会在迁移时悄悄改变。特别是 Dispose 抛错时，后续 removeCompletion、暂存清理与退场均不执行。接口和这些协作分支分别在 `index.d.ts` 与 `tests/transaction.test.mjs` 就近维护。
+
+## 案例保存、取用和维护
+
+工作结束时，`CasebookService.finalizeDraft` 从既有草稿 owner 消费问答、取走观察，交给 Bookkeeper 整理，再捕获完成基线、追加案例并刷新公开索引。禁用、无草稿或无最终回答时只清理。先消费、后检查的次序不变；已有案例不重复整理，追加前仍检查一次。后续失败不把草稿放回，也不重试追加。
+
+取用案例时，服务从现有 Current 解析 shelfmark。相关文件未变便交还原答案并记录访问；有变化则用一次捕获所得的 diff 和目标基线维护案例，再读取更新后的答案。维护失败或更新后找不到案例时，交还带 stale 分类的原答案。完成基线不随维护改变；维护期间不会再次捕获文件来替换第一次目标。
+
+Current、草稿、观察和索引各有原 owner；服务只保存一次调用途中的值。存储协作者只提供 Current 和三种追加，基线协作者只提供 capture/compare，会话适配只提供一次 Bookkeeper 请求。存储编解码、工作区启用、语言、通知和工具呈现留调用方。原追加失败对象完整透传；索引在 Capture 之后失败仍返回 unknown，不能说案例没有追加。
+
+`touch` 在实际访问时重新检查启用，并把其流程异常转成 preparation-rejected；维护异常仍拒绝 Promise。普通追加失败可交给原通知 owner，通知抛错继续传播，不加一层通用 catch。取用入口的启用与空 shelfmark 检查留工具；同一 flight 仍共享首个调用者的通知和最终呈现字符串，服务不另建 flight。
+
+仅依赖存储的 `archiveCase`、`finalizeCase`、`finalizeCaptured`、`refreshWithDiff` 与服务使用同一实现，不要求虚构工作区或会话能力。`cleanupCasebookDraft` 只清草稿、取走观察，不需要存储。相关差分在 `tests/service.test.mjs`，接口在 `index.d.ts`。
 
 # AXIOM
 

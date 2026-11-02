@@ -1,53 +1,28 @@
-# delegate-batch
+# 同步委派的批次与调用
 
-层：内核。纯计算与进程内状态自治，不得 import 宿主 SDK 或其它 wanxiangli 模块；不完成任何 Task；不订阅或拉取物理宿主事件，只接收宿主已提取的中立事实；拥有进程内语义批次自治状态，但不持有宿主异步运行时资源。npm 入口 `wanxiangli/delegate-batch`。
+`wanxiangli/delegate-batch` 帮调用者把一次或同一批委派交给专属子会话，等它实际完成，再把本次材料交还。整个产品仍走根规则的总流程；这里不决定用户该委派什么，也不解释宿主消息和工具字段。
 
-# AXIOM
+## 谁拥有状态
 
-1. [使用者] 一个专属 delegate（owner scope × role）同时至多一个已准入批次；新调用在已有批次时被拒，不排队、不另建重复工作。
-    - 理由：EXEC-026；busy 时另建重复工作。
-2. [使用者] 语义批次只由 ProviderRun 与 provider 的工具调用次序定义，不由调度时序定义；批次齐了才整批准入，按 provider 次序。
-    - 理由：EXEC-031；按到达时序拼批会把两次 provider 运行混成一批。
-3. [使用者] 专属 delegate 呼叫与退役严格具备单飞互斥；已退役子代理在父作用域下至多暂存一项，后续退役显式替换并促成旧草稿清理。
-    - 理由：EXEC-026 / Package-14；避免孤儿会话与状态悬空。
+- `DelegateBatchLaw` 计算批次接纳，成员与顺序来自 provider 给出的调用序列，不能按抵达先后凑批次。
+- `SyncDelegateBatchStore` 拥有作用域 × 角色的批次、调用键与 delegate 索引；`RetiredDelegateRegistry` 拥有每个作用域至多一项暂存的退役子会话。
+- `DelegateInvocationRuntime` 组合既有共享注册表，拥有真实调用对象、调用者 Promise、接受过的物理输入、authority root、终态领取和订阅释放。对象不复制 batch store 的成员索引；旧索引不再由主体第二次维护。
+- `DeferredInspectionStore` 保留现有按会话暂存与结果替换；`JoinGuardReservationStore` 保留现有提醒单飞与释放。它们不是本次调用的第二套终局账本。
 
-# LEMMA
+公开形状见 `index.d.ts`。本入口可有纯参与者和完整异步组合；不再以「纯 Key、不完成 Task」限制整个目录。
 
-1. [AXIOM 1] admit：active → ActiveBatch；无批次身份且有 pending → BatchPending，否则 single。
-2. [AXIOM 2] 有批次身份：callOrder 为空、有重复或不含 currentCall → InvalidBatch；pending 存在但 providerRun 或 callOrder 不同 → OtherRunPending；currentCall 已收到 → DuplicateCall；否则收下，齐（收到数 = callOrder 长度）→ ready（order = callOrder），不齐 → wait；无 pending 时 open = true。
-3. [AXIOM 2] observedBatch：同 role 的宿主观察调用按宿主次序，含 currentCall 才成批，否则 null。
-4. [AXIOM 3] RetiredDelegateRegistry：
-   - stage(scope, sid)：记录当前暂存代理，若已有旧值返回 Some previous 供即时草稿清理；
-   - tryTake(scope)：原子取出并消费；
-   - clearAll()：清空全部暂存代理。
-5. [AXIOM 1, 2] SyncDelegateBatchStore：
-   - 纯 Key 结算协议：库内仅维系纯数据键（ownerScope, role, delegateSession, callId）与批次事实（providerRun、callOrder、received、orderedInvocations），不持宿主 TCS/IDisposable；
-   - 双向调用索引：callsByOwnerScope 与 callsByDelegate 在单锁内原子一致变更；
-   - 批次阶段由内容派生：orderedInvocations 非空即已准入可派发（single 或凑齐），空即收集中；关闭 = 从库移除，不设挂名关闭态；
-   - cancelScope / clearAll 返回结构化纯 Key Settlement 列表，供宿主解耦释放资源。
+## 调用过程
 
-# SPEC
+调用者传入既有角色、作用域、准备材料的能力及附着会话、派发、等待等参与者。调用对象接纳一项或等待同批齐备，再依次取得子会话、更新工具次数、准备材料、订阅未来终态、发送并等待。第一项取得材料，同批其余项取得指向第一项的合并结果。已有批次时拒绝，不偷偷另开子会话或改成排队。
 
-1. [LEMMA 1, 2, 3] 证明：`tests/001.test.mjs`；与 vibe-fs 旧 `SyncDelegateStoreOps` 逐项对照见 vibe-fs `evidence/CUT-13/`。
-2. [Package-15] JoinGuardReservationStore 证明：`tests/002.test.mjs`。
-3. [LEMMA 4, 5] SyncDelegateBatchStore 与 RetiredDelegateRegistry 证明：`tests/003.test.mjs`。
+调用对象记录实际接受的输入与原始 authority root。随后收到的稳定终态必须属于这次调用；上一轮的迟到结果不能结束复用子会话里的新调用。发送与等待的宿主回执解释、角色权限、提示文字和子会话标题由调用方适配器负责。
 
-# Package-15 JoinGuardReservationStore
+完整 Completed 先取已经交付的材料；没有交付但本次 parts 非空时，保留当前自然停止材料的结果。空 parts 保持等待。Aborted 已交付则返回该材料，未交付则继续观察；它不自动变成失败。单次 provider 失败先交给既有重试参与者，只有其终局结果才结束当前调用。
 
-1. [使用者] 进程内 JoinGuard 针对 (sessionId, terminalProviderRun) 的单飞提醒去重由 JoinGuardReservationStore 自治拥有。
-2. [规矩] formatKey 严格生成 "join-guard:" + sessionId + ":" + terminalProviderRun。
-3. [原子性] tryReserve 在全局锁内原子检查外部 hasOutstandingJoinClaim 谓词、全局 processKeys 以及传入的局部 scope：任一已占用或外部有未决 claim 则拒绝（返回 None/undefined）；通过时原子写入 processKeys 与 scope 并返回 Some(key)。
-4. [释放与清理] release 同步从 processKeys、传入 scope 与已追踪 scopes 移除 key；clearSession 按前缀同步清理指定会话；clearAll 清空全部状态。
+调用者取消或释放作用域时，当前调用的等待与资源一起结算。已关闭后到达的注册立即释放。共享 batch、retired 和 deferred 注册表的现行进程范围保持，不能因创建新 wrapper 悄悄得到第二套共享状态。
 
+## 不在这里做的事
 
-# DeferredInspectionStore
+不订阅 OpenCode SDK，不读取 provider wire，不解释 idle 或 abort 的宿主含义，不决定权力角色，不保存 Trace 原文或 Journal。外侧按既有协议把结果交入；库不因缺少回执猜测「没发送」，不自行重试外部效果。持久交付与审计保持原状。
 
-1. [使用者] 会话级工程师延迟检查队列（pendingCalls）与已完成替换结果（replacedResults）由 DeferredInspectionStore 自治拥有。
-2. [规矩]
-   - stage(sessionId, callId, charge, keywords, estimate)：非空校验，防重复 callId；入队当前会话 FIFO 列表；
-   - takePending(sessionId)：原子取出并消费当前会话全部挂起项，清空会话挂起队列；无则返回空；
-   - recordReplacedResult(callId, replacement, ?sessionId)：记录 settled 替换文本，可按需关联会话；
-   - tryReplacedResult(callId)：供消息投影层快速检索替换结果；
-   - clearSession(sessionId)：干净清空指定会话的挂起队列与关联的替换结果，防止跨会话内存泄露；
-   - clearAll()：清空全部挂起队列与替换结果。
-3. [SPEC] 证明：`tests/004.test.mjs`。
+测试只覆盖本次变化的调用/资源边界与实际接线，放在 `tests/`；发行时与主体使用同一候选。运行结果放施工记录，不在本说明中维护完成清单。

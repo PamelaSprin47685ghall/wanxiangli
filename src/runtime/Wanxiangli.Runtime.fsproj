@@ -23,6 +23,7 @@
     <Compile Include="time/NodeTiming.fs" />
     <Compile Include="time/VirtualTiming.fs" />
     <Compile Include="time/Time.fs" />
+    <Compile Include="process/ProcessRun.fs" />
     <Compile Include="Tools.fs" />
     <Compile Include="FileSession.fs" />
     <Compile Include="Worker.fs" />
@@ -31,6 +32,7 @@
     <PackageExport Include="process/ProcessSession.fs" Member="ProcessSession" />
     <PackageExport Include="process/LargeGate.fs" Member="LargeGate" />
     <PackageExport Include="process/LargeGate.fs" Member="largeGate" />
+    <PackageExport Include="process/ProcessRun.fs" Member="runProcess" />
     <PackageExport Include="pty/Terminal.fs" Member="Terminal" />
     <PackageExport Include="spool/OutputSpool.fs" Member="OutputSpool" />
     <PackageExport Include="time/Time.fs" Member="Time" />

@@ -2,6 +2,7 @@ module Wanxiangli.FailureBudget.ProviderFailureBudget
 
 open Fable.Core
 open Fable.Core.JsInterop
+open System.Threading.Tasks
 
 [<Emit("typeof $0 === 'string'")>]
 let private isString (_value: obj) : bool = jsNative
@@ -178,3 +179,61 @@ type ProviderFailureBudget() =
     member _.verdict(budgetLimit: obj, consecutiveFailureCount: obj) : string = verdict budgetLimit consecutiveFailureCount
     member _.mayRetry(budgetLimit: obj, current: obj) : bool = mayRetry budgetLimit current
     member _.replay(budgetLimit: obj, identity: obj, current: obj) : string = replay budgetLimit identity current
+
+[<AttachMembers>]
+type DurableProviderBudget(port: obj) =
+    let accepted value = createObj [ "ok" ==> true; "value" ==> value ]
+    let refused error = createObj [ "ok" ==> false; "error" ==> error ]
+
+    let event kind sessionId providerRun (current: obj) count reason =
+        createObj
+            [ "kind" ==> kind
+              "sessionId" ==> sessionId
+              "providerRun" ==> providerRun
+              "logicalRun" ==> field current "logicalRun"
+              "authorityRoot" ==> field current "authorityRoot"
+              "count" ==> count
+              "reason" ==> reason ]
+
+    member _.recordAuthorizedFailure(sessionId: string, authorization: obj, reason: string) : Task<obj> =
+        task {
+            let current: obj = port?current sessionId
+            if isNull current then
+                return accepted "NoActiveRun"
+            elif field current "logicalRun" <> field authorization "logicalRun" then
+                return refused "Provider recovery licence belongs to a different logical run"
+            else
+                let providerRun: string = authorization?providerRun
+                let identity =
+                    createObj
+                        [ "sessionId" ==> sessionId
+                          "logicalRun" ==> field current "logicalRun"
+                          "authorityRoot" ==> field current "authorityRoot"
+                          "providerRun" ==> providerRun ]
+                let nextCount = unbox<int> (field current "consecutiveFailureCount") + 1
+                let advanced = applyFailure identity (box nextCount) current
+                if not (unbox<bool> (field advanced "ok")) then
+                    match unbox<string> (field advanced "rejection") with
+                    | "AlreadyObserved" -> return accepted (replay (box DefaultBudget) identity current)
+                    | "AlreadyExhausted" -> return accepted "RetryExhausted"
+                    | "DifferentRun" -> return accepted "NoActiveRun"
+                    | _ -> return refused "Provider failure advance violates validation (consecutive failure count is not the successor)"
+                else
+                    let! written: obj = port?append (event "FailureRecorded" sessionId providerRun current nextCount reason)
+                    if not (unbox<bool> (field written "ok")) then
+                        return written
+                    elif verdict (box DefaultBudget) (box nextCount) = "MayRetry" then
+                        return accepted "RetryAuthorized"
+                    else
+                        let! exhausted: obj = port?append (event "RetryExhausted" sessionId providerRun current nextCount reason)
+                        return if unbox<bool> (field exhausted "ok") then accepted "RetryExhausted" else exhausted
+        }
+
+    member _.recordConfirmedSuccess(sessionId: string, providerRun: string) : Task<obj> =
+        task {
+            let current: obj = port?current sessionId
+            if isNull current || unbox<int> (field current "consecutiveFailureCount") = 0 then
+                return accepted "Recorded"
+            else
+                return! port?append (event "SuccessRecorded" sessionId providerRun current 0 "")
+        }

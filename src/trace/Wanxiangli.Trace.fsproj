@@ -5,6 +5,14 @@
   <ItemGroup>
     <Compile Include="Wire.fs" />
     <Compile Include="Observation.fs" />
+    <Compile Include="TraceCapture.fs" />
     <Compile Include="Trace.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageExport Include="Trace.fs" Member="Trace" />
+    <PackageExport Include="Trace.fs" Member="TraceHistory" />
+    <PackageExport Include="Trace.fs" Member="materializeTraceItems" />
+    <PackageExport Include="Trace.fs" Member="inspectTraceItems" />
+    <PackageExport Include="TraceCapture.fs" Member="TraceCapture" />
   </ItemGroup>
 </Project>

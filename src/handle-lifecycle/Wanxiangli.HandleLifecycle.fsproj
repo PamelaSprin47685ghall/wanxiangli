@@ -7,11 +7,20 @@
   <ItemGroup>
     <Compile Include="JoinAttemptRegistry.fs" />
     <Compile Include="PendingRunStore.fs" />
+    <Compile Include="CompletionRecord.fs" />
+    <Compile Include="ChildRunSet.fs" />
+    <Compile Include="HandleLifecycleLawCore.fs" />
+    <Compile Include="HandleHistory.fs" />
+    <Compile Include="DurableHandles.fs" />
     <Compile Include="HandleLifecycleLaw.fs" />
     <PackageExport Include="JoinAttemptRegistry.fs" Member="JoinAttemptRegistry" />
     <PackageExport Include="JoinAttemptRegistry.fs" Member="joinAttemptRegistry" />
     <PackageExport Include="PendingRunStore.fs" Member="PendingRunStore" />
     <PackageExport Include="PendingRunStore.fs" Member="pendingRunStore" />
-    <PackageExport Include="HandleLifecycleLaw.fs" Member="HandleLifecycleLaw" />
+    <PackageExport Include="CompletionRecord.fs" Member="CompletionRecord" />
+    <PackageExport Include="ChildRunSet.fs" Member="ChildRunSet" />
+    <PackageExport Include="HandleHistory.fs" Member="HandleHistory" />
+    <PackageExport Include="DurableHandles.fs" Member="DurableHandles" />
+    <PackageExport Include="HandleLifecycleLawCore.fs" Member="HandleLifecycleLaw" />
   </ItemGroup>
 </Project>

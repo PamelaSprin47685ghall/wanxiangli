@@ -2,7 +2,7 @@ import { KWayMerge, type ConvergenceResult } from 'wanxiangli/convergence'
 import { CanonicalEventCodec, type ClosureResult, type EventInput } from 'wanxiangli/events'
 import { WriterRetention } from 'wanxiangli/retention'
 import { CasebookIndexLaw, type IndexEntry } from 'wanxiangli/casebook'
-import { CasebookMaintenanceLaw, type MaintenanceSummary } from 'wanxiangli/casebook-maintenance'
+import { FileDiff, type MaintenanceSummary } from 'wanxiangli/file-baseline'
 import { CasebookAccessLaw, type Access } from 'wanxiangli/casebook-access'
 import { WriterSegments, type Coexistence, type StreamDecodeResult, type StreamLayout, type WriterFiles } from 'wanxiangli/segments'
 
@@ -45,8 +45,8 @@ const victims: string[] = new CasebookIndexLaw().evictionVictims(1, [{ sessionId
 void entries
 void victims
 
-const maintenance: MaintenanceSummary = new CasebookMaintenanceLaw().summarize([new CasebookMaintenanceLaw().fileDiff('a.txt', null, 'x')])
-const readVerdict: 'missing' | 'fault' = new CasebookMaintenanceLaw().readFailure('ENOENT')
+const maintenance: MaintenanceSummary = new FileDiff().summarize([new FileDiff().fileDiff('a.txt', null, 'x')])
+const readVerdict: 'missing' | 'fault' = new FileDiff().readFailure('ENOENT')
 void maintenance
 void readVerdict
 const access: Access = { kind: 'move', source: 'a', destination: 'b' }

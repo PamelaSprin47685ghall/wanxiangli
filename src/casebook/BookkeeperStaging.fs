@@ -2,6 +2,7 @@ module Wanxiangli.Casebook.BookkeeperStaging
 
 open System.Collections.Generic
 open Fable.Core
+open Wanxiangli.Casebook.CasebookEdit
 
 type private Slot =
     { mutable Question: string
@@ -39,6 +40,13 @@ type BookkeeperStaging() =
             slot.Answer <- Option.defaultValue slot.Answer answer
             slot.Touched <- true
             Ok()
+
+    /// 编辑读本次快照，提交仍应用到 txId 当前的槽；不另设事务代际。
+    member this.edit(txId: string, renderFailure: string -> string) : Result<CasebookEdit, string> =
+        this.snapshot txId
+        |> Result.map (fun (question, answer) ->
+            create question answer renderFailure (fun questionPatch answerPatch ->
+                this.apply(txId, questionPatch, answerPatch)))
 
     /// 需要本 completion 写入过才能取出并删除；未写过的取出不删除事务。
     member _.take(txId: string) : Result<string * string, string> =

@@ -1,6 +1,6 @@
 # program — 命名程序与请求期限
 
-生产源码使用 F#，经 Fable 交付 JavaScript。公开入口 `wanxiangli/program` 导出 `Program`、`ProgramSession`、`ProgramCatalog`、`Wait`。根目录 `AGENTS.md` 适用。
+生产源码使用 F#，经 Fable 交付 JavaScript。公开入口 `wanxiangli/program` 导出 `Program`、`ProgramSession`、`ProgramInvocation`、`ProgramCatalog`、`Wait`。根目录 `AGENTS.md` 适用。
 
 ## AXIOM
 
@@ -21,6 +21,17 @@
 4. [AXIOM 1, 4; 总规则 LEMMA 1] 私有代际隔离迟到控制。abandon 与会话关闭共用收尾，确认资源结清后才报告终态。正常展开运行原生 finally，强杀不保证它执行，已落盘效果不回滚。
 5. [AXIOM 3, 4] 每个 Run 的终态 effects 经 settle 一次结算。目标状态和 effects 留在目标回执中，不冒充控制程序的新效果。生命周期审计按序等待，失败以 lifecycleError 保留，不把持久失败报告成成功。
 6. [AXIOM 3] ProgramCatalog 是能力与成员投影的唯一来源。Manager 的 reviewOnly 投影、角色准入和业务门禁保持各自归属。编程内 join/dag 不存在；Wait 承接等待控制，独立 join() 的工作资格及结果来自既有业务 owner。
+7. [AXIOM 1, 3, 4] ProgramInvocation 拥有一次调用的文件效果、显式读取和结算失败引用。它创建真实 FileSession，随后把原 API 和 settle 交给既有 ProgramSession；不复制运行表、文件快照或审计记录。宿主继续提供权限投影、返回值规则和原审计 ledger。
+
+## 文件调用与结算
+
+调用方创建 `ProgramInvocation`，从 `files` 取得真实文件成员，在原来的权限和活动租约下组装 API，再执行命名程序。构造和 API 组装不写入文件。只有 FileSession 报告实际 after 时才记录效果；before 交给原 ledger 准备记录，after 先保存效果再通知 ledger 已提交。
+
+程序结束时，先按路径保留首次显式读取，向外层报告读取及效果路径；该观察原本可忽略的异常继续忽略。再等待原 ledger 结算，最后才检查成功返回值。效果按 rewritten、created、removed、moved 分组，各组保留发生顺序和重复项。失败不回滚文件，普通结算失败仍携带已发生的效果。
+
+`settlementFailure` 单独携带原失败对象，运行回执只写入其 code/reason。即时调用可保留原失败引用；跨 unpark 不建立全局错误表。返回值检查抛错继续走 Run 的现有结算异常路径，不新加补偿或结果重写。
+
+暂停保留原 FileSession、ledger 与效果集合。恢复目标使用它自己的集合，控制程序不冒领目标效果；关闭会话仍先运行原收尾，最终再结算。动态宿主能力由外层在每次成员调用时解析，不在 invocation 中冻结。审计策略、写入次序和等待规则仍归原 ledger。
 
 ## 永久依赖边界
 
