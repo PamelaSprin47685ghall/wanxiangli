@@ -2,7 +2,7 @@
 
 层：内核。npm 入口 `wanxiangli/projection`，导出工厂 `Projection()`。不得 import 任何宿主 SDK、Trace 或存储；不持有状态、不读文件或环境变量、不渲染宿主线格式（`wire`/`semantic` 给出的是 provider 投影的规范字节，不是宿主请求对象）。
 
-来源：宿主仓 `proposals/extraction-kanban/cards/CUT-17.md`；现行需求 `requirements/work/WHAT.md` [034]、`requirements/participant-horizon/WHAT.md`、`requirements/provider-projection/WHAT.md` [004]–[006]。消息解码、XTrace 游标观测、重锚事实写入与保留消息怎样写回宿主请求，都留在宿主组合者。
+来源：宿主仓的提取记录（历史在 git）；现行需求 `requirements/work/WHAT.md` [034]、`requirements/participant-horizon/WHAT.md`、`requirements/provider-projection/WHAT.md` [004]–[006]。消息解码、XTrace 游标观测、重锚事实写入与保留消息怎样写回宿主请求，都留在宿主组合者。
 
 # AXIOM
 

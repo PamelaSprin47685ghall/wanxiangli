@@ -41,7 +41,7 @@ type JournalSession(options: obj) =
     let mutable lastChange: obj option = None
     let waiters = ResizeArray<Session.Waiter>()
     let mutable pendingRecovery: (unit -> Task<unit>) option = None
-    let mutable startedRecovery: Task<unit> option = None
+    let mutable startedRecovery: (Task<unit> * Task<unit>) option = None
     let mutable previousRecovery: Task<unit> option = None
 
     member _.snapshot() : obj = Session.read readCurrent
@@ -107,23 +107,35 @@ type JournalSession(options: obj) =
             }
 
     member _.enqueueRecovery(start: unit -> Task<unit>) : unit =
-        previousRecovery <- startedRecovery
+        previousRecovery <- startedRecovery |> Option.map snd
         startedRecovery <- None
         pendingRecovery <- Some start
 
     member _.runOrAwaitRecovery() : Task<unit> =
         match startedRecovery, pendingRecovery with
-        | Some started, _ -> started
+        | Some(_, observed), _ -> observed
         | None, Some start ->
             let started =
                 task {
                     match previousRecovery with
-                    | Some previous -> do! previous
+                    | Some previous ->
+                        try do! previous
+                        with _ -> ()
                     | None -> ()
                     do! start ()
                 }
-            startedRecovery <- Some started
-            started
+            let observed =
+                task {
+                    try
+                        do! started
+                    with error ->
+                        match startedRecovery with
+                        | Some(active, _) when obj.ReferenceEquals(active, started) -> startedRecovery <- None
+                        | _ -> ()
+                        return raise error
+                }
+            startedRecovery <- Some(started, observed)
+            observed
         | None, None -> Task.FromResult()
 
     member _.release() : unit = writer.release()

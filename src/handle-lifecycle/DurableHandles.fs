@@ -7,6 +7,8 @@ open Wanxiangli.HandleLifecycle.HandleHistory
 open Wanxiangli.HandleLifecycle.CompletionRecord
 
 let private text (value: obj) name : string = value?(name)
+let private sameHandle (left: obj) (right: obj) =
+    unbox<int> left?kind = unbox<int> right?kind && text left "id" = text right "id"
 let private ok (value: obj) : bool = value?ok
 let private success value = createObj [ "ok" ==> true; "value" ==> value ]
 let private failure kind message = createObj [ "ok" ==> false; "kind" ==> kind; "error" ==> message ]
@@ -111,8 +113,7 @@ type DurableHandles(effects: obj) =
     member _.complete(request: obj) =
         task {
             let work: obj = request?work
-            let sameHandle: bool = emitJsExpr (request?handle, work?handle) "JSON.stringify($0) === JSON.stringify($1)"
-            if not sameHandle || text request "child" <> text work "child" then return failed "completion belongs to another child work"
+            if not (sameHandle request?handle work?handle) || text request "child" <> text work "child" then return failed "completion belongs to another child work"
             else
                 let prior = (history ()).work work
                 if isNull prior then return failed "completion work was never canonically admitted"
@@ -151,7 +152,7 @@ type DurableHandles(effects: obj) =
             | _ -> Task.FromResult(failed "completed work cannot be abandoned")
 
     member _.abandonActive(handle: obj, reason: string) =
-        let active = (history ()).workBindings() |> Array.tryFind (fun record -> text record "phase" = "Active" && emitJsExpr (record?handle, handle) "JSON.stringify($0) === JSON.stringify($1)")
+        let active = (history ()).workBindings() |> Array.tryFind (fun record -> text record "phase" = "Active" && sameHandle record?handle handle)
         match active with
         | Some record -> append (event "abandonWork" [ "work" ==> record?work; "reason" ==> reason ])
         | None -> Task.FromResult(failed "unscoped historical work cannot authorize a new abandonment")
@@ -161,7 +162,7 @@ type DurableHandles(effects: obj) =
             match remaining with
             | [] -> return success null
             | handle :: rest ->
-                let active = (history ()).workBindings() |> Array.tryFind (fun record -> text record "phase" = "Active" && emitJsExpr (record?handle, handle) "JSON.stringify($0) === JSON.stringify($1)")
+                let active = (history ()).workBindings() |> Array.tryFind (fun record -> text record "phase" = "Active" && sameHandle record?handle handle)
                 match active with
                 | None -> return failed "legacy active work requires explicit settlement evidence"
                 | Some record ->

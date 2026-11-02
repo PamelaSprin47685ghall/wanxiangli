@@ -7,16 +7,6 @@ open System.Collections.Generic
 open Fable.Core
 open Fable.Core.JsInterop
 
-type BatchStage =
-    | Pending
-    | Ready
-    | Active
-    | Closed
-
-type CallStage =
-    | Dispatched
-    | Closed
-
 type private InFlightCall =
     { callId: string
       ownerSessionId: string
@@ -24,12 +14,10 @@ type private InFlightCall =
       role: string
       delegateSessionId: string
       agent: string
-      invocationKeys: string list
-      mutable stage: CallStage }
+      invocationKeys: string list }
 
 type private BatchRecord =
-    { mutable stage: BatchStage
-      providerRun: string
+    { providerRun: string
       callOrder: string list
       received: Dictionary<string, string>
       mutable orderedInvocations: string list }
@@ -40,9 +28,10 @@ type private ObservedRunRecord =
 
 /// EXEC-026/031: process-local SyncDelegate batch and in-flight call state store.
 /// 1. Synchronous dual-index: callsByOwnerScope <-> callsByDelegate updated under single lock.
-/// 2. Batch lifecycle state machine: Pending -> Ready -> Active -> Closed.
+/// 2. Batch stage is derived from content: orderedInvocations non-empty means admitted
+///    for dispatch; closing a batch removes it from the store.
 /// 3. Observed provider tool calls deduplication (Seen) with explicit session clearing.
-/// 4. Pure Key Settlement: store holds only string IDs and domain stages; returns
+/// 4. Pure Key Settlement: store holds only string IDs; returns
 ///    structured settlement key lists so host can resolve TCS and dispose resources.
 [<AttachMembers>]
 type SyncDelegateBatchStore() =
@@ -143,14 +132,16 @@ type SyncDelegateBatchStore() =
                 | true, b -> Some b
                 | false, _ -> None
 
+            // Batch stage is derived from content: orderedInvocations non-empty means
+            // admitted for dispatch (single or complete batch), empty means collecting.
             let hasActive =
                 match existingBatchOpt with
-                | Some b when b.stage = Active || b.stage = Ready -> true
-                | _ -> false
+                | Some b -> not (List.isEmpty b.orderedInvocations)
+                | None -> false
 
             let pendingInput =
                 match existingBatchOpt with
-                | Some b when b.stage = Pending ->
+                | Some b when not hasActive ->
                     createObj
                         [ "providerRun" ==> b.providerRun
                           "callOrder" ==> (b.callOrder |> List.toArray)
@@ -172,56 +163,40 @@ type SyncDelegateBatchStore() =
 
             let verdictKind = unbox<string> verdict?verdict
 
+            // open=true only occurs when the store holds no batch for this key
+            // (law contract); open=false implies the existing pending batch is present.
+            let resolveBatch () =
+                if unbox<bool> verdict?``open`` then
+                    let created =
+                        { providerRun = unbox<string> batchInput?providerRun
+                          callOrder = unbox<string array> batchInput?callOrder |> Array.toList
+                          received = Dictionary<string, string>()
+                          orderedInvocations = [] }
+                    batches.[bKey] <- created
+                    created
+                else
+                    existingBatchOpt.Value
+
             match verdictKind with
             | "reject" ->
                 createObj [ "verdict" ==> "reject"; "reason" ==> (unbox<string> verdict?reason) ]
             | "single" ->
                 let singleBatch =
-                    { stage = Ready
-                      providerRun = ""
+                    { providerRun = ""
                       callOrder = []
                       received = Dictionary<string, string>()
                       orderedInvocations = [ invKey ] }
                 batches.[bKey] <- singleBatch
                 createObj [ "verdict" ==> "single"; "invocations" ==> [| invKey |] ]
             | "wait" ->
-                let currentCall = unbox<string> batchInput?currentCall
-                let order = unbox<string array> batchInput?callOrder |> Array.toList
-                let pRun = unbox<string> batchInput?providerRun
-                let batch =
-                    if unbox<bool> verdict?``open`` || Option.isNone existingBatchOpt then
-                        let created =
-                            { stage = Pending
-                              providerRun = pRun
-                              callOrder = order
-                              received = Dictionary<string, string>()
-                              orderedInvocations = [] }
-                        batches.[bKey] <- created
-                        created
-                    else
-                        existingBatchOpt.Value
-                batch.received.[currentCall] <- invKey
+                let batch = resolveBatch ()
+                batch.received.[unbox<string> batchInput?currentCall] <- invKey
                 createObj [ "verdict" ==> "wait" ]
             | "ready" ->
-                let currentCall = unbox<string> batchInput?currentCall
-                let order = unbox<string array> batchInput?callOrder |> Array.toList
-                let pRun = unbox<string> batchInput?providerRun
-                let batch =
-                    if unbox<bool> verdict?``open`` || Option.isNone existingBatchOpt then
-                        let created =
-                            { stage = Pending
-                              providerRun = pRun
-                              callOrder = order
-                              received = Dictionary<string, string>()
-                              orderedInvocations = [] }
-                        batches.[bKey] <- created
-                        created
-                    else
-                        existingBatchOpt.Value
-                batch.received.[currentCall] <- invKey
+                let batch = resolveBatch ()
+                batch.received.[unbox<string> batchInput?currentCall] <- invKey
                 let readyOrder = unbox<string array> verdict?order |> Array.toList
                 let orderedInvs = readyOrder |> List.map (fun callId -> batch.received.[callId])
-                batch.stage <- Ready
                 batch.orderedInvocations <- orderedInvs
                 createObj
                     [ "verdict" ==> "ready"
@@ -253,13 +228,12 @@ type SyncDelegateBatchStore() =
             match batches.TryGetValue bKey with
             | false, _ ->
                 createObj [ "ok" ==> false; "error" ==> "sync delegate call was cancelled before dispatch" ]
-            | true, batch when batch.stage <> Ready && batch.stage <> Active ->
+            | true, batch when List.isEmpty batch.orderedInvocations ->
                 createObj [ "ok" ==> false; "error" ==> "sync delegate call was cancelled before dispatch" ]
             | true, batch ->
                 if callsByDelegate.ContainsKey dKey then
                     createObj [ "ok" ==> false; "error" ==> "sync delegate rejected: dedicated delegate already has an in-flight call" ]
                 else
-                    batch.stage <- Active
                     let inFlight =
                         { callId = cKey
                           ownerSessionId = cleanKey ownerSessionId
@@ -267,8 +241,7 @@ type SyncDelegateBatchStore() =
                           role = cleanKey role
                           delegateSessionId = dKey
                           agent = cleanKey agent
-                          invocationKeys = invocationKeys
-                          stage = Dispatched }
+                          invocationKeys = invocationKeys }
                     callRecords.[cKey] <- inFlight
                     callsByDelegate.[dKey] <- cKey
 
@@ -297,7 +270,6 @@ type SyncDelegateBatchStore() =
                 callsByDelegate.Remove dKey |> ignore
                 match callRecords.TryGetValue cKey with
                 | true, record ->
-                    record.stage <- Closed
                     callRecords.Remove cKey |> ignore
                     removeOwnerCall record.ownerScope cKey
                 | false, _ -> ()
@@ -313,7 +285,6 @@ type SyncDelegateBatchStore() =
                 callsByDelegate.Remove dKey |> ignore
                 match callRecords.TryGetValue cKey with
                 | true, record ->
-                    record.stage <- Closed
                     callRecords.Remove cKey |> ignore
                     removeOwnerCall record.ownerScope cKey
                 | false, _ -> ()
@@ -356,7 +327,6 @@ type SyncDelegateBatchStore() =
                     cancelledCalls.Add cKey
                     match callRecords.TryGetValue cKey with
                     | true, call ->
-                        call.stage <- Closed
                         callsByDelegate.Remove call.delegateSessionId |> ignore
                         callRecords.Remove cKey |> ignore
                     | false, _ -> ()

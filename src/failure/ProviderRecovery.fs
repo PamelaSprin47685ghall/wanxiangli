@@ -40,7 +40,25 @@ type ProviderRecovery() =
             | _ -> return terminal reason
         }
 
-    member _.redispatch(expectedRoot: string, authorization: obj, effects: obj, reason: string) : Task<obj> =
+    member _.continueSameProvider(expectedRoot: string, authorization: obj, effects: obj, reason: string) : Task<obj> =
+        task {
+            let authority: obj = effects?currentAuthority ()
+            if isNull authority then
+                return terminal "No active authority profile"
+            elif text authority "root" <> expectedRoot then
+                return verdict "Superseded"
+            else
+                let! sent: obj = effects?sendRetry (field authority "value", authorization)
+                match text sent "kind" with
+                | "Sent"
+                | "AlreadyAdmitted" ->
+                    do (effects?observeAcceptance authorization: unit)
+                    return verdict "Dispatched"
+                | "Retired" -> return verdict "Superseded"
+                | _ -> return terminal reason
+        }
+
+    member this.redispatch(expectedRoot: string, authorization: obj, effects: obj, reason: string) : Task<obj> =
         task {
             let admitted: bool = effects?alreadyAdmitted authorization
             if admitted then
@@ -48,19 +66,7 @@ type ProviderRecovery() =
             let! stop: string = effects?waitForStop ()
             match stoppedVerdict admitted stop with
             | Some answer -> return answer
-            | None ->
-                let authority: obj = effects?currentAuthority ()
-                if isNull authority || text authority "root" <> expectedRoot then
-                    return verdict "Superseded"
-                else
-                    let! sent: obj = effects?sendRetry (field authority "value", authorization)
-                    match text sent "kind" with
-                    | "Sent"
-                    | "AlreadyAdmitted" ->
-                        do (effects?observeAcceptance authorization: unit)
-                        return verdict "Dispatched"
-                    | "Retired" -> return verdict "Superseded"
-                    | _ -> return terminal reason
+            | None -> return! this.continueSameProvider(expectedRoot, authorization, effects, reason)
         }
 
     member _.continueAfterStop(expectedRoot: string, effects: obj) : Task<obj> =
@@ -69,7 +75,9 @@ type ProviderRecovery() =
             // Read at the same boundary even if the stop receipt is not Stopped.
             let authority: obj = effects?currentAuthority ()
             match stop with
-            | "Stopped" when isNull authority -> return createObj [ "kind" ==> "NotSent"; "reason" ==> "No active authority profile" ]
+            | "Stopped" when isNull authority ->
+                if (effects?isRunClosed (): bool) then return verdict "RunClosed"
+                else return createObj [ "kind" ==> "NotSent"; "reason" ==> "No active authority profile" ]
             | "Stopped" when text authority "root" <> expectedRoot -> return verdict "Continued"
             | "Stopped" ->
                 let! sent: obj = effects?sendLong (field authority "value")
@@ -84,7 +92,9 @@ type ProviderRecovery() =
         task {
             let reason: string = input?reason
             let notify (message: string) : unit = effects?terminal message
-            if flag input "hardStop" then
+            if (effects?isRunClosed (): bool) then
+                ()
+            elif flag input "hardStop" then
                 notify reason
             elif not (flag input "hasCapacity") then
                 notify "All candidate providers exhausted (zero capacity)"
@@ -107,7 +117,8 @@ type ProviderRecovery() =
                     else
                         let! continued = this.continueAfterStop(text input "expectedRoot", effects)
                         match text continued "kind" with
-                        | "Continued" -> ()
+                        | "Continued"
+                        | "RunClosed" -> ()
                         | "ReceiptUnknown" -> notify (failureReason + "; stop receipt did not arrive")
                         | "WaitDenied" -> notify (failureReason + "; stop wait was denied")
                         | _ -> notify (failureReason + "; long-work continuation not sent: " + text continued "reason")

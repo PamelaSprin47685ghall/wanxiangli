@@ -137,19 +137,41 @@ test('JournalSession starts recovery once and the next generation waits for its 
   assert.deepEqual(starts, ['first', 'second', 'third'])
 })
 
-test('JournalSession propagates a rejected recovery into the next generation without starting it', async () => {
+test('JournalSession shares a recovery failure and retries only on a later call', async () => {
+  const f = fixture()
+  const first = deferred()
+  const cause = new Error('recovery failed')
+  let starts = 0
+  f.session.enqueueRecovery(() => { starts += 1; return starts === 1 ? first.promise : Promise.resolve() })
+  const firstRun = f.session.runOrAwaitRecovery()
+  const otherWaiter = f.session.runOrAwaitRecovery()
+  assert.equal(otherWaiter, firstRun)
+  const rejected = [firstRun, otherWaiter].map(work => assert.rejects(work, error => error === cause))
+  first.reject(cause)
+  await Promise.all(rejected)
+  assert.equal(starts, 1)
+  const retry = f.session.runOrAwaitRecovery()
+  assert.notEqual(retry, firstRun)
+  await retry
+  assert.equal(starts, 2)
+  assert.equal(f.session.runOrAwaitRecovery(), retry)
+})
+
+test('JournalSession lets a new generation recover after its predecessor fails', async () => {
   const f = fixture()
   const first = deferred()
   const cause = new Error('recovery failed')
   f.session.enqueueRecovery(() => first.promise)
   const firstRun = f.session.runOrAwaitRecovery()
   const rejectedFirst = assert.rejects(firstRun, error => error === cause)
-  let started = false
-  f.session.enqueueRecovery(async () => { started = true })
+  const second = deferred()
+  const secondStarted = deferred()
+  f.session.enqueueRecovery(() => { secondStarted.resolve(); return second.promise })
   const secondRun = f.session.runOrAwaitRecovery()
-  const rejectedSecond = assert.rejects(secondRun, error => error === cause)
   first.reject(cause)
-  await Promise.all([rejectedFirst, rejectedSecond])
-  assert.equal(started, false)
+  await rejectedFirst
+  await secondStarted.promise
   assert.equal(f.session.runOrAwaitRecovery(), secondRun)
+  second.resolve()
+  await secondRun
 })

@@ -52,7 +52,7 @@ test('recovery waits even after admission and never sends for denied unknown or 
 test('ordinary and delegate entry preserve missing-context and hard-stop priority', async () => {
   const terminal = []
   let missing = 0
-  const effects = { terminal: reason => terminal.push(reason), sendMissing: async () => { missing++; return false }, retry: forbidden }
+  const effects = { isRunClosed: () => false, terminal: reason => terminal.push(reason), sendMissing: async () => { missing++; return false }, retry: forbidden }
   await recovery.recoverOrdinary({ ...input, hardStop: true, hasCapacity: false, hasRecovery: false }, effects)
   assert.deepEqual(terminal, ['gateway'])
   assert.equal(missing, 0)
@@ -65,6 +65,7 @@ test('ordinary and delegate entry preserve missing-context and hard-stop priorit
 test('ordinary exhausted long work rereads authority after stop and preserves late failure text', async () => {
   const events = []
   await recovery.recoverOrdinary({ ...input, continueLongWork: true }, {
+    isRunClosed: () => false,
     retry: async () => ({ kind: 'Terminal', reason: 'exhausted' }), sendMissing: forbidden,
     terminal: reason => events.push(reason), hardStop: () => false,
     waitForStop: async () => { events.push('wait'); return 'Stopped' },
@@ -72,6 +73,36 @@ test('ordinary exhausted long work rereads authority after stop and preserves la
     sendLong: async () => ({ kind: 'Failed', error: 'late refusal' }),
   })
   assert.deepEqual(events, ['wait', 'authority', 'exhausted; long-work continuation not sent: late refusal'])
+})
+
+test('recovery distinguishes a missing authority from a replaced root after the stop receipt', async () => {
+  for (const authority of [null, { root: 'replacement', value: {} }]) {
+    const verdict = await recovery.redispatch('root', {}, {
+      alreadyAdmitted: () => false, observeAcceptance: forbidden,
+      waitForStop: async () => 'Stopped', currentAuthority: () => authority, sendRetry: forbidden,
+    }, 'gateway')
+    assert.deepEqual(verdict, authority === null
+      ? { kind: 'Terminal', reason: 'No active authority profile' }
+      : { kind: 'Superseded' })
+  }
+})
+
+test('ordinary recovery silences only a closed run and rereads closure after waiting for stop', async () => {
+  await recovery.recoverOrdinary({ ...input, hardStop: true }, {
+    isRunClosed: () => true, terminal: forbidden, sendMissing: forbidden, retry: forbidden,
+  })
+  for (const closed of [true, false]) {
+    let waiting = false
+    const terminals = []
+    await recovery.recoverOrdinary({ ...input, continueLongWork: true }, {
+      isRunClosed: () => waiting && closed,
+      terminal: reason => terminals.push(reason), sendMissing: forbidden,
+      retry: async () => ({ kind: 'Terminal', reason: 'exhausted' }), hardStop: () => false,
+      waitForStop: async () => { waiting = true; return 'Stopped' },
+      currentAuthority: () => null, sendLong: forbidden,
+    })
+    assert.deepEqual(terminals, closed ? [] : ['exhausted; long-work continuation not sent: No active authority profile'])
+  }
 })
 
 test('recovery refusal and thrown effects do not authorize another dispatch', async () => {

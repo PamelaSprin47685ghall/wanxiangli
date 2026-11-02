@@ -67,6 +67,16 @@ test('completion rejects wrong work, mismatched run and failed append without fa
   assert.equal(f.history.work(entry.work).phase, 'Active')
 })
 
+test('handle identity depends on kind and id, not property insertion order', async () => {
+  const f = fixture(3)
+  const reordered = entry => ({ id: entry.handle.id, kind: entry.handle.kind })
+  const entry = f.entries[0]
+  assert.equal((await f.controller.complete({ ...entry, handle: reordered(entry), child: entry.work.child, kind: 'Terminal' })).ok, true)
+  assert.equal((await f.controller.abandonActive(reordered(f.entries[1]), 'Voided')).ok, true)
+  assert.equal((await f.controller.cancel([reordered(f.entries[2])], 'ParentCancelled')).ok, true)
+  assert.deepEqual(f.entries.map(value => f.history.work(value.work).phase), ['CompletedAwaitingJoin', 'Abandoned', 'Abandoned'])
+})
+
 test('consume refreshes stale cells, distinguishes another winner and unconfirmed own receipt', async () => {
   const f = fixture()
   await f.complete()

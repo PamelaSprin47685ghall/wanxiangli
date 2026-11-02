@@ -27,8 +27,7 @@ module internal Wire =
 
 /// Process-local exact provider-run observations of one Host process
 /// (CUT-10 ⑥a): which target a finished provider run used, which exact
-/// (session, physical user message) a provider run belongs to, and the
-/// single-consumption recovery retry binding of a session.
+/// (session, physical user message) a provider run belongs to.
 ///
 /// Targets are opaque values compared by nobody here; they are stored and
 /// handed back by reference.
@@ -40,8 +39,6 @@ type ProviderRunWitness() =
     let latestRunBySession = Dictionary<string, string>()
     /// provider run → exact (session, physical user message).
     let stepByRun = Dictionary<string, struct (string * string)>()
-    /// session → the target its next fresh admission must retry verbatim.
-    let retryBySession = Dictionary<string, obj>()
 
     let retireLatest (sessionId: string) =
         match latestRunBySession.TryGetValue sessionId with
@@ -92,31 +89,6 @@ type ProviderRunWitness() =
         | Some witness -> witnessView witness
         | None -> null
 
-    /// A confirmed first provider failure keeps its target: consume the run's
-    /// witness and, only when it belongs to `sessionId`, bind the session's next
-    /// fresh admission to that exact target. A witness of another session is
-    /// consumed without granting anything. Returns the bound target or null.
-    member _.retainForRetry(sessionId: obj, providerRun: obj) : obj =
-        let sessionId = Wire.text "retainForRetry" "sessionId" sessionId
-        let run = Wire.text "retainForRetry" "providerRun" providerRun
-
-        match takeWitness run with
-        | Some(witnessSession, target) when witnessSession = sessionId ->
-            retryBySession[sessionId] <- target
-            target
-        | Some _
-        | None -> null
-
-    /// Consume the session's recovery retry binding once: the target or null.
-    member _.takeRetry(sessionId: obj) : obj =
-        let sessionId = Wire.text "takeRetry" "sessionId" sessionId
-
-        match retryBySession.TryGetValue sessionId with
-        | true, target ->
-            retryBySession.Remove sessionId |> ignore
-            target
-        | false, _ -> null
-
     /// Record the exact (session, physical user message) a Host-observed
     /// provider run belongs to. A later observation of the same run replaces it.
     member _.rememberStep(sessionId: obj, physicalUserMessageId: obj, providerRun: obj) : unit =
@@ -135,12 +107,11 @@ type ProviderRunWitness() =
             Wire.freeze (createObj [ "sessionId" ==> sessionId; "physicalUserMessageId" ==> physical ])
         | false, _ -> null
 
-    /// The session's execution retired: its latest witness, its retry binding and
+    /// The session's execution retired: its latest witness and
     /// every run → physical relation of the session are forgotten.
     member _.forgetSession(sessionId: obj) : unit =
         let sessionId = Wire.text "forgetSession" "sessionId" sessionId
         retireLatest sessionId
-        retryBySession.Remove sessionId |> ignore
         dropSteps (fun (s, _) -> s <> sessionId)
 
     /// Exact physical terminal evidence: only the run → physical relations of
@@ -157,5 +128,5 @@ type ProviderRunWitness() =
                 [ "witnesses" ==> targetByRun.Count
                   "latest" ==> latestRunBySession.Count
                   "steps" ==> stepByRun.Count
-                  "retries" ==> retryBySession.Count ]
+                   ]
         )

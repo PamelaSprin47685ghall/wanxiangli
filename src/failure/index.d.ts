@@ -171,15 +171,22 @@ export declare class ProviderRecovery {
     admit(authorization: A): Promise<{ readonly ok: true; readonly value: 'RetryAuthorized' | 'RetryExhausted' | 'EpisodeSuperseded' | 'NoActiveRun' } | { readonly ok: false; readonly error: string }>
     redispatch(authorization: A): Promise<RetryVerdict>
   }, reason: string): Promise<RetryVerdict>
+  continueSameProvider<A, P>(expectedRoot: string, authorization: A, effects: {
+    currentAuthority(): RecoveryAuthority<P> | null
+    observeAcceptance(authorization: A): void
+    sendRetry(profile: P, authorization: A): Promise<RecoverySendResult>
+  }, reason: string): Promise<RetryVerdict>
   redispatch<A, P>(expectedRoot: string, authorization: A, effects: RecoveryStopEffects<P> & {
     alreadyAdmitted(authorization: A): boolean
     observeAcceptance(authorization: A): void
     sendRetry(profile: P, authorization: A): Promise<RecoverySendResult>
   }, reason: string): Promise<RetryVerdict>
   continueAfterStop<P>(expectedRoot: string, effects: RecoveryStopEffects<P> & {
+    isRunClosed(): boolean
     sendLong(profile: P): Promise<RecoverySendResult>
-  }): Promise<{ readonly kind: 'Continued' | 'ReceiptUnknown' | 'WaitDenied' } | { readonly kind: 'NotSent'; readonly reason: string }>
+  }): Promise<{ readonly kind: 'Continued' | 'RunClosed' | 'ReceiptUnknown' | 'WaitDenied' } | { readonly kind: 'NotSent'; readonly reason: string }>
   recoverOrdinary<P>(input: RecoveryInput, effects: RecoveryEntryEffects & RecoveryStopEffects<P> & {
+    isRunClosed(): boolean
     terminal(reason: string): void
     hardStop(reason: string): boolean
     sendLong(profile: P): Promise<RecoverySendResult>

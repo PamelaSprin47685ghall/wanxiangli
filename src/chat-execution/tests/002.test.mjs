@@ -298,3 +298,35 @@ test('SPEC[quiescence-gate-014] 全局单例 sessionQuiescenceGate 正常可用'
   assert.deepEqual(sessionQuiescenceGate.TryConsume(permit), { ok: true, reason: null })
   sessionQuiescenceGate.DropSession(session)
 })
+
+
+test('SPEC[quiescence-gate-015] camelCase 方法名别名正常可用', () => {
+  const gate = new SessionQuiescenceGate()
+  const session = 'ses-camel-003'
+
+  gate.observePhysicalUserMessage(session, 'msg-1')
+  gate.beginProviderAttempt(session)
+  gate.beginToolExecution(session)
+  gate.endToolExecution(session)
+  gate.observePhysicalUserMessage(session, 'msg-1')
+  const permit = gate.observeIdle(session)
+  const observation = gate.captureCurrentAttempt(session)
+  const pFor = gate.observeIdleFor(observation)
+  assert.ok(pFor)
+  assert.equal(gate.livePermitCount(), 1)
+  assert.deepEqual(gate.tryConsume(permit), { ok: true, reason: null })
+  assert.deepEqual(gate.tryRelease(permit), { ok: true, reason: null })
+  gate.revokeCurrentAttempt(session)
+  gate.dropSession(session)
+  assert.equal(gate.livePermitCount(), 0)
+})
+
+test('SPEC[quiescence-gate-016] 没有 provider attempt 的 idle 观察只给探针 token，不占 live permit', () => {
+  const gate = new SessionQuiescenceGate()
+  const session = 'ses-fresh-probe'
+
+  const probe = gate.ObserveIdle(session)
+  assert.ok(probe)
+  assert.equal(gate.LivePermitCount, 0)
+  assert.deepEqual(gate.TryConsume(probe), { ok: false, reason: 'NoFreshIdle' })
+})

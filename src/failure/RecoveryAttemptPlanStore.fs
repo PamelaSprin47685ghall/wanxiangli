@@ -20,6 +20,15 @@ type BoundPlanEntry =
     { Plan: obj
       PhysicalUserMessageId: string }
 
+let private removeKeysWithPrefix (dictionary: Dictionary<string, 'T>) (prefix: string) : unit =
+    let keys =
+        dictionary.Keys
+        |> Seq.filter (fun key -> key.StartsWith(prefix, StringComparison.Ordinal))
+        |> Seq.toArray
+
+    for key in keys do
+        dictionary.Remove key |> ignore
+
 /// 进程内 attempt 计划与恢复干预自治存储（RecoveryAttemptPlanStore）。
 /// 独占拥有 pendingAttemptPlans、attemptPlans、manualChatInterventions 三个私有字典。
 /// 封装:
@@ -33,7 +42,7 @@ type BoundPlanEntry =
 type RecoveryAttemptPlanStore() =
     let pendingAttemptPlans = Dictionary<string, obj>()
     let attemptPlans = Dictionary<string, BoundPlanEntry>()
-    let manualChatInterventions = Dictionary<string, obj * string>()
+    let manualChatInterventions = Dictionary<string, obj>()
 
     [<Literal>]
     let separator = "\u001F"
@@ -176,12 +185,10 @@ type RecoveryAttemptPlanStore() =
 
     member _.PublishManualIntervention(sessionId: string, physicalUserMessageId: string, request: obj) : unit =
         let key = interventionKey sessionId physicalUserMessageId
-        manualChatInterventions.[key] <- (request, sessionId)
+        manualChatInterventions.[key] <- request
 
     member _.ManualInterventions() : obj array =
-        manualChatInterventions.Values
-        |> Seq.map fst
-        |> Seq.toArray
+        manualChatInterventions.Values |> Seq.toArray
 
     member _.RevokeManualIntervention(sessionId: string, physicalUserMessageId: string) : unit =
         let key = interventionKey sessionId physicalUserMessageId
@@ -191,34 +198,13 @@ type RecoveryAttemptPlanStore() =
     /// 并清除 manualChatInterventions 中属于该 sessionId 的所有条目。
     member this.ClearSession(sessionId: string) : unit =
         this.ClearAttemptPlansFor sessionId
-
-        let toRemove =
-            manualChatInterventions
-            |> Seq.choose (fun (KeyValue(key, (_, sid))) -> if sid = sessionId then Some key else None)
-            |> Seq.toArray
-
-        for key in toRemove do
-            manualChatInterventions.Remove key |> ignore
+        removeKeysWithPrefix manualChatInterventions (sessionId + separator)
 
     /// 清除所有以 keyPrefix + "\u001F" 开头的 attemptPlans 与 pendingAttemptPlans 条目。
     member _.ClearAttemptPlansFor(keyPrefix: string) : unit =
         let prefix = keyPrefix + separator
-
-        let provKeys =
-            attemptPlans.Keys
-            |> Seq.filter (fun k -> k.StartsWith(prefix, StringComparison.Ordinal))
-            |> Seq.toArray
-
-        for k in provKeys do
-            attemptPlans.Remove k |> ignore
-
-        let pendKeys =
-            pendingAttemptPlans.Keys
-            |> Seq.filter (fun k -> k.StartsWith(prefix, StringComparison.Ordinal))
-            |> Seq.toArray
-
-        for k in pendKeys do
-            pendingAttemptPlans.Remove k |> ignore
+        removeKeysWithPrefix attemptPlans prefix
+        removeKeysWithPrefix pendingAttemptPlans prefix
 
     /// 诊断快照（不暴露内部字典，供测试/度量用）
     member _.Snapshot() =
