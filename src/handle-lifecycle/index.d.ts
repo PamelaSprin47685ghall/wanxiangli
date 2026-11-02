@@ -277,3 +277,89 @@ export declare class CompletionRecord {
   /** Reads once, checks the digest before decoding, and propagates callback rejection without retry. */
   read(reference: CompletionReference, readBlob: (ref: string) => Promise<CompletionRecordResult<string>>, sha256: (body: string) => string): Promise<CompletionRecordResult<ReadCompletionRecord | null>>
 }
+
+/** Process-local child runs. Durable completion and consumption belong to HandleHistory. */
+export interface ChildRunOutcome {
+  kind: 'completed' | 'failed' | 'abandoned'
+  agentId?: string
+  runId?: string
+  role?: string
+  childSessionId?: string | null
+  authorityRoot?: string | null
+  providerRun?: string | null
+  directory?: string | null
+  view?: string
+  code?: string
+  message?: string
+  reason?: string
+}
+export interface ChildRunCompletion {
+  readonly runId: string
+  readonly agentName: string
+  readonly role: string
+  readonly outcome: Readonly<ChildRunOutcome>
+  readonly completedAt: Date
+}
+export interface ChildRunInput {
+  agentId: string
+  agent: string
+  role: string
+  prompt?: string | null
+  run?: ((input: ChildRunInput) => Promise<ChildRunOutcome>) | null
+}
+export interface ChildRunRecord {
+  readonly agentId: string
+  readonly agent: string
+  readonly role: string
+  readonly status: 'Idle' | 'Busy' | 'Interrupted' | 'Closed'
+  readonly currentRunId: string | null
+  readonly terminalStatusLabel: string | null
+  readonly completionCellSettled: boolean
+  readonly childSessionId: string | null
+}
+export interface ChildRunPty { ptyId: string; command: string; startedAt: Date }
+export interface ChildRunMailbox<P, I, W> {
+  pulseAgent(id: string): void
+  publishPty(item: P): void
+  pulseWake(): void
+  waitForWake(): Promise<W>
+  waitForSignal(interrupt: Promise<I>): Promise<W>
+  drainAgents(max: number): string[]
+  drainPtys(max: number): P[]
+  cancel(): boolean
+  isCancelled(): boolean
+  pendingCount(): number
+  pendingPtyCount(): number
+}
+export declare class ChildRunSet<P = unknown, I = unknown, W = unknown> {
+  constructor(options: {
+    mailbox: ChildRunMailbox<P, I, W>
+    now(): Date
+    mintRunId(): string
+    raceExit(pending: Promise<unknown>, timeoutMs: number): Promise<boolean>
+    runDefault(input: ChildRunInput): Promise<ChildRunOutcome>
+    onTerminal?(completion: ChildRunCompletion): void
+    cleanup?(agentId: string): void
+  })
+  fork(input: ChildRunInput): 'Created' | 'Nudged' | 'NotFound'
+  restore(input: Omit<ChildRunInput, 'run'>): void
+  bindChildSession(id: string, childSessionId: string): void
+  cancelAgent(id: string): void
+  markInterrupted(id: string, reason: string): void
+  awaitAgent(id: string, timeoutMs?: number): Promise<{ok: true; value: ChildRunCompletion} | {ok: false; error: string}>
+  list(): {agents: ChildRunRecord[]; ptys: Readonly<ChildRunPty>[]}
+  registerPty(pty: ChildRunPty): void
+  unregisterPty(id: string): void
+  publishPtyCompletion(id: string, item: P): void
+  pulseAgentHandle(id: string): void
+  pulseWake(): void
+  waitForWake(): Promise<W>
+  waitForSignal(interrupt: Promise<I>): Promise<W>
+  drainAgentWakes(max: number): string[]
+  drainPtyCompletions(max: number): P[]
+  readonly isCancelled: boolean
+  readonly activeRunCount: number
+  readonly pendingCompletionCount: number
+  readonly pendingPtyCount: number
+  close(): void
+}
