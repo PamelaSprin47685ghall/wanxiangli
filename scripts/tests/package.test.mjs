@@ -19,6 +19,35 @@ function succeed(result) {
   return result.stdout
 }
 
+test('installed prefix, handle and change owners complete their public lifecycles', { timeout: 90000 }, async t => {
+  const temporary = mkdtempSync(path.join(tmpdir(), 'wanxiangli-prefix-handles-package-'))
+  t.after(() => rmSync(temporary, { recursive: true, force: true }))
+  const packed = packedPackage(succeed(spawnSync(npm, ['pack', '--ignore-scripts', '--json', '--pack-destination', temporary], { cwd: root, env: cleanEnvironment, encoding: 'utf8', timeout: 30000 })))
+  const consumer = path.join(temporary, 'consumer')
+  mkdirSync(consumer)
+  writeFileSync(path.join(consumer, 'package.json'), JSON.stringify({ name: 'prefix-handles-consumer', private: true, type: 'module' }))
+  succeed(spawnSync(npm, ['install', '--ignore-scripts', '--omit=dev', '--no-audit', '--no-fund', path.join(temporary, packed.filename)], { cwd: consumer, env: cleanEnvironment, encoding: 'utf8', timeout: 30000 }))
+  const cases = [['prefix-history', 'prefixHistory'], ['child-run-set', 'childRunSet'], ['durable-handles', 'durableHandles'], ['change', 'change']]
+  for (const [name] of cases) {
+    for (const suffix of ['mjs', 'ts']) {
+      const file = `${name}-consumer.${suffix}`
+      copyFileSync(path.join(root, 'scripts/tests', file), path.join(consumer, file))
+    }
+  }
+  succeed(spawnSync(process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), '--noEmit', '--strict', '--target', 'es2022', '--module', 'nodenext', ...cases.map(([name]) => `${name}-consumer.ts`)], { cwd: consumer, env: cleanEnvironment, encoding: 'utf8', timeout: 30000 }))
+  const runtimes = [['node', process.execPath]]
+  if (spawnSync('bun', ['--version'], { env: cleanEnvironment, encoding: 'utf8' }).status === 0) runtimes.push(['bun', 'bun'])
+  else t.diagnostic('Bun is absent; its prefix and handle consumers were not run.')
+  for (const [runtime, executable] of runtimes) {
+    for (const [name, property] of cases) {
+      await t.test(`${runtime}: ${name}`, () => {
+        const output = succeed(spawnSync(executable, [path.join(consumer, `${name}-consumer.mjs`)], { cwd: tmpdir(), env: cleanEnvironment, encoding: 'utf8', timeout: 10000 }))
+        assert.deepEqual(JSON.parse(output), { [property]: true })
+      })
+    }
+  }
+})
+
 test('installed FissionLifecycle runs two lanes through shared results and owner convergence', { timeout: 90000 }, async t => {
   const temporary = mkdtempSync(path.join(tmpdir(), 'wanxiangli-fission-lifecycle-package-'))
   t.after(() => rmSync(temporary, { recursive: true, force: true }))

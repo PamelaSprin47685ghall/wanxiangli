@@ -65,6 +65,7 @@ export interface CompletionMailbox {
   publishPty(pty: unknown): void
   pulseWake(): void
   waitForWake(): Promise<'CompletionMayBeAvailable' | 'MailboxCancelled' | { LocalInterrupt: unknown }>
+  waitForSignal(interrupt: Promise<unknown>): Promise<'CompletionMayBeAvailable' | 'MailboxCancelled' | { LocalInterrupt: unknown }>
   drainAgents(maxCount: number): unknown[]
   drainPtys(maxCount: number): unknown[]
   cancel(): boolean

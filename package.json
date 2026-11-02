@@ -8,6 +8,10 @@
     "node": ">=22.13.0"
   },
   "exports": {
+    "./change": {
+      "types": "./src/change/index.d.ts",
+      "import": "./dist/change/ChangeRuntime.js"
+    },
     "./file-baseline": {
       "types": "./src/file-baseline/index.d.ts",
       "import": "./dist/file-baseline/FileBaseline.js"
@@ -246,6 +250,7 @@
     }
   },
   "files": [
+    "src/change/index.d.ts",
     "src/keyed-serial/index.d.ts",
     "src/returned-material/index.d.ts",
     "src/bounded-map/index.d.ts",

@@ -363,3 +363,83 @@ export declare class ChildRunSet<P = unknown, I = unknown, W = unknown> {
   readonly pendingPtyCount: number
   close(): void
 }
+
+export interface HistoryHandle { kind: number; id: string }
+export interface HistoryWork { handle: HistoryHandle; child: string; root: string }
+export interface HistoryCell { kind: 'Terminal' | 'SendFailure' | 'Cancelled'; reference: string | null; digest: string | null }
+export interface HistoryBinding {
+  handle: HistoryHandle; child: string; target: string; byname: string; role: string; parentVisible: boolean;
+}
+export interface HistoryRecord extends HistoryBinding {
+  phase: 'Active' | 'CompletedAwaitingJoin' | 'Abandoned' | 'Retired';
+  reason: string | null; completion: HistoryCell | null; lastCompletion: HistoryCell | null;
+  work: HistoryWork | null; creationOrder: number;
+}
+export interface HistoryWorkRecord {
+  work: HistoryWork; logicalRun: string; phase: HistoryRecord['phase']; reason: string | null;
+  completion: HistoryCell | null; lastCompletion: HistoryCell | null; consumptionId: string | null;
+}
+export type HistoryResult<T> = { ok: true; value: T } | { ok: false; error: string };
+export interface HistoryAdmission {
+  parent: string; handle: HistoryHandle;
+  profile: { child: string; role: string; target: string; root: string; logicalRun: string; identity: string; owner: string | null } | null;
+  landing: { child: string; identity: string; ownerRoot: boolean } | null;
+}
+export class HandleHistory {
+  constructor();
+  bindings(): HistoryRecord[];
+  works(): HistoryWorkRecord[];
+  legacyHandles(): HistoryHandle[];
+  readonly nextCreationOrder: number;
+  isLegacy(handle: HistoryHandle): boolean;
+  binding(handle: HistoryHandle): HistoryRecord | null;
+  work(work: HistoryWork): HistoryWorkRecord | null;
+  link(binding: HistoryBinding): HistoryResult<HandleHistory>;
+  transition(request: { event: 'complete' | 'abandon' | 'retire' | 'rejectFalseCompletion'; handle: HistoryHandle; completion?: HistoryCell; reason?: string }): HistoryResult<HandleHistory>;
+  admit(request: HistoryAdmission): HistoryResult<HandleHistory>;
+  admitted(work: HistoryWork): HistoryResult<HistoryWorkRecord>;
+  transitionWork(request: { event: 'complete' | 'abandon' | 'void' | 'consume'; work: HistoryWork; completion?: HistoryCell; reason?: string; consumptionId?: string }): HistoryResult<HandleHistory>;
+  workBindings(): HistoryRecord[];
+  summary(handle: HistoryHandle): HistoryRecord | null;
+  summaries(): HistoryRecord[];
+  byname(byname: string, summarized: boolean): HistoryRecord | null;
+  forChild(child: string): HistoryRecord | null;
+  deliveryRecords(): HistoryRecord[];
+  filterBindings(accept: (summary: HistoryRecord) => boolean): HandleHistory;
+  orderedCandidates(): HistoryRecord[];
+}
+
+export type DurableHandleResult<T> = { ok: true; value: T } | { ok: false; kind?: 'AppendFailed' | 'NotJoinable' | 'AlreadyRetired' | 'NotFound' | 'TerminalMaterializationFailed'; error: string };
+export type DurableHandleFact =
+  | { kind: 'link'; binding: HistoryBinding }
+  | { kind: 'completeWork' | 'consumeWork'; work: HistoryWork; completion: HistoryCell; consumptionId?: string }
+  | { kind: 'abandonWork'; work: HistoryWork; reason: string }
+  | { kind: 'retire'; handle: HistoryHandle }
+  | { kind: 'rejectFalseCompletion'; handle: HistoryHandle; completion: HistoryCell };
+export interface DurableHandleEffects {
+  current(): HandleHistory;
+  refresh(): DurableHandleResult<unknown>;
+  append(fact: DurableHandleFact): Promise<DurableHandleResult<unknown>>;
+  writeBlob(body: string): Promise<DurableHandleResult<{ reference: string; digest: string }>>;
+  readBlob(reference: string): Promise<DurableHandleResult<string>>;
+  sha256(body: string): string;
+  mintConsumptionId(): string;
+}
+export interface DurableHandleDelivery {
+  record: HistoryRecord;
+  payload?: { kind: 'completed' | 'failed'; runId: string; view?: string; code?: string; message?: string; childSessionId: string | null; authorityRoot?: string | null; providerRun?: string | null; directory?: string | null };
+  abandoned?: string;
+  runId?: string;
+}
+export class DurableHandles {
+  constructor(effects: DurableHandleEffects);
+  orderedCandidates(): HistoryRecord[];
+  link(binding: HistoryBinding): Promise<DurableHandleResult<unknown>>;
+  complete(request: { work: HistoryWork; logicalRun: string; handle: HistoryHandle; child: string; kind: HistoryCell['kind']; body: string | null }): Promise<DurableHandleResult<unknown>>;
+  consume(record: HistoryRecord): Promise<DurableHandleResult<HistoryRecord>>;
+  abandon(work: HistoryWork, reason: string): Promise<DurableHandleResult<unknown>>;
+  abandonActive(handle: HistoryHandle, reason: string): Promise<DurableHandleResult<unknown>>;
+  cancel(handles: HistoryHandle[], reason: string): Promise<DurableHandleResult<unknown>>;
+  reconcileFalseAborts(): Promise<DurableHandleResult<unknown>>;
+  drain(maxCount: number, accept: (summary: HistoryRecord) => boolean): Promise<DurableHandleResult<DurableHandleDelivery[]>>;
+}
