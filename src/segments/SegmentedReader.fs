@@ -265,16 +265,22 @@ module private Readers =
     let private writerFileGroups provider =
         let path = directory provider
 
-        if not (exists path) then
+        try
+            if not (exists path) then
+                []
+            else
+                let names: string array = fs?readdirSync path
+                segments.groupWriterFiles names
+                |> Array.toList
+                |> List.map (fun group ->
+                    let writerId: string = group?writerId
+                    let fileNames: string array = group?fileNames
+                    { WriterId = writerId; FileNames = Array.toList fileNames })
+        with _ ->
+            // A parent that is a file, a vanished directory or a permission
+            // refusal leaves no writer groups to read; the caller reports the
+            // empty stream instead of surfacing ENOTDIR/EACCES as a crash.
             []
-        else
-            let names: string array = fs?readdirSync path
-            segments.groupWriterFiles names
-            |> Array.toList
-            |> List.map (fun group ->
-                let writerId: string = group?writerId
-                let fileNames: string array = group?fileNames
-                { WriterId = writerId; FileNames = Array.toList fileNames })
 
     let private physicalMetadata provider =
         writerFileGroups provider
