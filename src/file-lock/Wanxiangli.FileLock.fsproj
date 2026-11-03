@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="FileLock.fs" />
+    <PackageExport Include="FileLock.fs" Member="acquire" />
+    <PackageExport Include="FileLock.fs" Member="isAcquireTimeout" />
+  </ItemGroup>
+</Project>

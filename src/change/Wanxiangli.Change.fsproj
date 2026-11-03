@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="ChangePublication.fs" />
+    <Compile Include="History.fs" />
+    <Compile Include="ChangeJob.fs" />
+    <Compile Include="ChangeRuntime.fs" />
+    <PackageExport Include="ChangePublication.fs" Member="ChangePublication" />
+    <PackageExport Include="History.fs" Member="ChangeHistory" />
+    <PackageExport Include="ChangeJob.fs" Member="ChangeJob" />
+    <PackageExport Include="ChangeRuntime.fs" Member="ChangeRuntime" />
+  </ItemGroup>
+</Project>

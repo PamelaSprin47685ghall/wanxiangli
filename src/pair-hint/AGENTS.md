@@ -2,6 +2,12 @@
 
 层：独立的模型消息与 scope 协议内核，npm 入口 wanxiangli/pair-hint。不依赖宿主 SDK、Journal 或会话全局状态。
 
+配对提示再次呈现时，`PairGuidanceHistory` 保存顺序、原文、调用号和当前可见范围。换代只退休旧提示的可见位置，历史和调用号仍保留。它是不可变历史；拒绝新记录不会改变原分支。调用方提供不透明的位置键与附带材料，库不解释具体宿主消息。
+
+`PairGuidanceOccurrences` 组织一次呈现：检查已有记录，必要时生成候选，先请呈现者形成请求副本，再请记录者追加。呈现失败不追加，追加失败不返回含新提示的副本。角色、环境开关、宿主位置解释和 Journal 事实编码由外层负责。它不保存第二份持久历史。
+
+内存 `PairGuidanceMemoryStore` 仍是直接追加的会话记录，不套用持久 History 的顺序和唯一性拒绝。两者共用同域计算，不假装具有相同持久性或接受条件。
+
 ## AXIOM
 
 1. [使用者] 只有显式 scope 重锚能清理旧上下文：优先任意工具上的 `scope.kind=resetScope` 注解（及其配对结果），过渡兼容旧独立工具名 `resetScope`；真实 operator 输入与该次 reset 调用及结果必须保留。以 user role 运输的 `attribution: agent` 答复不等于真实操作员，旧 epoch 的代理答复属于可清理过程；模型自行决定经验与原文交接。

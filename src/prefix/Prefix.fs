@@ -115,3 +115,53 @@ type Prefix() =
                 [ "append" ==> List.isEmpty breaks
                   "breaks" ==> Wire.stringArray (breaks |> List.map WireLaw.label) ]
         )
+
+/// 当前世代、上一 Scope 归档和提问回执属于同一个不可变历史。
+[<AttachMembers>]
+type PrefixHistory(?initial: obj, ?priorArchive: obj, ?priorQuestions: obj) =
+    static let law = Prefix()
+    let generation = initial |> Option.map law.normalize |> Option.defaultWith law.empty
+    let archive = defaultArg priorArchive null
+    let questions = priorQuestions |> Option.map unbox<Map<string, string>> |> Option.defaultValue Map.empty
+
+    let advanced (candidate: obj) (nextArchive: obj) (nextQuestions: Map<string, string>) : obj =
+        let result = law.commit(generation, candidate)
+        if unbox<bool> (Wire.get result "ok") then
+            createObj [ "ok" ==> true; "value" ==> PrefixHistory(Wire.get result "state", nextArchive, box nextQuestions) ]
+        else result
+
+    member _.epoch() = Wire.epoch generation "epoch"
+    member _.state() = generation
+    member _.hasReanchored(evidence: obj) = law.isReanchored(generation, evidence)
+    member _.reanchored(kind: string) : obj =
+        match kind with
+        | "compaction" -> generation?compactionRuns
+        | "tenure" -> generation?tenures
+        | "scope" -> if isNull (Wire.get generation "scopes") then Wire.stringArray [] else generation?scopes
+        | other -> Wire.fail ("prefix: unknown evidence kind '" + other + "'")
+    member this.scopeCount() = unbox<string array> (this.reanchored "scope") |> Array.length
+    member _.lastScopeArchive() = archive
+    member _.scopeQuestion(callId: string) : obj = Map.tryFind callId questions |> Option.map box |> Option.defaultValue null
+    member _.proposeCompaction(observedRuns: obj) = law.proposeCompaction(generation, observedRuns)
+    member _.advance(candidate: obj) = advanced candidate archive questions
+    member _.advanceScope(candidate: obj, reference: string, digest: string) =
+        let captured =
+            if isNull reference || isNull digest then null
+            else
+                Wire.freeze (createObj
+                    [ "sourceEpoch" ==> Wire.lineEpoch candidate "previousEpoch"
+                      "targetEpoch" ==> Wire.lineEpoch candidate "nextEpoch"
+                      "resetCallId" ==> Wire.text (Wire.get candidate "evidence") "callId"
+                      "reference" ==> reference; "digest" ==> digest ])
+        advanced candidate captured Map.empty
+    member this.recordScopeQuestion(targetEpoch: int64, callId: string, digest: string) =
+        let validArchive = not (isNull archive) && Wire.epoch archive "targetEpoch" = targetEpoch
+        let reject error = createObj [ "ok" ==> false; "error" ==> error ]
+        if targetEpoch <> this.epoch() || not validArchive then
+            reject "stale scope epoch or missing prior archive"
+        else
+            match Map.tryFind callId questions with
+            | Some earlier when earlier <> digest -> reject "scope question receipt conflict"
+            | Some _ -> createObj [ "ok" ==> true; "value" ==> this ]
+            | None ->
+                createObj [ "ok" ==> true; "value" ==> PrefixHistory(generation, archive, box (Map.add callId digest questions)) ]

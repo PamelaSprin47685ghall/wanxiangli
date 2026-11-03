@@ -9,5 +9,7 @@
     <Compile Include="Generation.fs" />
     <Compile Include="WireLaw.fs" />
     <Compile Include="Prefix.fs" />
+    <PackageExport Include="Prefix.fs" Member="Prefix" />
+    <PackageExport Include="Prefix.fs" Member="PrefixHistory" />
   </ItemGroup>
 </Project>

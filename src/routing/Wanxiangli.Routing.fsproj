@@ -7,5 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="RoutingProtocol.fs" />
+    <PackageExport Include="RoutingProtocol.fs" Member="RoutingProtocol" />
+    <PackageExport Include="RoutingProtocol.fs" Member="ExecutionRouting" />
   </ItemGroup>
 </Project>

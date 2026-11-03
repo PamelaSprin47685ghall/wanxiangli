@@ -6,5 +6,10 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="WriterSegments.fs" />
+    <Compile Include="SegmentedReader.fs" />
+    <Compile Include="SegmentedWriter.fs" />
+    <PackageExport Include="WriterSegments.fs" Member="WriterSegments" />
+    <PackageExport Include="SegmentedReader.fs" Member="SegmentedReader" />
+    <PackageExport Include="SegmentedWriter.fs" Member="SegmentedWriter" />
   </ItemGroup>
 </Project>

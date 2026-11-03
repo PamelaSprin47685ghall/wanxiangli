@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
-import { readFileSync } from 'node:fs'
+import { readFileSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
-import { ProcessSession } from 'wanxiangli/runtime'
+import { ProcessSession, runProcess } from 'wanxiangli/runtime'
 
-const [runtime] = process.argv.slice(2)
+const [runtime, mode = 'portable'] = process.argv.slice(2)
 const runs = []
 const options = mode => ({
   executable: process.execPath,
@@ -32,7 +34,9 @@ const closed = async run => {
 
 assert.equal((await import('wanxiangli/runtime')).ProcessSession, ProcessSession)
 let grandchild
-try {
+const spoolDirectory = mkdtempSync(path.join(tmpdir(), 'wanxiangli-run-consumer-'))
+
+async function portable() {
   const echo = make('echo', { tailBytes: 8 })
   assert.equal((await echo.started()).kind, 'Started')
   const beforeClose = echo.wait(60000)
@@ -49,6 +53,28 @@ try {
   assert.ok(floodState.stdout.observed > 8 * 1024 * 1024)
   assert.equal(floodState.stdout.retained, 1024)
   assert.ok(flood.read('stdout', 0).text.endsWith('最后的原始输出🧭\n'))
+
+  const input = 'installed stdin 世界🧭'
+  const run = await runProcess({
+    command: { fileName: process.execPath, args: ['-e', 'process.stdin.pipe(process.stdout);process.stderr.write("err");process.exitCode=3'], stdin: input },
+    estimate: { runtimeSeconds: 5, outputBytes: 1024n, memory: 'medium' },
+  })
+  assert.deepEqual(run, { ok: true, value: { kind: 'Completed', exitCode: 3, stdout: input, stderr: 'err', spooled: false } })
+  const content = 'x'.repeat(300000) + '尾🧭'
+  const spooled = await runProcess({
+    command: { fileName: process.execPath, args: ['-e', 'process.stdout.write("x".repeat(300000)+"尾🧭")'] },
+    estimate: { runtimeSeconds: 5, outputBytes: 1n, memory: 'medium' }, context: { spoolDirectory },
+  })
+  assert.equal(spooled.ok, true)
+  assert.equal(spooled.value.kind, 'Spooled')
+  assert.equal(spooled.value.totalBytes, BigInt(Buffer.byteLength(content)))
+  assert.equal(readFileSync(spooled.value.spoolPath, 'utf8'), content)
+  console.log(JSON.stringify({ runtime, echo: true, boundedOutput: true, runProcess: true }))
+}
+
+async function linuxGroup() {
+  assert.equal(mode, 'group')
+  assert.equal(process.platform, 'linux')
 
   const group = make('group')
   assert.equal((await group.started()).kind, 'Started')
@@ -67,7 +93,12 @@ try {
     } catch (error) { if (error.code === 'ENOENT') return true; throw error }
   })
   assert.equal(group.signal('SIGKILL').kind, 'NotRunning')
-  console.log(JSON.stringify({ runtime, echo: true, boundedOutput: true, groupSignal: true }))
+  console.log(JSON.stringify({ runtime, groupSignal: true }))
+}
+
+try {
+  if (mode === 'portable') await portable()
+  else await linuxGroup()
 } finally {
   for (const run of runs) {
     await run.started()
@@ -78,4 +109,5 @@ try {
     try { process.kill(grandchild, 'SIGKILL') }
     catch (error) { if (error.code !== 'ESRCH') throw error }
   }
+  rmSync(spoolDirectory, { recursive: true, force: true })
 }

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, rmSync, readdirSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, readFileSync, rmSync, readdirSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -23,7 +23,10 @@ test('SPEC[build-005] clean installed program/runtime public entries work on Nod
  writeFileSync(path.join(consumer,'package.json'),JSON.stringify({name:'program-clean-consumer',private:true,type:'module'}))
  run('npm',['install','--ignore-scripts','--omit=dev','--no-audit','--no-fund',path.join(dir,pack.filename)],consumer)
  for(const f of ['program-consumer.mjs','program-consumer.ts']) copyFileSync(path.join(root,'scripts/tests',f),path.join(consumer,f))
- assert.deepEqual(readdirSync(path.join(consumer,'node_modules')).filter(n=>!n.startsWith('.')),['wanxiangli'])
+ const installed=JSON.parse(readFileSync(path.join(consumer,'node_modules/wanxiangli/package.json'),'utf8'))
+ const modules=readdirSync(path.join(consumer,'node_modules')).filter(n=>!n.startsWith('.'))
+ for(const dependency of ['wanxiangli',...Object.keys(installed.dependencies??{})]) assert.ok(modules.includes(dependency),dependency)
+ for(const tool of ['@fable-org','typescript','esbuild']) assert.ok(!modules.includes(tool),tool)
  run(process.execPath,[path.join(root,'node_modules/typescript/bin/tsc'),'--noEmit','--strict','--target','es2022','--module','nodenext','program-consumer.ts'],consumer)
  for(const executable of [process.execPath,'bun']) {
    const observed=JSON.parse(run(executable,[path.join(consumer,'program-consumer.mjs')],tmpdir()).trim())

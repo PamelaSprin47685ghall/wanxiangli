@@ -1,6 +1,18 @@
 # process — 独立的真实进程会话
 
-层：物理能力库。入口 `wanxiangli/process`，对象 `ProcessSession`。不导入 Work、Journal、组合者、宿主 SDK 或旧仓；直接使用运行时的 `node:child_process`。这不是契约空壳，也不是宿主 canary。
+层：物理能力。公开入口 `wanxiangli/runtime`。`ProcessSession` 直接拥有 `node:child_process` 的资源，不认识 Work、Journal、角色或宿主 SDK。
+
+## 一次命令运行
+
+`runProcess` 发起一次命令并取得完整输出。它组合 ProcessSession、OutputSpool、Time 截止规则和现有全局 LargeGate，拥有本次许可、stdin、等待阶段与输出移交。它不改变 Runtime.startCommand 的模型程序接口，也不接收 Git 工作流或宿主状态。
+
+输入给出命令、参数、可选 cwd/env/stdin，以及运行时长、输出阈值和内存档位。cwd 按命令、context 的顺序选择；显式空字符串仍选命令这一项，最终使用当前目录。环境继承进程快照，再按命令覆盖；保留原有 NUL/非法键过滤和 PATH 寻址规则。期限为时长估计与管理员上限的较小者，默认上限一小时，从启动成功后开始算。排队与启动不扣此期限。
+
+输出阈值只决定何时转文件，内存另封顶 204800 字节。小结果分 stdout/stderr，文件按收到的原字节顺序合并，完整交给消费者读取并删除。外存失败在收尾时报原操作、字节数与错误；不把缺失输出报成完成。stdin 按 UTF-8 分 16 MiB 块顺序写，只有 Written 才继续，未知消费不重发。管道失败保留首个错误，零退出码不能覆盖它。
+
+期限到达后请求 SIGKILL，最多再等 1000ms close；未确认仍报超时。取消等待会请求 kill 并返回 ProcessCancelled，不承诺已经 close。启动前已取消的 Medium 返回 SpawnFailed；Large 尚未取得许可时取消仍拒绝 Promise。只有实际取得许可的调用负责释放。非零退出是结果数据，信号退出映射 -1。超时、取消和等待失败丢弃本次 spool，迟到输出不能改已结算结果。
+
+ProcessSession 观察到直接子进程 exit 后拒绝再向旧 PGID 发信号；本组合不扩大它对后代的清理承诺，也不增加超长 deadline 的循环分片策略。主仓原 launcher/ChildProcess 测试接缝不属于公开接口；测试在库内控制自身进程边界。消息形状见 `types.d.ts`。
 
 ## AXIOM
 1. [使用者] 命令和输入会真的改变世界；启动、写入管道、退出是不同事实，不能重复执行或混称成功。

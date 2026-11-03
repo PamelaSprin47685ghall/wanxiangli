@@ -1,4 +1,4 @@
-import { ProcessSession, type ProcessOptions, type OutputSlice, type OutputReceiver } from 'wanxiangli/runtime'
+import { ProcessSession, runProcess, type ProcessRunRequest, type ProcessRunResult, type ProcessOptions, type OutputSlice, type OutputReceiver } from 'wanxiangli/runtime'
 
 declare const options: ProcessOptions
 const run = new ProcessSession(options)
@@ -35,3 +35,26 @@ run.read('combined', 0)
 run.signal('retry')
 // @ts-expect-error 原生句柄不属于公开能力。
 run.child.kill()
+
+const request: ProcessRunRequest = {
+  command: { fileName: '/bin/echo', args: ['text'], env: { KEY: 'value' }, stdin: null },
+  estimate: { runtimeSeconds: 5, outputBytes: 1024n, memory: 'medium' },
+  context: { hardLimitMs: 3600000, spoolDirectory: '/tmp' },
+}
+const completed: ProcessRunResult = await runProcess(request, new AbortController().signal)
+if (completed.ok) {
+  const code: number = completed.value.exitCode
+  if (completed.value.kind === 'Spooled') {
+    const bytes: bigint = completed.value.totalBytes
+    const path: string = completed.value.spoolPath
+    void bytes; void path
+  } else { const text: string = completed.value.stdout; void text }
+  void code
+} else if (completed.error.kind === 'TimeoutExceeded') {
+  const elapsed: number = completed.error.durationMs
+  void elapsed
+} else { const reason: string = completed.error.reason; void reason }
+// @ts-expect-error 只接受已有精确字节估计，不经 number 截断。
+await runProcess({ ...request, estimate: { ...request.estimate, outputBytes: 1024 } })
+// @ts-expect-error 运行协调不接收宿主的可变 ChildProcess/launcher。
+await runProcess(request, { spawn() {} })

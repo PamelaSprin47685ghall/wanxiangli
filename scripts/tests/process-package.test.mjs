@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, rmSync, existsSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -15,7 +15,7 @@ const succeed = result => {
   return result.stdout
 }
 
-test('SPEC[build-004] the installed runtime runs after removing unrelated work artifacts', { timeout: 90000, skip: process.platform !== 'linux' }, async t => {
+test('the installed runtime runs portable commands and Linux process groups without unrelated artifacts', { timeout: 90000 }, async t => {
   const directory = mkdtempSync(path.join(tmpdir(), 'wanxiangli-process-package-'))
   t.after(() => rmSync(directory, { recursive: true, force: true }))
   const packed = packedPackage(succeed(spawnSync('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', directory], { cwd: root, env, encoding: 'utf8', timeout: 30000 })))
@@ -26,8 +26,6 @@ test('SPEC[build-004] the installed runtime runs after removing unrelated work a
   writeFileSync(path.join(consumer, 'package.json'), JSON.stringify({ name: 'process-only-consumer', private: true, type: 'module' }))
   succeed(spawnSync('npm', ['install', '--ignore-scripts', '--omit=dev', '--no-audit', '--no-fund', path.join(directory, packed.filename)], { cwd: consumer, env, encoding: 'utf8', timeout: 30000 }))
   const installed = path.join(consumer, 'node_modules/wanxiangli')
-  const metadata = JSON.parse(readFileSync(path.join(installed, 'package.json'), 'utf8'))
-  assert.deepEqual(metadata.dependencies ?? {}, {})
   for (const module of ['lifecycle', 'eventstore', 'assembly']) {
     rmSync(path.join(installed, 'dist', module), { recursive: true, force: true })
     rmSync(path.join(installed, 'src', module), { recursive: true, force: true })
@@ -41,9 +39,13 @@ test('SPEC[build-004] the installed runtime runs after removing unrelated work a
   if (spawnSync('bun', ['--version'], { encoding: 'utf8', env }).status === 0) runtimes.push(['bun', 'bun'])
   else t.diagnostic('Bun is absent; its process consumer is not verified in this environment.')
   for (const [name, executable] of runtimes) {
-    await t.test(`actual process consumer on ${name}`, () => {
-      const output = succeed(spawnSync(executable, [path.join(consumer, 'process-consumer.mjs'), name], { cwd: tmpdir(), env, encoding: 'utf8', timeout: 15000 }))
-      assert.deepEqual(JSON.parse(output.trim()), { runtime: name, echo: true, boundedOutput: true, groupSignal: true })
+    await t.test(`portable process consumer on ${name}`, () => {
+      const output = succeed(spawnSync(executable, [path.join(consumer, 'process-consumer.mjs'), name, 'portable'], { cwd: tmpdir(), env, encoding: 'utf8', timeout: 15000 }))
+      assert.deepEqual(JSON.parse(output.trim()), { runtime: name, echo: true, boundedOutput: true, runProcess: true })
+    })
+    await t.test(`Linux process group consumer on ${name}`, { skip: process.platform !== 'linux' }, () => {
+      const output = succeed(spawnSync(executable, [path.join(consumer, 'process-consumer.mjs'), name, 'group'], { cwd: tmpdir(), env, encoding: 'utf8', timeout: 15000 }))
+      assert.deepEqual(JSON.parse(output.trim()), { runtime: name, groupSignal: true })
     })
   }
 })

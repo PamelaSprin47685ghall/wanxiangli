@@ -1,5 +1,5 @@
 export * from './wait/types.js'
-import type { CallResult, OutputSnapshot, RuntimeFailure } from 'wanxiangli/runtime'
+import type { CallResult, FileMutation, FileSessionInstance, OutputSnapshot, RuntimeFailure } from 'wanxiangli/runtime'
 
 export interface RoleSurface { readonly toolName: string; readonly capabilities: string[]; readonly members: string[] }
 export interface ProgramCatalogMessages {
@@ -74,6 +74,43 @@ export interface ProgramSessions {
 }
 export function ProgramSession(sessionId: string): ProgramSessionInstance
 export function Program(): ProgramSessions
+
+export interface ProgramFileEffects {
+  readonly rewritten: readonly string[]
+  readonly created: readonly string[]
+  readonly removed: readonly string[]
+  readonly moved: readonly { readonly from: string; readonly destination: string }[]
+}
+export interface ProgramInvocationFailure<Failure> {
+  readonly code: string
+  readonly reason: string
+  readonly failure: Failure
+}
+export interface ProgramInvocationLedger<Token, Failure> {
+  prepared(request: { readonly root: string; readonly mutation: FileMutation }): Token
+  committed(token: Token): void
+  settle(): Promise<ProgramInvocationFailure<Failure> | null>
+}
+export interface ProgramFileObservation {
+  readonly reads: readonly { readonly path: string; readonly resultBytes: string }[]
+  readonly effectPaths: readonly string[]
+}
+export interface ProgramInvocationOptions<Token, Failure> {
+  readonly root: string
+  readonly ledger: ProgramInvocationLedger<Token, Failure>
+  readonly observe?: (observation: ProgramFileObservation) => void | Promise<void>
+  readonly checkReturn: (result: { readonly value: unknown; readonly outputBoundBytes: number }) => ProgramInvocationFailure<Failure> | null
+}
+export interface ProgramInvocationResult<Failure> {
+  readonly receipt: ProgramReceipt & { readonly effects?: ProgramFileEffects }
+  readonly settlementFailure: ProgramInvocationFailure<Failure> | null
+}
+/** One invocation retains its file observations and ledger across park and resume. */
+export declare class ProgramInvocation<Token = unknown, Failure = unknown> {
+  constructor(options: ProgramInvocationOptions<Token, Failure>)
+  readonly files: FileSessionInstance
+  execute(session: ProgramSessionInstance, options: Omit<ProgramOptions, 'api' | 'settle'>, api: Readonly<Record<string, unknown>> | FileSessionInstance): Promise<ProgramInvocationResult<Failure>>
+}
 
 export declare class ProgramCallers {
   constructor()

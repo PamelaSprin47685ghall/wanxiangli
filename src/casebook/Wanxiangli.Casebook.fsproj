@@ -5,10 +5,13 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="CasebookEdit.fs" />
     <Compile Include="BookkeeperStaging.fs" />
     <Compile Include="SessionDraftStore.fs" />
     <Compile Include="FetchFlightRegistry.fs" />
     <Compile Include="BookkeeperLedger.fs" />
+    <Compile Include="BookkeeperTransaction.fs" />
+    <Compile Include="CasebookSettlementOwner.fs" />
     <Compile Include="CasebookIndexLaw.fs" />
     <PackageExport Include="BookkeeperStaging.fs" Member="BookkeeperStaging" />
     <PackageExport Include="BookkeeperStaging.fs" Member="bookkeeperStaging" />
@@ -18,8 +21,19 @@
     <PackageExport Include="FetchFlightRegistry.fs" Member="fetchFlightRegistry" />
     <PackageExport Include="BookkeeperLedger.fs" Member="BookkeeperLedger" />
     <PackageExport Include="BookkeeperLedger.fs" Member="bookkeeperLedger" />
+    <PackageExport Include="BookkeeperTransaction.fs" Member="BookkeeperTransaction" />
+    <PackageExport Include="CasebookSettlementOwner.fs" Member="CasebookSettlementOwner" />
     <PackageExport Include="CasebookIndexLaw.fs" Member="CasebookIndex" />
     <PackageExport Include="CasebookIndexLaw.fs" Member="casebookIndex" />
     <PackageExport Include="CasebookIndexLaw.fs" Member="CasebookIndexLaw" />
+    <PackageExport Include="CasebookIndexLaw.fs" Member="CasebookState" />
+    <PackageExport Include="CasebookIndexLaw.fs" Member="CasebookService" />
+    <PackageExport Include="CasebookIndexLaw.fs" Member="cleanupCasebookDraft" />
+    <PackageExport Include="CasebookIndexLaw.fs" Member="archiveCase" />
+    <PackageExport Include="CasebookIndexLaw.fs" Member="finalizeCase" />
+    <PackageExport Include="CasebookIndexLaw.fs" Member="finalizeCaptured" />
+    <PackageExport Include="CasebookIndexLaw.fs" Member="refreshWithDiff" />
+    <PackageExport Include="CasebookIndexLaw.fs" Member="normalizeObservations" />
+    <PackageExport Include="CasebookIndexLaw.fs" Member="sameObservations" />
   </ItemGroup>
 </Project>

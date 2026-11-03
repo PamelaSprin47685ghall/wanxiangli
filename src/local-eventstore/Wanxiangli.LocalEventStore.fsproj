@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="LocalPhysical.fs" />
+    <Compile Include="LocalIntegrator.fs" />
+    <Compile Include="PhysicalExports.fs" />
+    <Compile Include="LocalStore.fs" />
+    <PackageExport Include="LocalIntegrator.fs" Member="LocalIntegrator" />
+    <PackageExport Include="LocalStore.fs" Member="LocalEventStore" />
+    <PackageExport Include="PhysicalExports.fs" Member="readLocalStreams" />
+    <PackageExport Include="PhysicalExports.fs" Member="localWriterMetadata" />
+    <PackageExport Include="PhysicalExports.fs" Member="localInventory" />
+    <PackageExport Include="PhysicalExports.fs" Member="convergeLocalWriter" />
+    <PackageExport Include="PhysicalExports.fs" Member="acquireLocalLock" />
+    <PackageExport Include="PhysicalExports.fs" Member="createLocalWriter" />
+    <PackageExport Include="PhysicalExports.fs" Member="appendLocalEvents" />
+    <PackageExport Include="PhysicalExports.fs" Member="localPayloadDigest" />
+  </ItemGroup>
+</Project>

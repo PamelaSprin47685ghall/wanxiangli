@@ -29,7 +29,7 @@ test('SPEC[build-006] installed ownership gates real retirement, survives proces
   succeed(spawnSync('npm', ['install', '--ignore-scripts', '--omit=dev', '--no-audit', '--no-fund', path.join(directory, packed.filename)], { cwd: consumer, env, encoding: 'utf8', timeout: 30000 }))
   for (const file of ['ownership-consumer.mjs', 'ownership-consumer.ts']) copyFileSync(path.join(root, 'scripts/tests', file), path.join(consumer, file))
   const installed = path.join(consumer, 'node_modules/wanxiangli')
-  assert.deepEqual(JSON.parse(readFileSync(path.join(installed, 'package.json'), 'utf8')).dependencies ?? {}, {})
+  assert.deepEqual(JSON.parse(readFileSync(path.join(installed, 'package.json'), 'utf8')).dependencies ?? {}, { 'proper-lockfile': '4.1.2' })
   assert.equal(existsSync(path.join(consumer, 'node_modules/@fable-org')), false)
   const runtimes = [['node', process.execPath]]
   if (spawnSync('bun', ['--version'], { encoding: 'utf8', env }).status === 0) runtimes.push(['bun', 'bun'])

@@ -1,10 +1,8 @@
 /**
- * wanxiangli/casebook — Casebook 公开索引的纯投影（CUT-27 子范围①，knowledge-reuse-008/012），
- * Bookkeeper 暂存事务的进程内自治对象（knowledge-reuse-006），
- * 以及会话草稿注册表的进程内自治对象（knowledge-reuse-010）。
+ * wanxiangli/casebook — 案例当前状态、公开索引与 Bookkeeper 的独立对象。
  *
- * 索引律是纯计算：不读存储、不持有快照、不读时钟、不写事件。进程级冻结快照、“已失效”标记、
- * epoch 的数值与 Case 本体都归调用方；这里只给出名字、次序与是否推进的判定。
+ * 索引律是纯计算；CasebookState 持有不可变案例表与访问序；CasebookIndex 持有公开冻结快照、
+ * 失效标记和 epoch。它们不读存储、不读时钟、不写事件。
  * 暂存对象持有进程内事务槽状态：所有操作同步完成，不在状态变换中等待外部操作，
  * 不承诺跨线程或跨进程共享；宿主全部消费者经由唯一实例 bookkeeperStaging。
  * 草稿对象持有进程内委托会话的问答轮次：支持未答覆写、已答追加、覆写 A 及原子消费（tryTake）。
@@ -69,10 +67,182 @@ export declare class CasebookIndexLaw {
   evictionVictims(capacity: number, cases: readonly AccessCase[]): string[]
 }
 
+export type CasebookObservation =
+  | { readonly kind: 'file-read'; readonly path: string; readonly contentHash: string }
+  | { readonly kind: 'glob-result'; readonly pattern: string; readonly paths: readonly string[] }
+  | { readonly kind: 'grep-result'; readonly pattern: string; readonly matches: readonly (readonly [string, number, string])[] }
+
+export interface CasebookCase {
+  readonly identity: string
+  readonly sourceTrace: string
+  readonly q: string
+  readonly a: string
+  readonly relatedPaths: readonly string[]
+  readonly completionFileState: string
+  readonly maintenanceFileState: string
+  readonly accessOrder: bigint
+  readonly observations: readonly CasebookObservation[]
+}
+
+export type CasebookFact =
+  | { readonly kind: 'captured'; readonly case: CasebookCase }
+  | {
+      readonly kind: 'refreshed'
+      readonly identity: string
+      readonly q: string
+      readonly a: string
+      readonly maintenanceFileState: string | null
+      readonly relatedPaths: readonly string[]
+      readonly observations: readonly CasebookObservation[]
+    }
+  | { readonly kind: 'accessed'; readonly identity: string }
+  | { readonly kind: 'evicted'; readonly identity: string }
+
+export interface CasebookVisible {
+  readonly cases: readonly CasebookCase[]
+  readonly victims: readonly string[]
+}
+
+/** 不可变案例投影；只接收单项事实，不读存储、不持有历史或公开索引快照。 */
+export interface CasebookState {
+  apply(event: CasebookFact): CasebookState
+  /** 容量 <= 0 时不淘汰；返回按 identity 排序的可见案例及 LRU 受害者，不改变状态。 */
+  visible(capacity: number): CasebookVisible
+  resolve(capacity: number, shelfmark: string): CasebookCase | null
+}
+
+/** 从空状态开始；历史由调用方逐项提交，不接受外部状态或计数器注入。 */
+export declare const CasebookState: { new(): CasebookState }
+
+/** 按既有身份串排序、去重留首项；保留首项自身的路径和匹配次序。 */
+export declare function normalizeObservations(items: readonly CasebookObservation[]): CasebookObservation[]
+/** 比较归一后的身份集合，不作 JSON 深比较。 */
+export declare function sameObservations(left: readonly CasebookObservation[], right: readonly CasebookObservation[]): boolean
+
+export type CasebookResult<T, Error = string> =
+  | { readonly ok: true; readonly value: T }
+  | { readonly ok: false; readonly error: Error }
+
+export type CasebookAppendResult<Failure> =
+  | { readonly ok: true; readonly value?: unknown }
+  | { readonly ok: false; readonly error: Failure }
+
+export interface CasebookRefresh {
+  readonly identity: string
+  readonly q: string
+  readonly a: string
+  readonly maintenanceFileState: string
+  readonly relatedPaths: readonly string[]
+  readonly observations: readonly CasebookObservation[]
+}
+
+/** Current remains owned by its integrator. Append errors retain their original identity. */
+export interface CasebookServiceStore<Failure = unknown> {
+  current(): CasebookResult<CasebookState>
+  appendCaptured(value: CasebookCase): Promise<CasebookAppendResult<Failure>>
+  appendRefreshed(value: CasebookRefresh): Promise<CasebookAppendResult<Failure>>
+  appendAccessed(identity: string): Promise<CasebookAppendResult<Failure>>
+}
+
+export interface CasebookServiceBaseline {
+  capture(paths: readonly string[]): Promise<CasebookResult<string>>
+  compare(paths: readonly string[], baseline: string): Promise<CasebookResult<{
+    readonly refresh: boolean
+    readonly targetState: string
+    readonly diffSummary: string
+  }>>
+}
+
+export interface CasebookServiceRequest {
+  readonly kind: 'finalize' | 'refresh'
+  readonly identity: string
+  readonly question: string
+  readonly answer: string
+  readonly observations: readonly CasebookObservation[]
+  readonly transcript: string
+}
+
+export type CasebookMutationFailure<Failure = unknown> =
+  | { readonly kind: 'already-finalized' | 'case-missing'; readonly identity: string }
+  | { readonly kind: 'preparation-rejected'; readonly reason: string }
+  | { readonly kind: 'append-failure'; readonly failure: Failure }
+
+export type CasebookFinalized<Failure = unknown> =
+  | { readonly kind: 'finalized' | 'nothing-to-finalize'; readonly identity: string }
+  | { readonly kind: 'not-committed' | 'unknown' | 'phase-conflict'; readonly identity: string; readonly reason: string }
+  | { readonly kind: 'persistence-failed'; readonly identity: string; readonly failure: Failure }
+
+export type CasebookFetched =
+  | { readonly kind: 'unavailable' | 'missing' }
+  | { readonly kind: 'fresh' | 'refreshed' | 'stale'; readonly answer: string }
+
+/** Saves and maintains cases through the existing owners; stores only each call's in-flight values. */
+export declare class CasebookService<Failure = unknown> {
+  constructor(
+    drafts: SessionDraftStore,
+    index: CasebookIndex,
+    store: CasebookServiceStore<Failure>,
+    baseline: CasebookServiceBaseline,
+    runBookkeeper: (request: CasebookServiceRequest) => Promise<CasebookResult<{ readonly question: string; readonly answer: string }>>,
+    drain: (identity: string) => readonly CasebookObservation[],
+    isEnabled: () => boolean,
+  )
+  cleanup(identity: string): void
+  finalizeDraft(identity: string): Promise<CasebookFinalized<Failure>>
+  refresh(identity: string): Promise<CasebookResult<boolean, CasebookMutationFailure<Failure>>>
+  touch(identity: string): Promise<CasebookResult<void, CasebookMutationFailure<Failure>>>
+  /** The caller checks feature availability before joining its rendered-result flight. Touch checks it again. */
+  fetch(shelfmark: string, notifyAppendFailure: (failure: Failure) => void): Promise<CasebookFetched>
+  /** Archive without an existence check or index refresh. */
+  archiveCase(value: CasebookCase): Promise<CasebookResult<void, CasebookMutationFailure<Failure>>>
+  /** Check for an existing identity, then archive; leaves index refresh to the caller. */
+  finalizeCase(value: CasebookCase): Promise<CasebookResult<void, CasebookMutationFailure<Failure>>>
+  /** Finalize an already captured case and refresh the shared index. */
+  finalizeCaptured(value: CasebookCase): Promise<CasebookFinalized<Failure>>
+  refreshWithDiff(change: Pick<CasebookRefresh, 'identity' | 'q' | 'a' | 'maintenanceFileState'>): Promise<CasebookResult<void, CasebookMutationFailure<Failure>>>
+}
+
+/** Clears the existing draft and drains observations; has no store or workspace dependency. */
+export declare function cleanupCasebookDraft(
+  drafts: SessionDraftStore,
+  drain: (identity: string) => readonly CasebookObservation[],
+  identity: string,
+): void
+
+/** Store-only operations share the service implementation without requiring workspace/session effects. */
+export declare function archiveCase<Failure>(
+  store: CasebookServiceStore<Failure>, value: CasebookCase,
+): Promise<CasebookResult<void, CasebookMutationFailure<Failure>>>
+export declare function finalizeCase<Failure>(
+  store: CasebookServiceStore<Failure>, value: CasebookCase,
+): Promise<CasebookResult<void, CasebookMutationFailure<Failure>>>
+export declare function finalizeCaptured<Failure>(
+  store: CasebookServiceStore<Failure>, index: CasebookIndex, value: CasebookCase,
+): Promise<CasebookFinalized<Failure>>
+export declare function refreshWithDiff<Failure>(
+  store: CasebookServiceStore<Failure>, change: Pick<CasebookRefresh, 'identity' | 'q' | 'a' | 'maintenanceFileState'>,
+): Promise<CasebookResult<void, CasebookMutationFailure<Failure>>>
+
 /** Fable 5 Result 的实际产物形状：tag 0 成功、tag 1 失败，fields 为 case 字段。 */
 export type FableResult<T> =
   | { readonly tag: 0; readonly fields: [T] }
   | { readonly tag: 1; readonly fields: [string] }
+
+export type CasebookEditFailure = 'set-question-once' | 'set-question-string' | 'set-answer-once' | 'set-answer-string'
+export type CasebookSetResult = { readonly ok: true } | { readonly ok: false; readonly code: 'PROGRAM_FAILED'; readonly reason: string }
+export interface CasebookEdit {
+  readonly api: {
+    readonly bookkeeper: {
+      question(): string
+      answer(): string
+      setQuestion(value: unknown): CasebookSetResult
+      setAnswer(value: unknown): CasebookSetResult
+    }
+  }
+  readonly runtimeBaseClass: string
+  /** Applies this invocation's accepted patches to the current transaction slot, including no changes. */
+  commit(): FableResult<void>
+}
 
 /** 一笔 Bookkeeper 事务的进程内暂存 Case；语义迁移自主仓原 BookkeeperStaging 模块。 */
 export declare class BookkeeperStaging {
@@ -80,6 +250,8 @@ export declare class BookkeeperStaging {
   beginTransaction(txId: string, question: string, answer: string): void
   /** 读取事务的 question/answer，不删除；缺失事务返回逐字错误。 */
   snapshot(txId: string): FableResult<[string, string]>
+  /** Captures the current Q/A; failure prose is requested only when a setter refuses a call. */
+  edit(txId: string, renderFailure: (key: CasebookEditFailure) => string): FableResult<CasebookEdit>
   /** 应用可选补丁；null/undefined 保留旧值。进入有效槽位即记为 touched。 */
   apply(txId: string, question?: string | null, answer?: string | null): FableResult<void>
   /** 取出并删除事务；本次 completion 未写入过则拒绝且不删除。 */
@@ -209,3 +381,45 @@ export declare class BookkeeperLedger {
 }
 
 export declare const bookkeeperLedger: BookkeeperLedger
+
+export type BookkeeperResult<T> =
+  | { readonly ok: true; readonly value: T }
+  | { readonly ok: false; readonly error: string }
+export type BookkeeperAck = { readonly ok: true } | { readonly ok: false; readonly error: string }
+
+export interface BookkeeperTransactionRequest {
+  readonly txId: string
+  readonly ownerId: string
+  readonly question: string
+  readonly answer: string
+}
+
+export interface BookkeeperTransactionEffects {
+  open(): Promise<BookkeeperResult<string>>
+  subscribe(childId: string, complete: (outcome: BookkeeperAck) => void): () => void
+  prepare(childId: string): BookkeeperResult<{ readonly agent: string; readonly text: string }>
+  send(childId: string, agent: string, text: string): Promise<BookkeeperAck>
+  abort(childId: string): Promise<unknown>
+}
+
+/** 单次会话事务只持有在途等待与订阅；暂存、附着和提示授权仍归传入的原对象。 */
+export declare class BookkeeperTransaction {
+  constructor(staging: BookkeeperStaging, ledger: BookkeeperLedger)
+  /** Result 错误走原失败收尾；open/send 拒绝及 subscribe/prepare/dispose 抛错直接传播。 */
+  run(request: BookkeeperTransactionRequest, effects: BookkeeperTransactionEffects): Promise<BookkeeperResult<{ readonly question: string; readonly answer: string }>>
+}
+
+export type SettlementIncidentKind = 'StorageInvalid' | 'SemanticCut' | 'Unscoped'
+export type SettlementOutcomeTag =
+  | 'LogScopeFailure'
+  | 'CaseUnavailable'
+  | 'CaseUnavailableKnown'
+  | 'Unscoped'
+
+/** 按事件认领案例结算冲突；各实例独立，回调失败不改变结算结果。 */
+export declare class CasebookSettlementOwner<TIncident = unknown> {
+  constructor(onConflict: (incident: TIncident) => void)
+  Observe(eventId: string, kind: SettlementIncidentKind, incident: TIncident | null | undefined): SettlementOutcomeTag
+  Redeliver(eventId: string, incident: TIncident): 'CaseUnavailableKnown'
+  readonly SnapshotCount?: number
+}

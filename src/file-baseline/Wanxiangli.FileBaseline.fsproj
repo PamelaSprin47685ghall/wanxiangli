@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="FileDiff.fs" />
+    <Compile Include="FileBaseline.fs" />
+    <PackageExport Include="FileDiff.fs" Member="FileDiff" />
+    <PackageExport Include="FileBaseline.fs" Member="FileBaseline" />
+  </ItemGroup>
+</Project>

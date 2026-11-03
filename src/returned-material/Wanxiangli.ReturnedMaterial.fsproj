@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="ReturnedMaterial.fs" />
+    <PackageExport Include="ReturnedMaterial.fs" Member="encode" />
+    <PackageExport Include="ReturnedMaterial.fs" Member="body" />
+    <PackageExport Include="ReturnedMaterial.fs" Member="carry" />
+    <PackageExport Include="ReturnedMaterial.fs" Member="validationError" />
+    <PackageExport Include="ReturnedMaterial.fs" Member="entries" />
+    <PackageExport Include="ReturnedMaterial.fs" Member="fullText" />
+  </ItemGroup>
+</Project>
