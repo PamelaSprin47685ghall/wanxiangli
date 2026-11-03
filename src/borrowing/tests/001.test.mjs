@@ -95,4 +95,13 @@ test('SPEC[borrowing-3] retiring an in-flight token waits for the step to end; c
   capacity.adoptReservation('s3', 'z1', a)
   assert.equal(capacity.exactCredit('s3', 'z1'), 3)
   assert.deepEqual(capacity.invariantSnapshot().custodies.map(c => [c.credit, c.owner.sessionId, c.owner.physicalUserMessageId]), [[1, 's1', 'm2'], [3, 's3', 'z1']])
+
+  const fallback = new CapacityBorrowing(options)
+  const shared = t('p/shared')
+  const other = t('q/other')
+  fallback.routeFresh('parent', null, 'p1', null, limit(3, shared))
+  fallback.routeFresh('child', null, 'c1', 'parent', limit(3, shared))
+  fallback.routeFresh('parent', 'p1', 'p2', null, limit(3, other))
+  assert.equal(fallback.continueExecution('child', 'c1', 'c2', shared), shared)
+  assert.equal(fallback.exactCredit('child', 'c2'), 1)
 })
