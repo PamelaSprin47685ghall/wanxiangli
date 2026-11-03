@@ -265,25 +265,33 @@ module private Readers =
     let private writerFileGroups provider =
         let path = directory provider
 
-        try
-            if not (exists path) then
-                []
-            else
-                let names: string array = fs?readdirSync path
-                segments.groupWriterFiles names
-                |> Array.toList
-                |> List.map (fun group ->
-                    let writerId: string = group?writerId
-                    let fileNames: string array = group?fileNames
-                    { WriterId = writerId; FileNames = Array.toList fileNames })
-        with _ ->
-            // A parent that is a file, a vanished directory or a permission
-            // refusal leaves no writer groups to read; the caller reports the
-            // empty stream instead of surfacing ENOTDIR/EACCES as a crash.
+        if not (exists path) then
             []
+        else
+            let names: string array = fs?readdirSync path
+            segments.groupWriterFiles names
+            |> Array.toList
+            |> List.map (fun group ->
+                let writerId: string = group?writerId
+                let fileNames: string array = group?fileNames
+                { WriterId = writerId; FileNames = Array.toList fileNames })
+
+    [<Emit("$0 != null && $0.code === $1")>]
+    let private hasErrorCode (_error: exn) (_code: string) : bool = jsNative
+
+    /// Listing a writer directory whose parent is a regular file yields no
+    /// writers: the store reports the empty history and the append boundary then
+    /// refuses at its own mkdir. Every other listing failure — a directory where
+    /// a file belongs (EISDIR), a permission refusal (EACCES) — stays an error;
+    /// reading those as "no history yet" would hide a real broken store.
+    let private listedWriterFileGroups provider =
+        try
+            writerFileGroups provider
+        with ex ->
+            if hasErrorCode ex "ENOTDIR" then [] else reraise ()
 
     let private physicalMetadata provider =
-        writerFileGroups provider
+        listedWriterFileGroups provider
         |> List.map (fun group ->
             let paths = group.FileNames |> List.map (fun name -> join (directory provider) name)
             { Group = group; LastActivityMs = writerActivity paths })
