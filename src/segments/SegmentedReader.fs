@@ -151,7 +151,14 @@ module private Readers =
 
             events
 
-        let fullDecode () = readBytes path |> decodeBytes path |> Result.map remember
+        let fullDecode () =
+            // A writer path that is no longer an ordinary file (a directory left
+            // behind by a failed reorganization, a vanished segment) is a read
+            // failure the caller must see, not an exception escaping the store.
+            try
+                readBytes path |> decodeBytes path |> Result.map remember
+            with ex ->
+                Error(nonCanonical (sprintf "writer read failed: %s" ex.Message))
 
         let incrementalDecode cached =
             withReadFd path
