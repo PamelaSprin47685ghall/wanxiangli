@@ -45,7 +45,7 @@ type JoinAttemptRegistry() =
         | true, s -> s
         | false, _ ->
             let s = HashSet<string>()
-            visibleMessages.[targetSessionId] <- s
+            visibleMessages[targetSessionId] <- s
             s
 
     member _.acquire(targetSessionId: obj, attemptId: obj) : obj =
@@ -57,11 +57,11 @@ type JoinAttemptRegistry() =
         match active.TryGetValue sid with
         | true, existing ->
             freeze (createObj [
-                "acquired" ==> false
-                "targetSessionId" ==> sid
-                "attemptId" ==> aid
-                "reason" ==> "AlreadyAcquired"
-                "existingAttemptId" ==> existing.AttemptId
+                "acquired" ==> box false
+                "targetSessionId" ==> box sid
+                "attemptId" ==> box aid
+                "reason" ==> box "AlreadyAcquired"
+                "existingAttemptId" ==> box existing.AttemptId
             ])
         | false, _ ->
             let record =
@@ -70,12 +70,12 @@ type JoinAttemptRegistry() =
                   Woken = false
                   WokenReason = None
                   WokenMessageId = None }
-            active.[sid] <- record
+            active[sid] <- record
             freeze (createObj [
-                "acquired" ==> true
-                "targetSessionId" ==> sid
-                "attemptId" ==> aid
-                "reason" ==> null
+                "acquired" ==> box true
+                "targetSessionId" ==> box sid
+                "attemptId" ==> box aid
+                "reason" ==> (null: obj)
             ])
 
     member _.release(targetSessionId: obj, attemptId: obj) : obj =
@@ -88,16 +88,16 @@ type JoinAttemptRegistry() =
         | true, existing when existing.AttemptId = aid ->
             active.Remove sid |> ignore
             freeze (createObj [
-                "released" ==> true
-                "targetSessionId" ==> sid
-                "attemptId" ==> aid
+                "released" ==> box true
+                "targetSessionId" ==> box sid
+                "attemptId" ==> box aid
             ])
         | _ ->
             // 幂等注销：若已被移除或不匹配，仍返回 released=true
             freeze (createObj [
-                "released" ==> true
-                "targetSessionId" ==> sid
-                "attemptId" ==> aid
+                "released" ==> box true
+                "targetSessionId" ==> box sid
+                "attemptId" ==> box aid
             ])
 
     member _.signalVisibleUserMessage(targetSessionId: obj, messageId: obj) : obj =
@@ -110,11 +110,11 @@ type JoinAttemptRegistry() =
         if seenSet.Contains mid then
             // 重复物理消息：不产生重复唤醒
             freeze (createObj [
-                "woken" ==> false
-                "targetSessionId" ==> sid
-                "attemptId" ==> null
-                "reason" ==> "DuplicateMessage"
-                "messageId" ==> mid
+                "woken" ==> box false
+                "targetSessionId" ==> box sid
+                "attemptId" ==> (null: obj)
+                "reason" ==> box "DuplicateMessage"
+                "messageId" ==> box mid
             ])
         else
             seenSet.Add mid |> ignore
@@ -124,20 +124,20 @@ type JoinAttemptRegistry() =
                 lease.WokenReason <- Some "UserMessageArrived"
                 lease.WokenMessageId <- Some mid
                 freeze (createObj [
-                    "woken" ==> true
-                    "targetSessionId" ==> sid
-                    "attemptId" ==> lease.AttemptId
-                    "reason" ==> "UserMessageArrived"
-                    "messageId" ==> mid
+                    "woken" ==> box true
+                    "targetSessionId" ==> box sid
+                    "attemptId" ==> box lease.AttemptId
+                    "reason" ==> box "UserMessageArrived"
+                    "messageId" ==> box mid
                 ])
             | false, _ ->
                 // 既有契约：无活跃租约时只去重防重放，丢弃唤醒事实，不入队列
                 freeze (createObj [
-                    "woken" ==> false
-                    "targetSessionId" ==> sid
-                    "attemptId" ==> null
-                    "reason" ==> "NoActiveLease"
-                    "messageId" ==> mid
+                    "woken" ==> box false
+                    "targetSessionId" ==> box sid
+                    "attemptId" ==> (null: obj)
+                    "reason" ==> box "NoActiveLease"
+                    "messageId" ==> box mid
                 ])
 
     member _.clearSession(targetSessionId: obj) : obj =

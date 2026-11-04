@@ -6,7 +6,7 @@ open Fable.Core
 open Fable.Core.JsInterop
 
 [<Emit("$0 === null || $0 === undefined || typeof $0 !== 'string' || $0.trim().length === 0")>]
-let private isBlank (s: string) : bool = jsNative
+let private isBlank (_s: string) : bool = jsNative
 
 /// Fission 进程内 single-flight owner 准入自治注册表。
 /// 独占并维护私有集合 activeOwners: HashSet<string>，

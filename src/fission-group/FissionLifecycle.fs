@@ -183,7 +183,7 @@ type FissionLifecycle() =
                         let! aborted = call1<Task<obj>> (field effects "abortSession") session
                         if not (ok aborted) then report effects "lane-abort" group (createObj [ "session" ==> session; "error" ==> text aborted "error" ])
                     let notified: bool = call2 (field effects "notifyFailed") (field group "owner") (box reason)
-                    if not notified then report effects "failure-unobserved" group null
+                    if not notified then report effects "failure-unobserved" group (null: obj)
                     releaseGroup group
         }
 

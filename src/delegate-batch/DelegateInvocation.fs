@@ -7,10 +7,11 @@ open Fable.Core
 open Fable.Core.JsInterop
 
 module private InvocationValue =
-    let get<'a> (value: obj) (name: string) : 'a = unbox value?(name)
+    let field (value: obj) (name: string) : obj = value?(name)
+    let get<'a> (value: obj) (name: string) : 'a = unbox (field value name)
     let optional<'a> (value: obj) (name: string) : 'a option =
-        let field: obj = value?(name)
-        if isNullOrUndefined field then None else Some(unbox field)
+        let raw: obj = field value name
+        if isNullOrUndefined raw then None else Some(unbox raw)
     let text value name = get<string> value name
     let complete (source: TaskCompletionSource<'a>) value =
         try source.SetResult value with _ -> ()
@@ -20,13 +21,15 @@ module private InvocationValue =
     let merged key = createObj [ "ok" ==> true; "mergedInto" ==> key ]
     let isOk value = get<bool> value "ok"
     [<Emit("$0($1)")>]
-    let invoke1 (_callback: obj) (_value: obj) : 'a = jsNative
+    let invoke1<'a> (_callback: obj) (_value: obj) : 'a = jsNative
     [<Emit("$0($1,$2)")>]
-    let invoke2 (_callback: obj) (_first: obj) (_second: obj) : 'a = jsNative
+    let invoke2<'a> (_callback: obj) (_first: obj) (_second: obj) : 'a = jsNative
     [<Emit("$0($1,$2,$3)")>]
-    let invoke3 (_callback: obj) (_first: obj) (_second: obj) (_third: obj) : 'a = jsNative
-    [<Emit("Object.assign({},$0,{observed:$1,observeAdmission:$2,captureResponse:$3})")>]
-    let withObservers (_request: obj) (_observed: bool) (_admission: obj) (_response: obj) : obj = jsNative
+    let invoke3<'a> (_callback: obj) (_first: obj) (_second: obj) (_third: obj) : 'a = jsNative
+    [<Emit("Object.assign({},$0,{observed:false,observeAdmission:null,captureResponse:$1})")>]
+    let withResponseObserver (_request: obj) (_response: obj -> unit) : obj = jsNative
+    [<Emit("Object.assign({},$0,{observed:true,observeAdmission:$1,captureResponse:$2})")>]
+    let withAdmissionAndResponseObservers (_request: obj) (_admission: obj -> unit) (_response: obj -> unit) : obj = jsNative
 
 open InvocationValue
 
@@ -92,8 +95,8 @@ type DelegateInvocationRuntime() =
         | true, key -> key
         | false, _ ->
             let key = Guid.NewGuid().ToString("N")
-            invocationKeys.[invocation] <- key
-            invocations.[key] <- invocation
+            invocationKeys[invocation] <- key
+            invocations[key] <- invocation
             key
 
     let removeCall key =
@@ -143,11 +146,11 @@ type DelegateInvocationRuntime() =
         if not (isOk result) then
             for item in items do item.finish result
         elif items.Length > 0 then
-            items.[0].finish result
-            let batch = optional<obj> items.[0].request "batch"
+            items[0].finish result
+            let batch = optional<obj> items[0].request "batch"
             let siblingResult =
                 match batch with
-                | Some value -> merged ((get<string array> value "callOrder").[0])
+                | Some value -> merged ((get<string array> value "callOrder")[0])
                 | None -> error "sync delegate protocol defect: ungrouped invocation has siblings"
             for item in items |> Array.skip 1 do item.finish siblingResult
 
@@ -205,8 +208,8 @@ type DelegateInvocationRuntime() =
         if not (isOk result) then result
         else
             let call = DelegateCall(owner, scope, role, session, agent, items)
-            calls.[key] <- call
-            callKeys.[call] <- key
+            calls[key] <- call
+            callKeys[call] <- key
             let dispose () =
                 let removed = removeCall key |> Option.isSome
                 batches.tryPopExactCall(session, key) |> ignore
@@ -230,7 +233,7 @@ type DelegateInvocationRuntime() =
             let matches =
                 not (isNullOrUndefined scope)
                 && text scope "kind" = "root"
-                && get<obj> observation "root" = get<obj> scope "root"
+                && field observation "root" = field scope "root"
             if matches && (kind = "failed" || (kind = "aborted" && not (get<bool> observation "ownAbort"))) then
                 let claimed = this.popExact call
                 if not (isNullOrUndefined claimed) then
@@ -247,7 +250,7 @@ type DelegateInvocationRuntime() =
             let call = unbox<DelegateCall> raw
             if not (this.matches(call, observation)) then false
             else
-                let delivered: obj = invoke1 (get effects "readDelivery") observation
+                let delivered: obj = invoke1 (field effects "readDelivery") observation
                 let material =
                     if not (isNullOrUndefined delivered) then Some(unbox<string> delivered)
                     elif text observation "outcome" = "completed" && get<bool> observation "hasParts" then
@@ -261,9 +264,9 @@ type DelegateInvocationRuntime() =
                         for item in call.invocations do
                             match optional<obj> item.request "captureResponse" with
                             | None -> ()
-                            | Some capture -> invoke1 capture (get observation "response")
-                        if get<bool> call.invocations.[0].request "noteDraft" then
-                            invoke3 (get effects "noteAnswer") (box call) observation (box record)
+                            | Some capture -> invoke1<unit> capture (field observation "response")
+                        if get<bool> call.invocations[0].request "noteDraft" then
+                            invoke3<unit> (field effects "noteAnswer") (box call) observation (box record)
                         call.finish(view record)
                     true
 
@@ -277,7 +280,7 @@ type DelegateInvocationRuntime() =
                 if outcome = "failed" then
                     if not (get<bool> observation "hasFailure") || not (this.matches(call, observation)) then return false
                     else
-                        let! retried = invoke2 (get effects "retry") (box call) observation
+                        let! retried = invoke2<Task<obj>> (field effects "retry") (box call) observation
                         if isOk retried then return true
                         else
                             let! root = call.admission
@@ -295,7 +298,7 @@ type DelegateInvocationRuntime() =
                     if root <> text observation "root" || not (this.matches(call, observation)) then return false
                     elif outcome = "aborted" then return this.settleCompleted(observation, effects)
                     else
-                        let! captured = invoke1 (get effects "captureTerminal") observation
+                        let! captured = invoke1<Task<obj>> (field effects "captureTerminal") observation
                         if text captured "kind" = "failed" then
                             let claimed = this.popExact call
                             if not (isNullOrUndefined claimed) then this.fail(call, text captured "error")
@@ -312,20 +315,20 @@ type DelegateInvocationRuntime() =
             completeBatch items (error reason)
         let runReady (items: DelegateInvocation array) =
             task {
-                let first = items.[0].request
+                let first = items[0].request
                 let owner = text first "owner"
                 try
                     if get<bool> first "noteDraft" then
                         let deleted: obj = box (retired.tryTake scope)
                         if not (isNullOrUndefined deleted) then
-                            invoke1 (get effects "cleanupDraft") deleted
-                    let! attached = invoke1 (get effects "attach") first
+                            invoke1<unit> (field effects "cleanupDraft") deleted
+                    let! attached = invoke1<Task<obj>> (field effects "attach") first
                     if not (isOk attached) then failAdmission items (text attached "error")
                     else
                         let session = text attached "session"
                         let estimates = items |> Array.choose (fun item -> optional<int> item.request "estimate")
                         let estimate: obj = if estimates.Length = 0 then null else box (Array.sum estimates)
-                        do! invoke2 (get effects "replaceEstimate") (box session) estimate
+                        do! invoke2<Task<unit>> (field effects "replaceEstimate") (box session) estimate
                         let prompts = ResizeArray<obj>()
                         for item in items do
                             let prepare = get<unit -> Task<obj>> item.request "prepare"
@@ -334,12 +337,12 @@ type DelegateInvocationRuntime() =
                                     try return! prepare ()
                                     with error ->
                                         if get<bool> item.request "observed" then return raise error
-                                        else return invoke1 (get effects "fallbackPrompt") (box (text item.request "charge"))
+                                        else return invoke1<obj> (field effects "fallbackPrompt") (box (text item.request "charge"))
                                 }
                             prompts.Add prompt
                         let charge = items |> Array.map (fun item -> text item.request "charge") |> String.concat "\n\n"
-                        let prompt: obj = invoke1 (get effects "combinePrompts") (box (prompts.ToArray()))
-                        let bound: string = invoke1 (get effects "resolveAgent") (box session)
+                        let prompt: obj = invoke1 (field effects "combinePrompts") (box (prompts.ToArray()))
+                        let bound: string = invoke1 (field effects "resolveAgent") (box session)
                         let agent = if isNullOrUndefined bound then text attached "agent" else bound
                         if items |> Array.exists (fun item -> (get<unit -> bool> item.request "isCancelled")()) then
                             failAdmission items "Sync delegate call was cancelled before dispatch"
@@ -350,16 +353,16 @@ type DelegateInvocationRuntime() =
                                 let call = get<DelegateCall> begun "call"
                                 let dispose = get<unit -> unit> begun "dispose"
                                 try
-                                    let unsubscribe: unit -> unit = invoke1 (get effects "subscribe") (box call)
+                                    let unsubscribe: unit -> unit = invoke1 (field effects "subscribe") (box call)
                                     let! answered =
                                         task {
                                             try
-                                                let! sent = invoke3 (get effects "send") (box call) (box charge) prompt
+                                                let! sent = invoke3<Task<obj>> (field effects "send") (box call) (box charge) prompt
                                                 if not (isOk sent) then return sent
                                                 else
                                                     if get<bool> first "noteDraft" then
-                                                        invoke2 (get effects "notePrompt") (box session) (box charge)
-                                                    return! invoke2 (get effects "awaitView") (box call) (box call.answer)
+                                                        invoke2<unit> (field effects "notePrompt") (box session) (box charge)
+                                                    return! invoke2<Task<obj>> (field effects "awaitView") (box call) (box call.answer)
                                             finally unsubscribe ()
                                         }
                                     this.releaseAdmission(scope, role)
@@ -374,18 +377,18 @@ type DelegateInvocationRuntime() =
             | "rejected" -> invocation.finish(error (text admitted "error"))
             | "ready" -> do! runReady (get admitted "invocations")
             | _ -> ()
-            return! invoke2 (get effects "awaitInvocation") request (box invocation.completion)
+            return! invoke2<Task<obj>> (field effects "awaitInvocation") request (box invocation.completion)
         }
 
     member this.invokeResponse(request: obj, effects: obj) : Task<obj> =
         let mutable response: obj = null
         let capture (value: obj) = response <- value
-        let adapted = withObservers request false null (box capture)
+        let adapted = withResponseObserver request capture
         let pending = this.invoke(adapted, effects)
         task {
             let! result = pending
             if not (isOk result) then return result
-            elif not (isNullOrUndefined result?mergedInto) then
+            elif not (isNullOrUndefined (field result "mergedInto")) then
                 return error "sync delegate protocol defect: singleton invocation was merged"
             else return view response
         }
@@ -393,9 +396,9 @@ type DelegateInvocationRuntime() =
     member this.invokeObserved(request: obj, effects: obj, notDispatched: string -> obj) : obj =
         let admission = source<obj> ()
         let mutable response: obj = null
-        let observe value = complete admission value
+        let observe (value: obj) = complete admission value
         let capture (value: obj) = response <- value
-        let adapted = withObservers request true (box observe) (box capture)
+        let adapted = withAdmissionAndResponseObservers request observe capture
         let completion =
             task {
                 try
@@ -403,7 +406,7 @@ type DelegateInvocationRuntime() =
                     if not (isOk result) then
                         observe (notDispatched (text result "error"))
                         return result
-                    elif not (isNullOrUndefined result?mergedInto) then
+                    elif not (isNullOrUndefined (field result "mergedInto")) then
                         let reason = "sync delegate protocol defect: singleton invocation was merged"
                         observe (notDispatched reason)
                         return error reason

@@ -4,7 +4,15 @@ import { tmpdir } from 'node:os'
 import { Ownership } from 'wanxiangli/ownership'
 
 const [runtime, mode, database, effects, receiptPath] = process.argv.slice(2)
-assert.deepEqual(Object.keys(await import('wanxiangli/ownership')), ['Ownership'])
+assert.deepEqual(Object.keys(await import('wanxiangli/ownership')).sort(), [
+  'Ownership',
+  'ParentAbortRegistry',
+  'SessionFamilyTree',
+  'SessionTopologyStore',
+  'SignalBroadcaster',
+  'parentAbortRegistry',
+  'sessionTopologyStore',
+])
 const registry = 'ownership-consumer'
 
 if (mode === 'isolated') {

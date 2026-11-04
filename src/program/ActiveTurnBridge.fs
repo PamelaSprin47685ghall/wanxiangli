@@ -19,7 +19,7 @@ type ActiveTurnBridge() =
             ""
         else
             let token = Guid.NewGuid().ToString("N")
-            slots.[sessionId] <- { Token = token; Host = host; Ask = ask }
+            slots[sessionId] <- { Token = token; Host = host; Ask = ask }
             token
 
     member _.release(sessionId: string, token: string) : bool =
@@ -58,7 +58,7 @@ type ActiveTurnBridge() =
 
     member _.inspect() : obj =
         createObj
-            [ "count" ==> slots.Count
-              "sessions" ==> (slots.Keys |> Seq.toArray) ]
+            [ "count" ==> box slots.Count
+              "sessions" ==> box (slots.Keys |> Seq.toArray) ]
 
 let activeTurnBridge = ActiveTurnBridge()

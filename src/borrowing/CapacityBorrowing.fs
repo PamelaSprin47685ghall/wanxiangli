@@ -59,7 +59,7 @@ type internal Token =
     { Credit: float
       // DSL-MUTABLE: state — the execution that currently owns this token
       mutable OwnerKey: string
-      OwnerSessionId: string
+      mutable OwnerSessionId: string
       Provider: string
       mutable OwnerTarget: obj
       mutable State: TokenState }
@@ -68,7 +68,8 @@ type internal Token =
 type internal Source =
     { Credit: float
       LenderSessionId: string
-      Distance: int }
+      Distance: int
+      Target: obj }
 
 type internal Demand =
     { Sequence: float
@@ -173,20 +174,21 @@ type CapacityBorrowing(options: obj) =
         |> Seq.toArray
         |> Array.iter clearCreditSource
 
-    let rememberCreditSource key borrowerSessionId (token: Token) distance =
+    let rememberCreditSource key borrowerSessionId (token: Token) distance target =
         if distance <= 0 || token.OwnerSessionId = borrowerSessionId then
             clearCreditSource key
         else
             creditSourceByExecution[key] <-
                 { Credit = token.Credit
                   LenderSessionId = token.OwnerSessionId
-                  Distance = distance }
+                  Distance = distance
+                  Target = target }
 
-    let moveCreditSource oldKey newKey =
+    let moveCreditSource oldKey newKey target =
         match creditSourceByExecution.TryGetValue oldKey with
         | true, source ->
             clearCreditSource oldKey
-            creditSourceByExecution[newKey] <- source
+            creditSourceByExecution[newKey] <- { source with Target = target }
         | false, _ -> ()
 
     let normalizeProvider (target: obj) =
@@ -204,17 +206,90 @@ type CapacityBorrowing(options: obj) =
         | TokenState.InFlight _ -> false
 
     let releaseToken (token: Token) =
-        clearCreditSourcesForToken token.Credit
-        ledgerRelease token.Credit
-        tokens.Remove token.Credit |> ignore
+        let previousOwnerSessionId = token.OwnerSessionId
 
         match ownedTokenByExecution.TryGetValue token.OwnerKey with
         | true, current when current = token.Credit -> ownedTokenByExecution.Remove token.OwnerKey |> ignore
         | _ -> ()
 
+        let replacementLenderToken =
+            tokens.Values
+            |> Seq.tryFind (fun candidate ->
+                candidate.Credit <> token.Credit
+                && not (isRetiring candidate)
+                && candidate.OwnerSessionId = previousOwnerSessionId
+                && candidate.Provider = token.Provider)
+
+        let borrowerEntries =
+            creditSourceByExecution
+            |> Seq.choose (fun (KeyValue(key, source)) ->
+                if source.Credit = token.Credit then Some(key, source) else None)
+            |> Seq.toArray
+
+        match replacementLenderToken with
+        | Some replacement ->
+            borrowerEntries
+            |> Array.iter (fun (key, source) ->
+                if ownedTokenByExecution.ContainsKey key || normalizeProvider source.Target <> replacement.Provider then
+                    clearCreditSource key
+                else
+                    let borrowerSessionId = key.Substring(0, key.IndexOf('\u001f'))
+                    rememberCreditSource key borrowerSessionId replacement source.Distance source.Target)
+
+            ledgerRelease token.Credit
+            tokens.Remove token.Credit |> ignore
+        | None ->
+            let activeBorrowers =
+                borrowerEntries
+                |> Array.filter (fun (key, source) ->
+                    if ownedTokenByExecution.ContainsKey key || normalizeProvider source.Target <> token.Provider then
+                        clearCreditSource key
+                        false
+                    else
+                        true)
+
+            match activeBorrowers with
+            | [||] ->
+                clearCreditSourcesForToken token.Credit
+                ledgerRelease token.Credit
+                tokens.Remove token.Credit |> ignore
+            | _ ->
+                let newOwnerKey, newOwnerSource =
+                    activeBorrowers
+                    |> Array.tryFind (fun (key, _) -> not (key.EndsWith("\u001f", StringComparison.Ordinal)))
+                    |> Option.defaultValue activeBorrowers[0]
+
+                clearCreditSource newOwnerKey
+                let separator = newOwnerKey.IndexOf('\u001f')
+                let newOwnerSessionId = newOwnerKey.Substring(0, separator)
+                token.OwnerKey <- newOwnerKey
+                token.OwnerSessionId <- newOwnerSessionId
+                token.OwnerTarget <- newOwnerSource.Target
+                ownedTokenByExecution[newOwnerKey] <- token.Credit
+
+                match token.State with
+                | TokenState.InFlight step
+                | TokenState.Retiring step when step.SessionId <> previousOwnerSessionId ->
+                    token.State <- TokenState.InFlight step
+                | _ ->
+                    token.State <- TokenState.Idle
+                    ledgerRetarget token.Credit newOwnerSource.Target
+
+                activeBorrowers
+                |> Array.iter (fun (key, source) ->
+                    if key <> newOwnerKey then
+                        let borrowerSessionId = key.Substring(0, key.IndexOf('\u001f'))
+                        rememberCreditSource key borrowerSessionId token 1 source.Target)
+
     let retireToken (token: Token) =
         match token.State with
         | TokenState.Idle -> releaseToken token
+        | TokenState.InFlight step when
+            step.SessionId <> token.OwnerSessionId
+            && (creditSourceByExecution.Values
+                |> Seq.exists (fun source -> source.Credit = token.Credit))
+            ->
+            releaseToken token
         | TokenState.InFlight step -> token.State <- TokenState.Retiring step
         | TokenState.Retiring _ -> ()
 
@@ -461,10 +536,10 @@ type CapacityBorrowing(options: obj) =
 
         if granted then drain ()
 
-    let recordCredit failure sessionId key (lenderSessionId: string option) (credit: Token option) =
+    let recordCredit failure sessionId key (lenderSessionId: string option) target (credit: Token option) =
         match credit, lenderSessionId with
         | None, _ -> clearCreditSource key
-        | Some token, Some lender when lender = token.OwnerSessionId -> rememberCreditSource key sessionId token 1
+        | Some token, Some lender when lender = token.OwnerSessionId -> rememberCreditSource key sessionId token 1 target
         | Some _, _ -> Fail.op failure
 
     let commitRoutedTarget sessionId oldKey newKey newPhysicalUserMessageId target lenderSessionId credit =
@@ -479,7 +554,7 @@ type CapacityBorrowing(options: obj) =
             oldKey |> Option.iter retireExecution
 
         oldKey |> Option.iter clearCreditSource
-        recordCredit "routed credit is not legal for requester" sessionId newKey lenderSessionId credit
+        recordCredit "routed credit is not legal for requester" sessionId newKey lenderSessionId target credit
         target
 
     let adoptOwnedToken oldKey newKey target tokenId =
@@ -611,7 +686,7 @@ type CapacityBorrowing(options: obj) =
             | Some _ -> ()
             | None -> acquireOwnedToken sessionId None target |> ignore
 
-            recordCredit "reserved credit is not legal for requester" sessionId (executionKey sessionId None) lender credit
+            recordCredit "reserved credit is not legal for requester" sessionId (executionKey sessionId None) lender target credit
             target
 
     /// 预留被物理消息采用：托管从“无物理消息”键移到该物理执行。
@@ -625,7 +700,7 @@ type CapacityBorrowing(options: obj) =
         | true, tokenId -> adoptOwnedToken oldKey newKey target tokenId
         | false, _ -> ()
 
-        moveCreditSource oldKey newKey
+        moveCreditSource oldKey newKey target
 
     /// 同一执行的续接：托管从上一物理消息移到下一物理消息；续接方已有托管或前者没有托管时抛出。
     member _.continueExecution(sessionId: obj, previousPhysicalId: obj, physicalId: obj, target: obj) : obj =
@@ -641,7 +716,7 @@ type CapacityBorrowing(options: obj) =
         | false, _ when creditSourceByExecution.ContainsKey oldKey -> ()
         | _ -> Fail.op "continuation has no previous capacity"
 
-        moveCreditSource oldKey newKey
+        moveCreditSource oldKey newKey target
         target
 
     /// 释放会话的全部托管与 provider-step 等待者；交还 Applied 或 AlreadyApplied。

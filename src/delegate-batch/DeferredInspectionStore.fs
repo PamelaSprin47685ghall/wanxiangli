@@ -48,10 +48,10 @@ type DeferredInspectionStore() =
         else
             lock gate (fun () ->
                 if callToSession.ContainsKey cKey then
-                    let existingSession = callToSession.[cKey]
+                    let existingSession = callToSession[cKey]
                     createObj
                         [ "ok" ==> false
-                          "stagedCount" ==> (if pendingCalls.ContainsKey sKey then pendingCalls.[sKey].Count else 0)
+                          "stagedCount" ==> (if pendingCalls.ContainsKey sKey then pendingCalls[sKey].Count else 0)
                           "reason" ==> "DuplicateCall"
                           "existingSession" ==> existingSession ]
                 else
@@ -60,7 +60,7 @@ type DeferredInspectionStore() =
                         | true, cur -> cur
                         | false, _ ->
                             let cur = ResizeArray<DeferredCallRecord>()
-                            pendingCalls.[sKey] <- cur
+                            pendingCalls[sKey] <- cur
                             cur
 
                     let record =
@@ -71,13 +71,13 @@ type DeferredInspectionStore() =
                           stagedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() }
 
                     list.Add record
-                    callToSession.[cKey] <- sKey
+                    callToSession[cKey] <- sKey
 
                     createObj
                         [ "ok" ==> true
                           "stagedCount" ==> list.Count
                           "callId" ==> cKey
-                          "reason" ==> null ])
+                          "reason" ==> (null: obj) ])
 
     member _.takePending(sessionId: string) : obj array =
         let sKey = cleanKey sessionId
@@ -99,7 +99,7 @@ type DeferredInspectionStore() =
                 arr
             | _ ->
                 pendingCalls.Remove sKey |> ignore
-                [||])
+                ([||]: obj array))
 
     member _.hasPending(sessionId: string) : bool =
         let sKey = cleanKey sessionId
@@ -132,7 +132,7 @@ type DeferredInspectionStore() =
         else
             let rep = if isNull replacement then "" else replacement
             lock gate (fun () ->
-                replacedResults.[cKey] <- rep
+                replacedResults[cKey] <- rep
                 let targetSession =
                     match sessionId with
                     | Some sid when not (String.IsNullOrEmpty(cleanKey sid)) -> cleanKey sid
@@ -147,7 +147,7 @@ type DeferredInspectionStore() =
                         | true, cur -> cur
                         | false, _ ->
                             let cur = HashSet<string>()
-                            replacedBySession.[targetSession] <- cur
+                            replacedBySession[targetSession] <- cur
                             cur
                     set.Add cKey |> ignore
                 true)
@@ -225,7 +225,7 @@ type DeferredInspectionStore() =
             let mutable totalPending = 0
             let pendingBySess = Dictionary<string, int>()
             for kv in pendingCalls do
-                pendingBySess.[kv.Key] <- kv.Value.Count
+                pendingBySess[kv.Key] <- kv.Value.Count
                 totalPending <- totalPending + kv.Value.Count
 
             createObj

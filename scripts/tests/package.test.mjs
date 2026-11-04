@@ -243,7 +243,7 @@ test('SPEC[build-002] an installed tarball survives a real effect and process de
   writeFileSync(path.join(consumer, 'package.json'), JSON.stringify({ name: 'independent-consumer', private: true, type: 'module' }))
   succeed(spawnSync(npm, ['install', '--ignore-scripts', '--omit=dev', '--no-audit', '--no-fund', path.join(temporary, packed.filename)], { cwd: consumer, env: cleanEnvironment, encoding: 'utf8', timeout: 30000 }))
   const installed = JSON.parse(readFileSync(path.join(consumer, 'node_modules/wanxiangli/package.json'), 'utf8'))
-  assert.deepEqual(installed.dependencies ?? {}, {})
+  assert.deepEqual(installed.dependencies ?? {}, { 'proper-lockfile': '4.1.2' })
   assert.deepEqual(installed.peerDependencies ?? {}, {})
   assert.equal(existsSync(path.join(consumer, 'node_modules/esbuild')), false)
   assert.equal(existsSync(path.join(consumer, 'node_modules/wanxiangli/scripts')), false)

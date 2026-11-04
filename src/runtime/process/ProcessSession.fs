@@ -111,12 +111,12 @@ let ProcessSession (input: obj) (onOutput: obj) : SessionMessages =
             | Some reject -> reject error
             | None -> ()
 
-    let receive channel (tail: OutputTail) bytes =
+    let receive (channel: string) (tail: OutputTail) (bytes: byte array) =
         tail.Append bytes
 
         if not (isNullOrUndefined onOutput) then
             try
-                emitJsExpr (onOutput, channel, Array.copy bytes) "$0($1, $2)" |> ignore
+                (emitJsExpr (onOutput, channel, Array.copy bytes) "$0($1, $2)": obj) |> ignore
             with error ->
                 rememberFailure channel (box error) |> ignore
 

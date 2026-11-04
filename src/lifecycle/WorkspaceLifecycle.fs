@@ -15,9 +15,9 @@ module private RootWorkspaceCellHelpers =
         | _ -> None
 
     let applyBind (cell: string option ref) (candidate: string option) =
-        match !cell, cleanCandidate candidate with
+        match cell.Value, cleanCandidate candidate with
         | None, Some path ->
-            cell := Some path
+            cell.Value <- Some path
             true
         | _ -> false
 
@@ -33,7 +33,7 @@ type RootWorkspaceCell() =
         this.TryBind(candidate)
 
     member _.TryRead(): string option =
-        lock gate (fun () -> !bound)
+        lock gate (fun () -> bound.Value)
 
     member this.tryRead(): obj =
         match this.TryRead() with
@@ -41,7 +41,7 @@ type RootWorkspaceCell() =
         | None -> null
 
     member _.Clear(): unit =
-        lock gate (fun () -> bound := None)
+        lock gate (fun () -> bound.Value <- None)
 
     member this.clear(): unit =
         this.Clear()
@@ -62,7 +62,7 @@ module private SharedEventStorePoolHelpers =
             entry.Store
         | false, _ ->
             let store = createStore commonDir
-            entries.[commonDir] <- { Store = store; RefCount = 1 }
+            entries[commonDir] <- { Store = store; RefCount = 1 }
             store
 
     let releaseEntry (entries: Dictionary<string, SharedStoreEntry>) (commonDir: string) =
@@ -130,7 +130,7 @@ module private SharedAsyncJournalPoolHelpers =
             entry.Ready, false
         | false, _ ->
             let readyTask = startReady ()
-            entries.[directory] <- { Ready = readyTask; Instance = None; RefCount = 1 }
+            entries[directory] <- { Ready = readyTask; Instance = None; RefCount = 1 }
             readyTask, true
 
     let settleSuccessEntry (entries: Dictionary<string, SharedJournalEntry>) (directory: string) (readyTask: obj) (instance: obj) =

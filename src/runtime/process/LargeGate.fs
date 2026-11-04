@@ -14,22 +14,31 @@ module internal GateSignal =
     [<Emit("new Promise((resolve, reject) => $0(resolve, reject))")>]
     let promise (_executor: (unit -> unit) -> (obj -> unit) -> unit) : JS.Promise<unit> = jsNative
 
+    [<Emit("$0.aborted")>]
+    let private getAborted (_signal: obj) : bool = jsNative
+
+    [<Emit("$0.removeEventListener('abort', $1)")>]
+    let private removeAbortListener (_signal: obj) (_handler: unit -> unit) : unit = jsNative
+
+    [<Emit("$0.addEventListener('abort', $1, { once: true })")>]
+    let private addAbortOnceListener (_signal: obj) (_handler: unit -> unit) : unit = jsNative
+
+    [<Emit("new DOMException('The operation was aborted.', 'AbortError')")>]
+    let createAbortError () : obj = jsNative
+
     let isAborted (signal: obj) : bool =
         if isNullOrUndefined signal then
             false
         else
-            unbox<bool> (signal?aborted)
+            getAborted signal
 
     let removeAbort (signal: obj) (handler: unit -> unit) : unit =
         if not (isNullOrUndefined signal) then
-            signal?removeEventListener("abort", handler) |> ignore
+            removeAbortListener signal handler
 
     let addAbortOnce (signal: obj) (handler: unit -> unit) : unit =
         if not (isNullOrUndefined signal) then
-            signal?addEventListener("abort", handler, createObj [ "once" ==> true ]) |> ignore
-
-    let createAbortError () : obj =
-        createNew (emitJsExpr () "DOMException") ("The operation was aborted.", "AbortError")
+            addAbortOnceListener signal handler
 
 [<AttachMembers>]
 type LargeGate() =

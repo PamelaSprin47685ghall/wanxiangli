@@ -151,7 +151,14 @@ module private Readers =
 
             events
 
-        let fullDecode () = readBytes path |> decodeBytes path |> Result.map remember
+        let fullDecode () =
+            // A writer path that is no longer an ordinary file (a directory left
+            // behind by a failed reorganization, a vanished segment) is a read
+            // failure the caller must see, not an exception escaping the store.
+            try
+                readBytes path |> decodeBytes path |> Result.map remember
+            with ex ->
+                Error(nonCanonical (sprintf "writer read failed: %s" ex.Message))
 
         let incrementalDecode cached =
             withReadFd path
@@ -276,8 +283,22 @@ module private Readers =
                 let fileNames: string array = group?fileNames
                 { WriterId = writerId; FileNames = Array.toList fileNames })
 
+    [<Emit("$0 != null && $0.code === $1")>]
+    let private hasErrorCode (_error: exn) (_code: string) : bool = jsNative
+
+    /// Listing a writer directory whose parent is a regular file yields no
+    /// writers: the store reports the empty history and the append boundary then
+    /// refuses at its own mkdir. Every other listing failure — a directory where
+    /// a file belongs (EISDIR), a permission refusal (EACCES) — stays an error;
+    /// reading those as "no history yet" would hide a real broken store.
+    let private listedWriterFileGroups provider =
+        try
+            writerFileGroups provider
+        with ex ->
+            if hasErrorCode ex "ENOTDIR" then [] else reraise ()
+
     let private physicalMetadata provider =
-        writerFileGroups provider
+        listedWriterFileGroups provider
         |> List.map (fun group ->
             let paths = group.FileNames |> List.map (fun name -> join (directory provider) name)
             { Group = group; LastActivityMs = writerActivity paths })
@@ -340,25 +361,32 @@ module private Readers =
         | _ -> Error(nonCanonical (sprintf "multiple legacy files for one writer: %s" group.WriterId))
 
     let private decodeWriterFiles cache provider group =
-        let rec read remaining acc =
-            match remaining with
-            | [] -> Ok(acc |> List.rev |> Array.concat)
-            | (name, copied) :: tail ->
-                decodeFileCached cache (join (directory provider) name)
-                |> Result.bind (fun events -> read tail ((Array.skip copied events) :: acc))
+        // A writer may hold up to 10,000 segments. Folding them through
+        // `Result.bind` nests one continuation per file and overflows the stack
+        // long before the ordinal space runs out, so the walk is a plain loop.
+        match logicalStreamFiles provider group with
+        | Error error -> Error error
+        | Ok files ->
+            let decoded = ResizeArray<obj[]>(files.Length)
+            // DSL-MUTABLE: algorithm-scratch — the first failing file stops the walk.
+            let mutable failure: obj option = None
+            let mutable index = 0
 
-        logicalStreamFiles provider group |> Result.bind (fun files -> read files [])
+            while index < files.Length && failure.IsNone do
+                let name, copied = files[index]
+
+                match decodeFileCached cache (join (directory provider) name) with
+                | Error error -> failure <- Some error
+                | Ok events -> decoded.Add(Array.skip copied events)
+
+                index <- index + 1
+
+            match failure with
+            | Some error -> Error error
+            | None -> Ok(decoded |> Seq.concat |> Array.ofSeq)
 
     let readStreams cache provider nowMs =
         pruneCache cache
-
-        let rec read remaining acc =
-            match remaining with
-            | [] -> Ok(acc |> List.rev |> List.toArray)
-            | group :: tail ->
-                decodeWriterFiles cache provider group
-                |> Result.bind (fun events ->
-                    read tail (createObj [ "writerId" ==> group.WriterId; "events" ==> events ] :: acc))
 
         let groups =
             physicalMetadata provider
@@ -367,9 +395,24 @@ module private Readers =
                 retained)
             |> List.map (fun writer -> writer.Group)
 
-        match read groups [] with
-        | Ok streams -> createObj [ "ok" ==> true; "streams" ==> streams ]
-        | Error error -> createObj [ "ok" ==> false; "error" ==> error ]
+        let streams = ResizeArray<obj>(groups.Length)
+        // DSL-MUTABLE: algorithm-scratch — the first failing writer stops the walk.
+        let mutable failure: obj option = None
+        let mutable index = 0
+
+        while index < groups.Length && failure.IsNone do
+            let group = groups[index]
+
+            match decodeWriterFiles cache provider group with
+            | Error error -> failure <- Some error
+            | Ok events ->
+                streams.Add(createObj [ "writerId" ==> group.WriterId; "events" ==> events ])
+
+            index <- index + 1
+
+        match failure with
+        | Some error -> createObj [ "ok" ==> false; "error" ==> error ]
+        | None -> createObj [ "ok" ==> true; "streams" ==> streams.ToArray() ]
 
 [<AttachMembers>]
 type SegmentedReader() as this =

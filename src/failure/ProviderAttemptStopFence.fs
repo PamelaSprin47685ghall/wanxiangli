@@ -23,13 +23,13 @@ module WaitForStopResult =
     let Denied = "Denied"
 
 [<Emit("setTimeout($0, $1)")>]
-let private jsSetTimeout (fn: unit -> unit) (ms: int) : obj = jsNative
+let private jsSetTimeout (_fn: unit -> unit) (_ms: int) : obj = jsNative
 
 [<Emit("clearTimeout($0)")>]
-let private jsClearTimeout (handle: obj) : unit = jsNative
+let private jsClearTimeout (_handle: obj) : unit = jsNative
 
 [<Emit("Promise.race([$0, $1])")>]
-let private jsPromiseRace (p1: obj) (p2: obj) : Task<string> = jsNative
+let private jsPromiseRace (_p1: obj) (_p2: obj) : Task<string> = jsNative
 
 /// provider-attempt-recovery-022：宿主「已停止自动重试」的进程内发送栅栏。
 ///
@@ -71,7 +71,7 @@ type ProviderAttemptStopFence() =
         | true, existing -> existing
         | false, _ ->
             let c = TaskCompletionSource<string>()
-            waiters.[key] <- c
+            waiters[key] <- c
             c
 
     /// 登记 attempt；若此前已被 SignalStop 观察，必须返回 AlreadyStopped 且不登记。
@@ -112,7 +112,7 @@ type ProviderAttemptStopFence() =
         | None when timeout <= 0 -> waiter.Task
         | None ->
             let timeoutTcs = TaskCompletionSource<string>()
-            let timerHandle = ref (box null)
+            let timerHandle: obj ref = ref (null: obj)
 
             let onTimeout () =
                 lock gate (fun () ->

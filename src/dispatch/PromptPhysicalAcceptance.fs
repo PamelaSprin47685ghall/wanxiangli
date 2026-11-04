@@ -12,7 +12,7 @@ module private AcceptanceInternal =
     let envTimeoutValue () : obj = jsNative
 
     [<Emit("(function(){let timer;return Promise.race([$0.then(function(v){return{ok:true,v:v};}),$1.then(function(){return{ok:false};}),new Promise(function(r){timer=setTimeout(function(){r({ok:false});},$2);})]).finally(function(){clearTimeout(timer);});})()")>]
-    let raceTimeout (task: Task<obj>) (released: Task<unit>) (ms: int) : Task<obj> = jsNative
+    let raceTimeout (_task: Task<obj>) (_released: Task<unit>) (_ms: int) : Task<obj> = jsNative
 
     [<Literal>]
     let DefaultAdmissionTimeoutMs = 10000
@@ -30,8 +30,10 @@ module private AcceptanceInternal =
             parseAdmissionTimeout (unbox<string> raw)
 
     let confirmationOutcome (result: obj) : obj option =
-        if unbox<bool> (result?ok) then
-            Some(result?v)
+        let okObj: obj = result?ok
+        if unbox<bool> okObj then
+            let vObj: obj = result?v
+            Some vObj
         else
             None
 
@@ -82,7 +84,7 @@ type PromptPhysicalAcceptance() =
         else
             let key = promptKey.Trim()
             let registration = { Notify = callback }
-            lock gate (fun () -> callbacks.[key] <- registration)
+            lock gate (fun () -> callbacks[key] <- registration)
 
             createObj [
                 "dispose" ==> (fun () ->
@@ -149,7 +151,7 @@ type PromptPhysicalAcceptance() =
                     | true, existing -> existing
                     | false, _ ->
                         let created = ResizeArray<TaskCompletionSource<obj>>()
-                        waiters.[key] <- created
+                        waiters[key] <- created
                         created
                 pending.Add waiter)
 

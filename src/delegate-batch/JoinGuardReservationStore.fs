@@ -21,6 +21,15 @@ let private isObject (_value: obj) : bool = jsNative
 [<Emit("$0[$1]")>]
 let private field (_value: obj) (_name: string) : obj = jsNative
 
+[<Emit("$0[$1]($2)")>]
+let private invoke1 (_target: obj) (_method: string) (_arg: obj) : obj = jsNative
+
+[<Emit("$0[$1]()")>]
+let private invoke0 (_target: obj) (_method: string) : obj = jsNative
+
+[<Emit("$0.call($1, $2)")>]
+let private invokeCall1 (_fn: obj) (_thisArg: obj) (_arg: obj) : obj = jsNative
+
 let private isNullOrAbsent (o: obj) : bool =
     isNull o || isAbsent o
 
@@ -54,11 +63,11 @@ let private scopeContains (scope: obj) (key: string) : bool =
     if isNullOrAbsent scope then
         false
     elif isObject scope && isFunction (field scope "contains") then
-        unbox<bool> (scope?contains(key))
+        unbox<bool> (invoke1 scope "contains" (box key))
     elif isObject scope && isFunction (field scope "Contains") then
-        unbox<bool> (scope?Contains(key))
+        unbox<bool> (invoke1 scope "Contains" (box key))
     elif isObject scope && isFunction (field scope "has") then
-        unbox<bool> (scope?has(key))
+        unbox<bool> (invoke1 scope "has" (box key))
     else
         false
 
@@ -66,9 +75,9 @@ let private scopeAdd (scope: obj) (key: string) : unit =
     if isNullOrAbsent scope then
         ()
     elif isObject scope && isFunction (field scope "add") then
-        scope?add(key) |> ignore
+        invoke1 scope "add" (box key) |> ignore
     elif isObject scope && isFunction (field scope "Add") then
-        scope?Add(key) |> ignore
+        invoke1 scope "Add" (box key) |> ignore
     else
         ()
 
@@ -76,12 +85,12 @@ let private scopeRemove (scope: obj) (key: string) : unit =
     if isNullOrAbsent scope then
         ()
     elif isObject scope && isFunction (field scope "remove") then
-        scope?remove(key) |> ignore
+        invoke1 scope "remove" (box key) |> ignore
     elif isObject scope && isFunction (field scope "Remove") then
-        scope?Remove(key) |> ignore
+        invoke1 scope "Remove" (box key) |> ignore
     elif isObject scope && isFunction (field scope "delete") then
         let delFn: obj = field scope "delete"
-        delFn?call(scope, key) |> ignore
+        invokeCall1 delFn scope (box key) |> ignore
     else
         ()
 
@@ -89,9 +98,9 @@ let private scopeClear (scope: obj) : unit =
     if isNullOrAbsent scope then
         ()
     elif isObject scope && isFunction (field scope "clear") then
-        scope?clear() |> ignore
+        invoke0 scope "clear" |> ignore
     elif isObject scope && isFunction (field scope "Clear") then
-        scope?Clear() |> ignore
+        invoke0 scope "Clear" |> ignore
     else
         ()
 
@@ -170,17 +179,18 @@ type JoinGuardReservationStore() =
                     removeByPrefix set prefix
                 | _ ->
                     if isObject scope && isFunction (field scope "snapshot") then
-                        let items: string array = unbox (scope?snapshot())
+                        let items: string array = unbox (invoke0 scope "snapshot")
                         for item in items do
                             if not (isNull item) && item.StartsWith(prefix, StringComparison.Ordinal) then
                                 scopeRemove scope item
                     elif isObject scope && isFunction (field scope "forEach") && isFunction (field scope "delete") then
                         let toDelete = ResizeArray<string>()
-                        scope?forEach(fun (item: obj) ->
+                        invoke1 scope "forEach" (box (fun (item: obj) ->
                             if not (isNullOrAbsent item) then
                                 let s = string item
                                 if s.StartsWith(prefix, StringComparison.Ordinal) then
-                                    toDelete.Add s)
+                                    toDelete.Add s))
+                        |> ignore
                         for item in toDelete do
                             scopeRemove scope item
             for s in scopes do
@@ -195,7 +205,7 @@ type JoinGuardReservationStore() =
                 if not (isNull s) then s.Clear())
 
     member this.clearAll() : unit =
-        this.clear(null)
+        this.clear(null: obj)
 
     member _.processCount : int =
         lock gate (fun () -> processKeys.Count)

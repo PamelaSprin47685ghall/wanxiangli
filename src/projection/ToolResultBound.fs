@@ -32,14 +32,14 @@ type ToolResultBoundStore() =
     /// UTF-8 bytes of the scalar at index (handles surrogate pairs).
     /// Returns (codeUnits, bytes).
     let scalarAt (text: string) (index: int) : int * int =
-        let c = text.[index]
+        let c = text[index]
         let code = int c
 
         if code < 0x80 then
             1, 1
         elif code < 0x800 then
             1, 2
-        elif isHighSurrogate c && index + 1 < text.Length && isLowSurrogate text.[index + 1] then
+        elif isHighSurrogate c && index + 1 < text.Length && isLowSurrogate text[index + 1] then
             2, 4
         else
             1, 3
@@ -57,8 +57,8 @@ type ToolResultBoundStore() =
     let scalarStepBack (text: string) (start: int) : int =
         if
             start >= 2
-            && isLowSurrogate text.[start - 1]
-            && isHighSurrogate text.[start - 2]
+            && isLowSurrogate text[start - 1]
+            && isHighSurrogate text[start - 2]
         then
             start - 2
         else
@@ -97,7 +97,7 @@ type ToolResultBoundStore() =
     let findLineBounds (text: string) (segEnd: int) : int * int =
         let mutable p = segEnd - 1
 
-        while p >= 0 && text.[p] <> '\n' do
+        while p >= 0 && text[p] <> '\n' do
             p <- p - 1
 
         p + 1, p

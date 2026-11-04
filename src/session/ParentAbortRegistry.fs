@@ -14,7 +14,7 @@ type ParentAbortRegistry() =
         | true, map -> map
         | false, _ ->
             let map = Dictionary<int, unit -> unit>()
-            parentAborters.[parentId] <- map
+            parentAborters[parentId] <- map
             map
 
     let cleanupParentIfEmpty (parentId: string) (map: Dictionary<int, unit -> unit>) =
@@ -46,7 +46,7 @@ type ParentAbortRegistry() =
             nextAbortToken <- nextAbortToken + 1
             let token = nextAbortToken
             let map = getOrCreateParentMap parentId
-            map.[token] <- abort
+            map[token] <- abort
             token
         )
 

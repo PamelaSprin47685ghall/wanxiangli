@@ -17,6 +17,8 @@ type internal Ledger(workId: string) =
     let receipts = Dictionary<string, Receipt>()
     let fences = Dictionary<string, obj>()
     let messages = Dictionary<string, obj>()
+    let continuations = Dictionary<string, obj>()
+
     // 程序位置只按事实重放推进：计数器由 CE 结构持有，不按 phase 跳转。
     let mutable position: Program.Program option = None
 
@@ -129,6 +131,8 @@ type internal Ledger(workId: string) =
     member _.ActiveId = active |> Option.map (fun current -> current.Id)
     member _.Obligations = match active with Some current -> current.Obligations | None -> Map.empty
     member _.HasBlockingPending = slots |> List.exists Effects.blocks
+    member _.HasUnobservedStop =
+        slots |> List.exists (function Slot.Stop(_, _, _, observed, _) -> not observed | _ -> false)
     member _.HasOpenQuestion = openQuestion.IsSome
     member _.HasUnknownQuestion = unknownQuestion.IsSome
     member _.Position = position
@@ -156,6 +160,8 @@ type internal Ledger(workId: string) =
         if fences.ContainsKey call then Some fences[call] else None
     member _.TryMessage messageId =
         if messages.ContainsKey messageId then Some messages[messageId] else None
+    member _.TryContinuation continuationId =
+        if continuations.ContainsKey continuationId then Some continuations[continuationId] else None
     member _.Seal(requestId, hash, seal, result) =
         require (not (receipts.ContainsKey requestId)) "Duplicate request"
         receipts[requestId] <- { Hash = hash; Result = result }
@@ -166,6 +172,9 @@ type internal Ledger(workId: string) =
         | Seal.Message messageId ->
             require (not (messages.ContainsKey messageId)) "Duplicate message"
             messages[messageId] <- result
+        | Seal.Continuation continuationId ->
+            require (not (continuations.ContainsKey continuationId)) "Duplicate continuation"
+            continuations[continuationId] <- result
         | Seal.None -> ()
 
     member this.Open(claimedWork, claimedOffice, id, origin, milestone, messageId: string option) =
@@ -203,6 +212,9 @@ type internal Ledger(workId: string) =
                 "milestone", box round.Milestone
                 "outcome", box round.Outcome
                 "retirementId", box round.RetirementId
+                "providerRunId", box round.ProviderRunId
+                "toolCallId", box round.ToolCallId
+                "stopEffectId", nullable round.StopEffectId
             ]
         let launchView = function
             | Slot.Launch(id, digest, run, call, _, session, status) ->
@@ -266,8 +278,8 @@ type internal Ledger(workId: string) =
             this.Answer(messageId, incumbency, questionId)
         | [ Fact.Reviewed(incumbency, _, call, claimedUpdates) ] ->
             this.Review(incumbency, call, claimedUpdates)
-        | [ Fact.IncumbencyRetired(retirementId, incumbency, outcome, _, call, claimedUpdates); Fact.ContextBarrier(barrierId, _, barrierCall, successorId); Fact.IncumbencyOpened(openedId, origin, milestone, messageId); Fact.PromptObliged(promptId, kind, promptMilestone, text, promptTenure) ] ->
-            this.Relay(retirementId, incumbency, outcome, call, claimedUpdates, barrierId, barrierCall, successorId, openedId, origin, milestone, messageId, promptId, kind, promptMilestone, text, promptTenure)
+        | [ Fact.IncumbencyRetired(retirementId, incumbency, outcome, run, call, claimedUpdates); Fact.ContextBarrier(barrierId, _, barrierCall, successorId); Fact.IncumbencyOpened(openedId, origin, milestone, messageId); Fact.PromptObliged(promptId, kind, promptMilestone, text, promptTenure) ] ->
+            this.Relay(retirementId, incumbency, outcome, run, call, claimedUpdates, barrierId, barrierCall, successorId, openedId, origin, milestone, messageId, promptId, kind, promptMilestone, text, promptTenure)
         | [ Fact.MilestoneAdvanced(incumbency, fromMilestone, toMilestone, _, call, claimedUpdates); Fact.PromptObliged(promptId, kind, promptMilestone, text, promptTenure) ] ->
             this.Advance(incumbency, fromMilestone, toMilestone, call, claimedUpdates, promptId, kind, promptMilestone, text, promptTenure)
         | [ Fact.DeliveryRequested(operationId, incumbency, run, call, digest, claimedUpdates) ] ->
@@ -276,9 +288,10 @@ type internal Ledger(workId: string) =
         | [ Fact.DeliveryAdmitted(operationId, session) ] -> this.Admit(operationId, session)
         | [ Fact.DeliveryRejected(operationId, reason) ] -> this.RejectLaunch(operationId, reason)
         | [ Fact.EffectConfirmed(effectId, outcome, session, reason) ] -> this.Confirm(effectId, outcome, session, reason)
-        | [ Fact.IncumbencyRetired(retirementId, incumbency, outcome, _, call, claimedUpdates); Fact.StopObliged(stopId, stopTenure) ] ->
-            this.Complete(retirementId, incumbency, outcome, call, claimedUpdates, stopId, stopTenure)
+        | [ Fact.IncumbencyRetired(retirementId, incumbency, outcome, run, call, claimedUpdates); Fact.StopObliged(stopId, stopTenure) ] ->
+            this.Complete(retirementId, incumbency, outcome, run, call, claimedUpdates, stopId, stopTenure)
         | [ Fact.IncumbencyOpened(id, origin, milestone, messageId) ] -> this.Reopen(id, origin, milestone, messageId)
+        | [ Fact.WorkContinued(id, continuationId) ] -> this.Continue(id, continuationId)
         | [ Fact.DevOpsBound(devopsId, target, trigger) ] -> this.BindDevOps(devopsId, target, trigger)
         | _ -> fail "Illegal lifecycle transaction"
 
@@ -321,7 +334,7 @@ type internal Ledger(workId: string) =
         advanceFromAsk (box ())
         Seal.Message messageId, finishActive "Answered" None [ "messageId", box messageId ]
 
-    member private _.Relay(retirementId, incumbency, outcome, call, claimedUpdates, barrierId, barrierCall, successorId, openedId, origin, milestone, messageId, promptId, kind, promptMilestone, text, promptTenure) =
+    member private _.Relay(retirementId, incumbency, outcome, run, call, claimedUpdates, barrierId, barrierCall, successorId, openedId, origin, milestone, messageId, promptId, kind, promptMilestone, text, promptTenure) =
         requireIdle ()
         let current = tenure ()
         require current.Substantive "Relay follows a substantive review"
@@ -338,7 +351,7 @@ type internal Ledger(workId: string) =
         require (promptId = Identities.successorPrompt retirementId) "Prompt identity mismatch"
         let emptied = clearAndRequire claimedUpdates
         require (Map.isEmpty emptied) "Relay requires an empty ledger"
-        rounds <- rounds @ [ { Id = current.Id; Origin = current.Origin; Milestone = current.Milestone; Outcome = "Relayed"; RetirementId = retirementId } ]
+        rounds <- rounds @ [ { Id = current.Id; Origin = current.Origin; Milestone = current.Milestone; Outcome = "Relayed"; RetirementId = retirementId; ProviderRunId = run; ToolCallId = call; StopEffectId = None } ]
         barrier <- Some(call, successorId)
         replaceTenure { Id = successorId; Origin = "Successor"; Milestone = milestone; Substantive = false; Obligations = Map.empty }
         slots <- slots @ [ Slot.Dispatch(promptId, kind, milestone, text, successorId, None) ]
@@ -436,7 +449,7 @@ type internal Ledger(workId: string) =
         | _ -> ()
         Seal.None, finish "Confirmed" (incumbencyName ()) (milestoneName ()) (oldest ()) [ "effectId", box effectId; "outcome", box outcome ]
 
-    member private _.Complete(retirementId, incumbency, outcome, call, claimedUpdates, stopId, stopTenure) =
+    member private _.Complete(retirementId, incumbency, outcome, run, call, claimedUpdates, stopId, stopTenure) =
         requireIdle ()
         let current = tenure ()
         require (current.Milestone = "收尾" && current.Id = incumbency && stopTenure = incumbency) "Completion belongs to 收尾"
@@ -445,7 +458,7 @@ type internal Ledger(workId: string) =
         require (stopId = Identities.stop workId incumbency) "Stop identity mismatch"
         let emptied = clearAndRequire claimedUpdates
         require (Map.isEmpty emptied) "Completion requires an empty ledger"
-        rounds <- rounds @ [ { Id = current.Id; Origin = current.Origin; Milestone = current.Milestone; Outcome = "Completed"; RetirementId = retirementId } ]
+        rounds <- rounds @ [ { Id = current.Id; Origin = current.Origin; Milestone = current.Milestone; Outcome = "Completed"; RetirementId = retirementId; ProviderRunId = run; ToolCallId = call; StopEffectId = Some stopId } ]
         active <- None
         completed <- true
         slots <- slots @ [ Slot.Stop(stopId, incumbency, false, false, false) ]
@@ -465,6 +478,19 @@ type internal Ledger(workId: string) =
             replaceTenure { Id = id; Origin = origin; Milestone = milestone; Substantive = false; Obligations = Map.empty }
             advancePosition Program.Step.AwaitOperator (box "Operator")
             Seal.Message message, finishActive "Reopened" None [ "messageId", box message ]
+
+    member private _.Continue(id, continuationId) =
+        require opened "Work is not open"
+        require completed "Continuation requires completion"
+        require active.IsNone "Completed work has no active tenure"
+        require (id = Identities.continuation workId continuationId) "Continuation identity mismatch"
+        let previous = rounds |> List.tryLast
+        require (previous |> Option.exists (fun round -> round.Outcome = "Completed")) "Completed retirement is missing"
+        barrier <- Some((Option.get previous).ToolCallId, id)
+        completed <- false
+        replaceTenure { Id = id; Origin = "Originator"; Milestone = "执行"; Substantive = false; Obligations = Map.empty }
+        advancePosition Program.Step.AwaitOperator (box "Operator")
+        Seal.Continuation continuationId, finishActive "Reopened" None [ "continuationId", box continuationId ]
 
     member private _.BindDevOps(devopsId, target, trigger) =
         require opened "Work is not open"

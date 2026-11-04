@@ -123,7 +123,7 @@ type AblationConfig() =
 
     let parseNodeOverride (readEnv: string -> string) (nodeId: string) =
         let normalized = nodeId.Replace('.', '_').Replace('-', '_').ToLowerInvariant()
-        let envKey = $"WANXIANGSHU_ABLATION_{normalized}"
+        let envKey = "WANXIANGSHU_ABLATION_" + normalized
         let rawOpt = cleanEnvValue (readEnv envKey)
 
         match rawOpt, Option.bind normalizeMode rawOpt with
@@ -137,15 +137,15 @@ type AblationConfig() =
 
     member _.envKeyForNode(nodeId: string) : string =
         let normalized = nodeId.Replace('.', '_').Replace('-', '_').ToLowerInvariant()
-        $"WANXIANGSHU_ABLATION_{normalized}"
+        "WANXIANGSHU_ABLATION_" + normalized
 
     member _.resolveProfile(readEnv: string -> string) : string =
         cleanEnvValue (readEnv "WANXIANGSHU_ABLATION_PROFILE") |> Option.toObj
 
     member _.resolveOverrides(nodeIds: string[], readEnv: string -> string) : obj =
         match nodeIds |> Array.fold (stepOverride readEnv) (Ok []) with
-        | Ok list -> createObj [ "ok" ==> true; "pairs" ==> (list |> List.rev |> List.toArray) ]
-        | Error(node, raw) -> createObj [ "ok" ==> false; "node" ==> node; "raw" ==> raw ]
+        | Ok list -> createObj [ "ok" ==> box true; "pairs" ==> box (list |> List.rev |> List.toArray) ]
+        | Error(node, raw) -> createObj [ "ok" ==> box false; "node" ==> box node; "raw" ==> box raw ]
 
 let ablationToolMapStore = AblationToolMapStore()
 let ablationFactMapStore = AblationFactMapStore()
