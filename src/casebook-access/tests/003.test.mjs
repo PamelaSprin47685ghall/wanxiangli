@@ -50,6 +50,8 @@ test('SPEC[casebook-access-4] executor single-file reads; command substitution a
     ["cat 'with space.txt'", 'with space.txt'], ['head -n 5 h.txt', 'h.txt'], ['head -n5 h.txt', 'h.txt'],
     ['tail -n +5 t.txt', 't.txt'], ['tail -c 100 t.txt', 't.txt'], ['head -c 1K h.txt', 'h.txt'], ['tail -f log.txt', 'log.txt'],
     ['sed -n 1,5p s.txt', 's.txt'], ["sed -e 's/a/b/' s.txt", 's.txt'],
+    ["sed -e 's/a/b/' -e 's/c/d/' s.txt", 's.txt'], ['sed -f script.sed s.txt', 's.txt'],
+    ['sed -es/a/b/ s.txt', 's.txt'], ['sed -fscript.sed s.txt', 's.txt'],
     ['cat $(ls)', null], ['cat `ls`', null], ['tail -n 5 `pick`', null], ['bash -c "cat x"', null], ['sh x', null],
     ['ls -la', null], ['', null], ['   ', null], ['sed only-script', null], ['cat', null],
   ]

@@ -14,7 +14,7 @@
 1. [本模块 AXIOM 1, 2] `accessPaths` 按访问种类给路径；`mutation` 只在 committed 时计；检索类恒为空；空白路径不计。
 2. [本模块 AXIOM 1] `toolPaths`：已提交的 create/rewrite/delete 取参数 `path|filePath|file` 中第一个出现的键（其值不是文本即无路径），move 取 source 与 destination（缺一不计）；其它工具名为空。
 3. [knowledge-reuse-010] `relatedPaths` 去空白、去重、码元序升序；Fission 裂变前与各 lane 的访问取并集也用它。
-4. [本模块 AXIOM 1] `execRead`：cat/head/tail/sed 的单文件读取。含 `$(` 或反引号的命令整条不计（目标不可静态得知）；head/tail 的 `-n`、`-c` 带一个值，值不是文件。
+4. [本模块 AXIOM 1] `execRead`：cat/head/tail/sed 的单文件读取。含 `$(` 或反引号的命令整条不计（目标不可静态得知）；head/tail 的 `-n`、`-c`，以及 sed 的 `-e`、`-f`，各带一个值，值不是文件。粘连写法（`-eSCRIPT`、`-fscript.sed`）整段都是选项。
     - 推理：主仓旧实现只拒绝“反斜杠+反引号”，`cat \`ls\`` 被记成读取文件 `` `ls` ``；`tail -c 100 f` 被记成读取文件 `100`。两者都是凭空捏造的关联路径。
 
 # SPEC

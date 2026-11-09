@@ -77,10 +77,17 @@ let rec private firstReadFile (valued: bool) (tokens: string list) : string opti
     | token :: tail when token.StartsWith "-" -> firstReadFile valued tail
     | file :: _ -> Some file
 
-let private sedReadFile (rest: string list) =
-    match rest |> List.skipWhile (fun token -> token.StartsWith "-") with
-    | _script :: file :: _ -> Some file
-    | _ -> None
+/// sed 的 `-e`、`-f` 各带一个值（脚本或脚本文件），值不是被读取的文件。
+/// 粘连写法（`-eSCRIPT`、`-fscript.sed`）整段都是选项。没有 `-e`/`-f` 时，
+/// 第一个非选项是位置脚本，它后面的才是文件。
+let rec private sedReadFile (sawScript: bool) (tokens: string list) : string option =
+    match tokens with
+    | [] -> None
+    | ("-e" | "-f") :: _value :: tail -> sedReadFile true tail
+    | token :: tail when token.StartsWith "-e" || token.StartsWith "-f" -> sedReadFile true tail
+    | token :: tail when token.StartsWith "-" -> sedReadFile sawScript tail
+    | file :: _ when sawScript -> Some file
+    | _script :: tail -> sedReadFile true tail
 
 let private execReadOf (command: string) : string option =
     if isBlank command then None
@@ -90,7 +97,7 @@ let private execReadOf (command: string) : string option =
         match tokenize command with
         | "cat" :: rest -> firstReadFile false rest
         | "head" :: rest | "tail" :: rest -> firstReadFile true rest
-        | "sed" :: rest -> sedReadFile rest
+        | "sed" :: rest -> sedReadFile false rest
         | _ -> None
 
 let private pathArgOf (args: obj) : string option =
