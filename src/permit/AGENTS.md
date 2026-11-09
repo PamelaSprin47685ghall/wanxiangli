@@ -13,8 +13,8 @@
     - 推理：按 live session 计数或“计数减一”无法区分是谁的结束（execution-model-routing [003][012]）。
 2. [本模块 AXIOM 1] 只有本实例签发、仍为当前、fence 一致的许可被认得；其余按未知/错 fence/过期拒绝，不改变任何状态。
     - 推理：同形对象或旧回执不能冒充当前执行。
-3. [本模块 AXIOM 1] 生命周期 Pending → Committed → Released(PhysicalCompletion)，或 Pending → Released(BeforeProvider)；两种释放互斥，同种重复幂等，已提交不能再“提供方前释放”。
-    - 推理：提供方已开始的执行只能随物理完成释放，否则同一请求可被释放两次。
+3. [本模块 AXIOM 1] 生命周期 Pending → Committed → Released(PhysicalCompletion)，或 Pending → Released(BeforeProvider)，或 Pending → Released(PhysicalCompletion)；两种释放互斥，同种重复幂等，已提交不能再“提供方前释放”。
+    - 推理：提供方已开始的执行只能随物理完成释放，否则同一请求可被释放两次。物理消息在准入时即绑定，用户撤回或取消时许可尚未提交，此时按物理完成释放是该次执行的正常结束，不是重复释放。
 4. [本模块 AXIOM 1] 提交与提供方前释放要求观察到的身份与许可逐字段一致。
     - 推理：运行中追加材料或换 target 不能偷换已准入的身份。
 
