@@ -28,7 +28,10 @@ test('SPEC[build-005] clean installed program/runtime public entries work on Nod
  for(const dependency of ['wanxiangli',...Object.keys(installed.dependencies??{})]) assert.ok(modules.includes(dependency),dependency)
  for(const tool of ['@fable-org','typescript','esbuild']) assert.ok(!modules.includes(tool),tool)
  run(process.execPath,[path.join(root,'node_modules/typescript/bin/tsc'),'--noEmit','--strict','--target','es2022','--module','nodenext','program-consumer.ts'],consumer)
- for(const executable of [process.execPath,'bun']) {
+ const runtimes=[['node',process.execPath]]
+ if(spawnSync('bun',['--version'],{encoding:'utf8',env}).status===0) runtimes.push(['bun','bun'])
+ else t.diagnostic('Bun is absent; its program/runtime consumer was not run.')
+ for(const [runtime,executable] of runtimes) {
    const observed=JSON.parse(run(executable,[path.join(consumer,'program-consumer.mjs')],tmpdir()).trim())
    assert.equal(observed.installed,true);assert.equal(observed.retiredEntries,true)
  }
