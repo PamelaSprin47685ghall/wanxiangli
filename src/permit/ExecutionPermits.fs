@@ -340,6 +340,20 @@ type ExecutionPermits() =
         | false, _ -> Decision.Rejected Rejection.UnknownLease
         |> Lifecycle.outcome
 
+    /// 精确物理执行在提供方开始前释放：与 releasePhysical 相同定位，但走
+    /// BeforeProvider 生命周期。未提交的许可只能这样释放；已提交的许可会被
+    /// 拒绝，调用方据此改用物理完成。
+    member _.releasePendingPhysical(sessionId: obj, physicalUserMessageId: obj) : string =
+        if not (Wire.isString sessionId) || not (Wire.isString physicalUserMessageId) then
+            fail "permit pending release requires string sessionId and physicalUserMessageId"
+
+        match bySession.TryGetValue(unbox<string> sessionId) with
+        | true, entry when entry.Identity.PhysicalUserMessageId = unbox<string> physicalUserMessageId ->
+            release entry Release.BeforeProvider
+        | true, _ -> Decision.Rejected Rejection.StaleLease
+        | false, _ -> Decision.Rejected Rejection.UnknownLease
+        |> Lifecycle.outcome
+
     /// 许可当前状态名：Pending / Committed / Releasing / Released。
     member _.lifecycle(permit: obj, fence: obj) : obj =
         known permit fence |> Result.map (fun entry -> box (Lifecycle.name entry.State)) |> result

@@ -277,6 +277,7 @@ module private Execution =
         abstract commit: obj * obj * obj -> string
         abstract releaseBeforeProvider: obj * obj * obj -> string
         abstract releasePhysical: string * string -> string
+        abstract releasePendingPhysical: string * string -> string
         abstract lifecycle: obj * obj -> obj
         abstract committed: string * string -> obj
     type Counters =
@@ -637,7 +638,19 @@ type ExecutionRouting(options: obj) =
     let hasInput key = retained.Values |> Seq.exists (Execution.identity >> Execution.exact >> (=) key)
     let releaseUnretained key =
         if not (hasInput key) && held.Contains key then
-            match releaseExact key with
+            // A retained input's permit may still be Pending when the input is
+            // cancelled, and physical completion is only legal after a commit. Fall
+            // back to the before-provider release so the credit still comes back;
+            // both paths settle the same exact physical material.
+            let outcome =
+                match releaseExact key with
+                | "Conflict" ->
+                    permits.releasePendingPhysical(fst key, snd key)
+                    |> counters.record
+                    |> completePhysical (fst key) (snd key)
+                | other -> other
+
+            match outcome with
             | "Conflict" ->
                 invalidOp (sprintf "managed-session-lifecycle-027: retained continuation input release was rejected (%s/%s)" (fst key) (snd key))
             | _ -> held.Remove key |> ignore
@@ -842,6 +855,13 @@ type ExecutionRouting(options: obj) =
             | Some demand when demand.Request.Physical = physical -> pending.Cancel session
             | Some _ -> "StaleFence"
             | None -> releasePhysicalKey (session, physical)
+    member _.releasePendingPhysical(session: string, physical: string) =
+        match Execution.normalizeExact session physical with
+        | None -> "Conflict"
+        | Some(session, physical) ->
+            permits.releasePendingPhysical(session, physical)
+            |> counters.record
+            |> completePhysical session physical
     member _.snapshot() = capacitySnapshot()
     member _.holdsPhysical(session: string, physical: string) =
         let value = capacitySnapshot()
