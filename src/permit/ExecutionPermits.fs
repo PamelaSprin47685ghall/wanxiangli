@@ -121,7 +121,8 @@ type internal Decision =
     | Idempotent
     | Rejected of Rejection
 
-/// 许可生命周期律：Pending → Committed → Releasing → Released，或 Pending → Releasing(BeforeProvider)。
+/// 许可生命周期律：Pending → Committed → Releasing(PhysicalCompletion) → Released(PhysicalCompletion)、
+/// Pending → Releasing(BeforeProvider) → Released(BeforeProvider)，或 Pending → Releasing(PhysicalCompletion) → Released(PhysicalCompletion)。
 /// 两种释放互斥；同一种释放重复是幂等；已提交后不能再“提供方前释放”。
 module internal Lifecycle =
 

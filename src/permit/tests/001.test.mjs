@@ -113,7 +113,10 @@ test('SPEC[permit-3] pending → released before provider excludes physical comp
 test('SPEC[permit-3] pending → released by physical completion without a commit; then before-provider conflicts', () => {
   const { permits, permit } = fresh()
   assert.equal(permits.releasePhysical('ses-a', 'msg-1'), 'Applied')
+  assert.equal(permits.releasePhysical('ses-a', 'msg-1'), 'AlreadyApplied')
   assert.equal(permits.releaseBeforeProvider(permit, permit.fence, identity()), 'Conflict')
+  assert.equal(permits.commit(permit, permit.fence, identity()), 'Conflict')
+  assert.deepEqual(permits.lifecycle(permit, permit.fence), { ok: true, value: 'Released' })
   assert.equal(permits.releasePhysical('nobody', 'msg-1'), 'StaleFence', 'unknown session')
 })
 

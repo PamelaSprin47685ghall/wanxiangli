@@ -59,33 +59,73 @@ let private normalize (paths: string seq) : string array =
 
 // ---- 执行器读取容忍（§63）：cat/head/tail/sed 单文件读取 ----------------------
 
-/// 按空格/制表符切分，单引号成对切换引用（尽力而为的类型化解析，不是转录推断）。
+/// 按空格/制表符切分首条 shell 命令；单引号/双引号成对切换引用；未被引用的 `|` / `;` / `&` / `<` / `>` 结束当前命令参数（管道、串联命令或重定向目标不是被读输入参数）。
 let private tokenize (command: string) : string list =
-    let rec go (chars: char list) (current: string) (inQuote: bool) (acc: string list) : string list =
-        match chars with
-        | [] -> List.rev (if current = "" then acc else current :: acc)
-        | ''' :: rest -> go rest current (not inQuote) acc
-        | c :: rest when (c = ' ' || c = '\t') && not inQuote -> go rest "" false (if current = "" then acc else current :: acc)
-        | c :: rest -> go rest (current + string c) inQuote acc
-    go (List.ofSeq command) "" false []
+    let rec go (chars: char list) (current: string) (quote: char option) (acc: string list) : string list =
+        let finish () = List.rev (if current = "" then acc else current :: acc)
+        match chars, quote with
+        | [], _ -> finish ()
+        | c :: rest, Some q when c = q -> go rest current None acc
+        | ('\'' | '"' as q) :: rest, None -> go rest current (Some q) acc
+        | ('|' | ';' | '&' | '<' | '>') :: _, None -> finish ()
+        | c :: rest, None when c = ' ' || c = '\t' -> go rest "" None (if current = "" then acc else current :: acc)
+        | c :: rest, _ -> go rest (current + string c) quote acc
+    go (List.ofSeq command) "" None []
 
-/// cat 的选项都是开关（`cat -n f` 的 -n 是编号）；head/tail 的 -n、-c 带一个值（`tail -n +5 f`、`head -c 100 f`），值不是文件。
+/// cat 的选项都是开关（`cat -n f` 的 -n 是编号）；head/tail 的 -n、-c 带一个值（`tail -n +5 f`、`head -c 100 f`），值不是文件；单独的 `-` 是标准输入而非文件。
+let private nonStdinFile (token: string) : string option =
+    if token = "-" then None else Some token
+
 let rec private firstReadFile (valued: bool) (tokens: string list) : string option =
     match tokens with
     | [] -> None
-    | ("-n" | "-c") :: _value :: tail when valued -> firstReadFile valued tail
+    | "--" :: token :: _ -> nonStdinFile token
+    | "--" :: [] -> None
+    | "-" :: _ -> None
+    | ("-n" | "-c" | "--lines" | "--bytes") :: _value :: tail when valued -> firstReadFile valued tail
     | token :: tail when token.StartsWith "-" -> firstReadFile valued tail
     | file :: _ -> Some file
 
-/// sed 的 `-e`、`-f` 各带一个值（脚本或脚本文件），值不是被读取的文件。
-/// 粘连写法（`-eSCRIPT`、`-fscript.sed`）整段都是选项。没有 `-e`/`-f` 时，
-/// 第一个非选项是位置脚本，它后面的才是文件。
+/// sed 短选项簇：含 `-i` 属原地写修改而非单文件读取；`-e`/`-f` 在末尾时吃下一个参数作脚本，不在末尾时余下字符已是粘连脚本。
+[<RequireQualifiedAccess>]
+type private SedShortKind =
+    | InPlaceEdit
+    | NeedsScriptArg
+    | PlainOrInline of inlineScript: bool
+
+let private classifySedShortFlags (flags: string) : SedShortKind =
+    let rec loop idx =
+        if idx >= flags.Length then SedShortKind.PlainOrInline false
+        else
+            match flags[idx] with
+            | 'i' -> SedShortKind.InPlaceEdit
+            | 'e' | 'f' -> if idx = flags.Length - 1 then SedShortKind.NeedsScriptArg else SedShortKind.PlainOrInline true
+            | _ -> loop (idx + 1)
+    loop 0
+
+/// sed 的 `-e`/`-f`/`--expression`/`--file` 各带一个脚本值，值不是被读取的文件；`-i`/`--in-place` 属写操作不计读取。
+/// 没有显式脚本选项时，第一个非选项是位置脚本，它后面的才是文件。
 let rec private sedReadFile (sawScript: bool) (tokens: string list) : string option =
     match tokens with
     | [] -> None
-    | ("-e" | "-f") :: _value :: tail -> sedReadFile true tail
-    | token :: tail when token.StartsWith "-e" || token.StartsWith "-f" -> sedReadFile true tail
-    | token :: tail when token.StartsWith "-" -> sedReadFile sawScript tail
+    | "--" :: rest ->
+        match rest with
+        | token :: _ when sawScript -> nonStdinFile token
+        | _script :: token :: _ -> nonStdinFile token
+        | _ -> None
+    | token :: _ when token = "--in-place" || token.StartsWith "--in-place=" -> None
+    | ("--expression" | "--file") :: _value :: tail -> sedReadFile true tail
+    | token :: tail when token.StartsWith "--expression=" || token.StartsWith "--file=" -> sedReadFile true tail
+    | token :: tail when token.StartsWith "--" -> sedReadFile sawScript tail
+    | "-" :: _ when sawScript -> None
+    | token :: tail when token.StartsWith "-" && token.Length > 1 ->
+        match classifySedShortFlags (token.Substring 1) with
+        | SedShortKind.InPlaceEdit -> None
+        | SedShortKind.NeedsScriptArg ->
+            match tail with
+            | _value :: rest -> sedReadFile true rest
+            | [] -> None
+        | SedShortKind.PlainOrInline inlineScript -> sedReadFile (sawScript || inlineScript) tail
     | file :: _ when sawScript -> Some file
     | _script :: tail -> sedReadFile true tail
 
